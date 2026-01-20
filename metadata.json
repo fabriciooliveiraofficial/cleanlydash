@@ -1,0 +1,8 @@
+
+{
+  "name": "AirGoverness - Airbnb Operations Management",
+  "description": "A comprehensive dashboard for managing Airbnb cleaning operations, customer CRM, booking schedules, and financial ledgering with multi-tenant support.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

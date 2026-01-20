@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Airgoverness Luminous Aurora System (V5) */
+  /* Concept: "Subtle Life" - Non-aggressive, breathing UI */
+
+  --glass-bg: rgba(255, 255, 255, 0.70);
+  --glass-border: rgba(255, 255, 255, 0.6);
+  --glass-blur: 50px;
+  /* Heavy blur for depth */
+
+  /* The "Crystal" Edge - Inner light for 3D feel */
+  --glass-shadow:
+    0 4px 30px rgba(0, 0, 0, 0.03),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+
+  --text-primary: #0f172a;
+  /* Slate 900 */
+  --text-secondary: #64748b;
+  /* Slate 500 */
+
+  --brand-primary: #6366f1;
+  /* Indigo 500 */
+  --brand-glow: rgba(99, 102, 241, 0.15);
+
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  letter-spacing: -0.015em;
+  /* "Tight" Typography for premium feel */
+}
+
+@keyframes aurora-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+
+  /* Luminous Aurora Background */
+  /* Extremely subtle movement for "breathing" effect */
+  background:
+    radial-gradient(at 0% 0%, hsla(250, 100%, 96%, 1) 0, transparent 50%),
+    radial-gradient(at 100% 0%, hsla(320, 100%, 97%, 1) 0, transparent 50%),
+    radial-gradient(at 100% 100%, hsla(200, 100%, 97%, 1) 0, transparent 50%),
+    linear-gradient(120deg, #f8fafc 0%, #f1f5f9 100%);
+
+  background-size: 150% 150%;
+  animation: aurora-shift 30s ease-in-out infinite;
+  /* Very slow, non-aggressive */
+
+  background-color: #f8fafc;
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Glass Utility - The "Crystal" Look */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  transition: all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Apple "Spring" Easing */
+}
+
+/* Card Hover Micro-interaction: "Lift & Glow" */
+.glass-panel:hover {
+  transform: translateY(-2px);
+  border-color: #ffffff;
+  box-shadow:
+    0 20px 40px rgba(0, 0, 0, 0.04),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --glass-bg: rgba(15, 23, 42, 0.65);
+    /* Slate 900 glass */
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-shadow:
+      0 4px 30px rgba(0, 0, 0, 0.2),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+  }
+
+  body {
+    background: #0f172a;
+    background-image:
+      radial-gradient(at 50% 0%, rgba(99, 102, 241, 0.15) 0%, transparent 70%),
+      radial-gradient(at 100% 100%, rgba(236, 72, 153, 0.05) 0%, transparent 50%);
+  }
+}

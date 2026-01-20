@@ -1,0 +1,83 @@
+{
+    "sidebar": {
+        "dashboard": "Tablero",
+        "bookings": "Reservas",
+        "customers": "Clientes CRM",
+        "map": "Mapa",
+        "telephony": "Telefonía",
+        "finance": "Finanzas",
+        "ai_insights": "IA Insights",
+        "team": "Equipo",
+        "payroll": "Nómina",
+        "settings": "Configuración",
+        "logout": "Cerrar Sesión",
+        "wallet": "Billetera",
+        "support": "Ayuda y Soporte"
+    },
+    "common": {
+        "search": "Buscar...",
+        "loading": "Cargando...",
+        "save": "Guardar",
+        "cancel": "Cancelar",
+        "delete": "Eliminar",
+        "edit": "Editar",
+        "more_options": "Más Opciones",
+        "filter": "Filtros",
+        "back": "Atrás",
+        "next": "Siguiente",
+        "finish": "Finalizar",
+        "on": "Encendido",
+        "off": "Apagado"
+    },
+    "settings": {
+        "language": "Idioma",
+        "select_language": "Seleccionar Idioma"
+    },
+    "crm": {
+        "title": "Clientes CRM",
+        "subtitle": "Administrar propietarios y unidades.",
+        "new_client": "Nuevo Cliente",
+        "add_client_title": "Agregar Nuevo Cliente",
+        "search_placeholder": "Buscar por nombre o dirección...",
+        "table_client": "Cliente",
+        "table_contact": "Contacto",
+        "table_status": "Estado",
+        "status_active": "Activo",
+        "status_inactive": "Inactivo",
+        "form_basic": "Básico",
+        "form_contact": "Contacto",
+        "form_location": "Ubicación",
+        "form_notes": "Notas",
+        "name_label": "Nombre del Cliente / Propiedad",
+        "company_label": "Empresa (Opcional)",
+        "phone_label": "Teléfono",
+        "whatsapp_label": "WhatsApp",
+        "email_label": "Correo Electrónico",
+        "address_label": "Dirección Completa",
+        "access_notes_label": "Instrucciones de Acceso",
+        "internal_notes_label": "Notas Internas",
+        "success_message": "¡Cliente guardado con éxito!",
+        "ready_message": "¡Listo! Revisa y guarda."
+    },
+    "inbox": {
+        "title": "Mensajes",
+        "search_placeholder": "Buscar chats...",
+        "start_conversation": "Iniciar conversación",
+        "type_message": "Escribe un mensaje...",
+        "no_customers": "No se encontraron clientes. Añadir en CRM.",
+        "select_conversation": "Seleccionar Conversación",
+        "select_conversation_desc": "Elige un contacto para ver el historial.",
+        "calling": "Llamando",
+        "video_soon": "¡Videollamada vendrá en la Fase 3!",
+        "voice_soon": "¡Grabación de voz vendrá en la Fase 3!",
+        "view_contact": "Ver Contacto",
+        "block_number": "Bloquear Número",
+        "delete_conversion": "Eliminar Conversación",
+        "attach": "Adjuntar Archivo"
+    },
+    "team": {
+        "title": "Gestión de Equipos",
+        "subtitle": "Añadir instructores, personal y gerentes.",
+        "invite": "Invitar Miembro"
+    }
+}
