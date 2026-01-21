@@ -19,11 +19,10 @@ export default function AirbnbDispatch() {
     const fetchData = async () => {
         setLoading(true)
         try {
-            // 1. Fetch Employees (Cleaners)
-            const { data: teamData, error: teamError } = await supabase
-                .from('profiles')
+            // 1. Fetch Employees (Cleaners/Staff) from team_members
+            const { data: teamData, error: teamError } = await (supabase
+                .from('team_members') as any)
                 .select('*')
-                .eq('role', 'cleaner')
                 .eq('status', 'active')
 
             if (teamError) throw teamError
