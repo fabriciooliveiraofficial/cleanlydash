@@ -38,6 +38,10 @@ export const PlatformCallback: React.FC = () => {
                 }
 
                 setStatus('success');
+                // Auto redirect after 3 seconds for better UX
+                setTimeout(() => {
+                    window.location.href = '/dashboard';
+                }, 3000);
             } catch (err: any) {
                 console.error("Callback Error:", err);
                 setStatus('error');

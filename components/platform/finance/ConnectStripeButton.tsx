@@ -71,6 +71,13 @@ export const ConnectStripeButton: React.FC<ConnectStripeButtonProps> = ({ connec
         }
     };
 
+    // Safety check: Reset loading if user comes back without completing redirect (aborted flow)
+    React.useEffect(() => {
+        const handleFocus = () => setLoading(false);
+        window.addEventListener('focus', handleFocus);
+        return () => window.removeEventListener('focus', handleFocus);
+    }, []);
+
     if (connectedAccountId) {
         return (
             <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-4 py-2 rounded-lg border border-emerald-100">
