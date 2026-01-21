@@ -1,11 +1,12 @@
 ﻿import React, { useEffect, useState } from 'react';
-import { Plus, ChevronLeft, ChevronRight, Calculator, Calendar as CalendarIcon, Link, RefreshCw, Loader2, MapPin, ArrowLeft, Save, CheckCircle, Camera, Pencil, LayoutGrid, CalendarDays, CalendarRange } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, Calculator, Calendar as CalendarIcon, Link, RefreshCw, Loader2, MapPin, ArrowLeft, Save, CheckCircle, Camera, Pencil, LayoutGrid, CalendarDays, CalendarRange, Users } from 'lucide-react';
 import { createClient } from '../lib/supabase/client.ts';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { BookingModal } from './BookingModal.tsx';
 import { WeekView } from './calendar/WeekView.tsx';
 import { DayView } from './calendar/DayView.tsx';
+import { DispatchTimeline } from './calendar/dispatch-timeline.tsx';
 import { Button } from './ui/button.tsx';
 import {
   Dialog,
@@ -35,7 +36,7 @@ import {
   subDays
 } from 'date-fns';
 
-type ViewMode = 'month' | 'week' | 'day';
+type ViewMode = 'month' | 'week' | 'day' | 'dispatch';
 
 import { Booking } from '../types.ts';
 
@@ -55,6 +56,7 @@ export const Bookings: React.FC = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
 
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -118,7 +120,30 @@ export const Bookings: React.FC = () => {
       console.error("Bookings Fetch Error:", bookingsError);
       toast.error(`Error loading bookings: ${bookingsError.message}`);
     } else if (bookingsData) {
-      setBookings(bookingsData as any);
+      // Map bookings to ensure resource_ids is available for DispatchTimeline
+      const mappedBookings = (bookingsData || []).map((b: any) => ({
+        ...b,
+        resource_ids: b.assigned_to ? [b.assigned_to] : []
+      }));
+      setBookings(mappedBookings as any);
+    }
+
+    // Fetch Employees (for Dispatch view)
+    const { data: teamData, error: teamError } = await supabase
+      .from('team_members')
+      .select('*')
+      .eq('status', 'active');
+
+    if (teamError) {
+      console.error("Team Fetch Error:", teamError);
+    } else {
+      const mappedEmployees = (teamData || []).map((m: any) => ({
+        id: m.user_id || m.id,
+        full_name: m.name,
+        role: m.role,
+        calendar_color: m.color || '#6366f1'
+      }));
+      setEmployees(mappedEmployees);
     }
 
     setLoading(false);
@@ -261,8 +286,8 @@ export const Bookings: React.FC = () => {
     ) as Booking[]);
 
     // Make API call in background
-    const { error } = await supabase
-      .from('bookings')
+    const { error } = await (supabase
+      .from('bookings') as any)
       .update({
         start_date: newStart.toISOString(),
         end_date: newEnd.toISOString()
@@ -280,6 +305,33 @@ export const Bookings: React.FC = () => {
       console.error(error);
     } else {
       toast.success('Agendamento movido!');
+      fetchData(); // Refresh to ensure resource_ids sync
+    }
+  };
+
+  // Specific handler for DispatchTimeline (matches its signature)
+  const handleDispatchUpdate = async (bookingId: string, updates: any) => {
+    try {
+      const assigned_to = updates.resource_ids && updates.resource_ids.length > 0
+        ? updates.resource_ids[0]
+        : null;
+
+      const payload: any = {};
+      if (assigned_to !== undefined) payload.assigned_to = assigned_to;
+      if (updates.start_time) payload.start_date = updates.start_time;
+      if (updates.end_time) payload.end_date = updates.end_time;
+
+      const { error } = await (supabase
+        .from('bookings') as any)
+        .update(payload)
+        .eq('id', bookingId);
+
+      if (error) throw error;
+      toast.success('Escala atualizada!');
+      fetchData();
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao atualizar escala');
     }
   };
 
@@ -308,8 +360,8 @@ export const Bookings: React.FC = () => {
     ) as Booking[]);
 
     // Make API call in background
-    const { error } = await supabase
-      .from('bookings')
+    const { error } = await (supabase
+      .from('bookings') as any)
       .update({
         end_date: newEnd.toISOString()
       } as any)
@@ -473,8 +525,8 @@ export const Bookings: React.FC = () => {
     toast.success(`Rescheduled to ${format(newStart, 'MMM d')}`);
 
     // Persist to DB
-    const { error } = await supabase
-      .from('bookings')
+    const { error } = await (supabase
+      .from('bookings') as any)
       .update({
         start_date: newStart.toISOString(),
         end_date: newEnd.toISOString()
@@ -873,7 +925,17 @@ export const Bookings: React.FC = () => {
                 }`}
             >
               <LayoutGrid size={16} />
-              <span className="hidden sm:inline">Máªs</span>
+              <span className="hidden sm:inline">Mês</span>
+            </button>
+            <button
+              onClick={() => setViewMode('dispatch')}
+              className={`px-3 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${viewMode === 'dispatch'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-600 hover:bg-white/80'
+                }`}
+            >
+              <Users size={16} />
+              <span className="hidden sm:inline">Escala</span>
             </button>
           </div>
 
@@ -1060,6 +1122,16 @@ export const Bookings: React.FC = () => {
               })}
             </div>
           </div>
+        )}
+
+        {/* Dispatch View */}
+        {viewMode === 'dispatch' && (
+          <DispatchTimeline
+            date={currentDate}
+            employees={employees}
+            bookings={bookings as any}
+            onBookingUpdate={handleDispatchUpdate}
+          />
         )}
       </div>
       {renderJobDetails()}

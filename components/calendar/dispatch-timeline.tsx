@@ -120,6 +120,63 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
     setDragOverMember(null)
   }
 
+  const [resizingBooking, setResizingBooking] = React.useState<{ id: string, initialX: number, initialWidth: number } | null>(null)
+
+  const handleResizeStart = (e: React.MouseEvent, bookingId: string, currentWidth: number) => {
+    e.stopPropagation()
+    e.preventDefault()
+    setResizingBooking({
+      id: bookingId,
+      initialX: e.clientX,
+      initialWidth: currentWidth
+    })
+  }
+
+  React.useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizingBooking) return
+
+      const deltaX = e.clientX - resizingBooking.initialX
+      const newWidth = Math.max(HOUR_WIDTH * 0.5, resizingBooking.initialWidth + deltaX) // Min 30 min duration
+
+      // Select the booking element to update width visually for smoother feel
+      const element = document.getElementById(`booking-${resizingBooking.id}`)
+      if (element) {
+        element.style.width = `${newWidth}px`
+      }
+    }
+
+    const handleMouseUp = (e: MouseEvent) => {
+      if (!resizingBooking) return
+
+      const deltaX = e.clientX - resizingBooking.initialX
+      const finalWidth = Math.max(HOUR_WIDTH * 0.5, resizingBooking.initialWidth + deltaX)
+
+      const booking = bookings.find(b => b.id === resizingBooking.id)
+      if (booking && onBookingUpdate) {
+        const start = new Date(booking.start_time)
+        const durationHours = finalWidth / HOUR_WIDTH
+        const newEnd = new Date(start.getTime() + durationHours * 60 * 60 * 1000)
+
+        onBookingUpdate(booking.id, {
+          end_time: newEnd.toISOString()
+        })
+      }
+
+      setResizingBooking(null)
+    }
+
+    if (resizingBooking) {
+      window.addEventListener('mousemove', handleMouseMove)
+      window.addEventListener('mouseup', handleMouseUp)
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [resizingBooking, bookings, onBookingUpdate])
+
   return (
     <div className="relative flex flex-col h-full bg-white border rounded-2xl shadow-xl overflow-hidden">
       {/* Timeline Header */}
@@ -183,13 +240,14 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
                     const width = getWidth(booking.start_time, booking.end_time)
 
                     return (
-                      <button
+                      <div
                         key={booking.id}
-                        draggable
+                        id={`booking-${booking.id}`}
+                        draggable={!resizingBooking}
                         onDragStart={(e) => handleDragStart(e, booking)}
                         onDragEnd={handleDragEnd}
                         onClick={() => setSelectedBooking(booking)}
-                        className="absolute top-4 h-16 rounded-xl border-l-4 p-2.5 text-left shadow-lg transition-all hover:scale-[1.02] hover:z-50 active:scale-95 z-10"
+                        className="absolute top-4 h-16 rounded-xl border-l-4 p-2.5 text-left shadow-lg transition-all hover:scale-[1.02] hover:z-40 active:scale-95 z-10 cursor-grab active:cursor-grabbing group/booking"
                         style={{
                           left: `${left}px`,
                           width: `${width}px`,
@@ -198,7 +256,7 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
                           color: member.calendar_color || '#4f46e5'
                         }}
                       >
-                        <div className="flex flex-col h-full justify-between overflow-hidden">
+                        <div className="flex flex-col h-full justify-between overflow-hidden relative">
                           <div className="flex items-center justify-between gap-1">
                             <span className="text-[10px] font-black uppercase truncate">
                               {booking.property_name}
@@ -212,8 +270,16 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
                             </span>
                             <span className="bg-white/50 px-1 rounded">R${booking.price}</span>
                           </div>
+
+                          {/* Resize Handle */}
+                          <div
+                            onMouseDown={(e) => handleResizeStart(e, booking.id, width)}
+                            className="absolute -right-2.5 top-0 bottom-0 w-5 cursor-ew-resize flex items-center justify-center group-hover/booking:opacity-100 opacity-0 transition-opacity"
+                          >
+                            <div className="w-1 h-8 bg-current opacity-30 rounded-full" />
+                          </div>
                         </div>
-                      </button>
+                      </div>
                     )
                   })}
                 </div>

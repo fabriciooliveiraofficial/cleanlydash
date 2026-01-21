@@ -26,43 +26,50 @@ export default function AirbnbDispatch() {
                 .eq('status', 'active')
 
             if (teamError) throw teamError
-            setEmployees(teamData || [])
 
-            // 2. Fetch Bookings (Filtered for Airbnb/iCal - simplifying with a metadata check or custom flag if available)
-            // For now, let's assume Airbnb bookings have 'external_id' or 'source' metadata
+            // Map team members to the interface expected by the timeline
+            // We use user_id as the ID for mapping assignments
+            const mappedEmployees = (teamData || []).map((m: any) => ({
+                id: m.user_id || m.id,
+                full_name: m.name,
+                role: m.role,
+                calendar_color: m.color || '#6366f1'
+            }))
+            setEmployees(mappedEmployees)
+
+            // 2. Fetch Bookings (Filtered for Airbnb/iCal)
             const startOfDay = new Date(date)
             startOfDay.setHours(0, 0, 0, 0)
             const endOfDay = new Date(date)
             endOfDay.setHours(23, 59, 59, 999)
 
-            const { data: bookingData, error: bookingError } = await supabase
-                .from('bookings')
+            const { data: bookingData, error: bookingError } = await (supabase
+                .from('bookings') as any)
                 .select(`
-          id,
-          summary,
-          start_date,
-          end_date,
-          status,
-          price,
-          resource_ids,
-          customers ( name ),
-          property_name
-        `)
+                    id,
+                    summary,
+                    start_date,
+                    end_date,
+                    status,
+                    price,
+                    assigned_to,
+                    customers ( name ),
+                    property_name
+                `)
                 .gte('start_date', startOfDay.toISOString())
                 .lte('start_date', endOfDay.toISOString())
-            // In a real scenario, we'd add .eq('source', 'ical') or similar
 
             if (bookingError) throw bookingError
 
             // Transform data for the DispatchTimeline
             const transformedBookings = (bookingData || []).map((b: any) => ({
                 id: b.id,
-                property_name: b.property_name || b.customers?.name || 'Sem Nome',
+                property_name: b.property_name || b.summary || b.customers?.name || 'Sem Nome',
                 start_time: b.start_date,
                 end_time: b.end_date,
                 status: b.status,
-                price: b.price || 0,
-                resource_ids: b.resource_ids || [],
+                price: parseFloat(b.price || 0),
+                resource_ids: b.assigned_to ? [b.assigned_to] : [], // Convert single UUID to array for timeline
                 customers: b.customers
             }))
 
@@ -81,11 +88,16 @@ export default function AirbnbDispatch() {
 
     const handleBookingUpdate = async (bookingId: string, updates: any) => {
         try {
+            // Map resource_ids back to assigned_to (taking the first one)
+            const assigned_to = updates.resource_ids && updates.resource_ids.length > 0
+                ? updates.resource_ids[0]
+                : null;
+
             const { error } = await (supabase
                 .from('bookings') as any)
                 .update({
-                    resource_ids: updates.resource_ids,
-                    start_date: updates.start_date
+                    assigned_to: assigned_to,
+                    start_date: updates.start_time
                 })
                 .eq('id', bookingId)
 

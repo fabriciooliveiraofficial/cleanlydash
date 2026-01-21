@@ -28,24 +28,24 @@ export const PlatformCallback: React.FC = () => {
             }
 
             try {
-                // Ensure we have a valid session before calling the function
-                const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+                // We use the 'state' param as the user_id (as set in ConnectStripeButton.tsx)
+                // This allows us to complete the linking even if the session cookie was lost during redirect.
+                // The Edge Function verifies this user_id exists in the DB.
+                const userIdFromState = state;
 
-                if (sessionError || !session) {
-                    console.warn("No active session found in callback. Configuring anonymous exchange if allowed or prompting login.");
-                    // If your architecture requires Auth, redirect to login
-                    // If you want to allow anonymous exchange (unlikely for account linking), handle here.
-
-                    // Attempt to refresh session if possible
-                    const { data: refreshData } = await supabase.auth.refreshSession();
-                    if (!refreshData.session) {
-                        throw new Error("Sessão expirada. Faça login novamente para concluir a conexão.");
-                    }
+                if (!userIdFromState) {
+                    throw new Error("Estado inválido (user_id ausente). Tente novamente.");
                 }
 
                 // Call the Edge Function to exchange the token
+                // IMPORTANT: We must pass 'user_id' in the body because the Edge Function reads it from there
+                // and ignores the Authorization header (allowing it to work with Anon key + user_id body).
                 const { data, error: functionError } = await supabase.functions.invoke('stripe-connect-oauth', {
-                    body: { action: 'exchange_token', code }
+                    body: {
+                        action: 'exchange_token',
+                        code,
+                        user_id: userIdFromState
+                    }
                 });
 
                 if (functionError || data?.error) {
