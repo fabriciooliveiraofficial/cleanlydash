@@ -12,7 +12,8 @@ export enum TabType {
   PAYROLL = 'payroll',
   FINANCE = 'finance',
   SUPPORT = 'support',
-  SETTINGS = 'settings'
+  SETTINGS = 'settings',
+  AIRBNB_CENTER = 'airbnb_center'
 }
 
 export interface Customer {

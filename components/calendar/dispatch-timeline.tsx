@@ -2,20 +2,20 @@
 'use client'
 
 import React from 'react'
-import { 
-  Sheet, 
-  SheetContent, 
-  SheetHeader, 
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
   SheetTitle,
-  SheetDescription 
+  SheetDescription
 } from "@/components/ui/sheet"
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { 
-  User, 
-  Clock, 
-  MapPin, 
-  ChevronRight, 
+import {
+  User,
+  Clock,
+  MapPin,
+  ChevronRight,
   ExternalLink,
   DollarSign,
   ClipboardList
@@ -44,6 +44,7 @@ interface DispatchTimelineProps {
   date: Date
   employees: Employee[]
   bookings: Booking[]
+  onBookingUpdate?: (bookingId: string, updates: Partial<Booking>) => void
 }
 
 const START_HOUR = 8
@@ -51,16 +52,16 @@ const END_HOUR = 18
 const HOUR_WIDTH = 120 // pixels per hour
 const SLOT_DURATION = 30 // minutes
 
-export function DispatchTimeline({ date, employees, bookings }: DispatchTimelineProps) {
+export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }: DispatchTimelineProps) {
   const [selectedBooking, setSelectedBooking] = React.useState<Booking | null>(null)
-  
+
   const hours = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i)
-  
+
   const getXPosition = (timeStr: string) => {
     const time = new Date(timeStr)
     const hour = time.getHours()
     const minutes = time.getMinutes()
-    
+
     const relativeHour = hour - START_HOUR
     return (relativeHour * HOUR_WIDTH) + (minutes / 60 * HOUR_WIDTH)
   }
@@ -68,9 +69,55 @@ export function DispatchTimeline({ date, employees, bookings }: DispatchTimeline
   const getWidth = (startStr: string, endStr?: string | null) => {
     const start = new Date(startStr)
     const end = endStr ? new Date(endStr) : new Date(start.getTime() + 2 * 60 * 60 * 1000) // Default 2h if null
-    
+
     const durationHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60)
     return durationHours * HOUR_WIDTH
+  }
+
+  const [draggedBooking, setDraggedBooking] = React.useState<Booking | null>(null)
+  const [dragOverMember, setDragOverMember] = React.useState<string | null>(null)
+
+  const handleDragStart = (e: React.DragEvent, booking: Booking) => {
+    setDraggedBooking(booking)
+    e.dataTransfer.setData('bookingId', booking.id)
+    e.dataTransfer.effectAllowed = 'move'
+
+    // Add custom drag image or styling if needed
+    const ghost = e.currentTarget as HTMLElement
+    ghost.style.opacity = '0.4'
+  }
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    const target = e.currentTarget as HTMLElement
+    target.style.opacity = '1'
+    setDraggedBooking(null)
+    setDragOverMember(null)
+  }
+
+  const handleDragOver = (e: React.DragEvent, memberId: string) => {
+    e.preventDefault()
+    setDragOverMember(memberId)
+  }
+
+  const handleDrop = (e: React.DragEvent, memberId: string) => {
+    e.preventDefault()
+    if (!draggedBooking || !onBookingUpdate) return
+
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX - rect.left
+
+    // Calculate new time based on X position
+    const totalMinutesSinceStart = (x / HOUR_WIDTH) * 60
+    const newDate = new Date(date)
+    newDate.setHours(START_HOUR, totalMinutesSinceStart, 0, 0)
+
+    onBookingUpdate(draggedBooking.id, {
+      resource_ids: [memberId],
+      start_time: newDate.toISOString()
+    })
+
+    setDraggedBooking(null)
+    setDragOverMember(null)
   }
 
   return (
@@ -100,12 +147,12 @@ export function DispatchTimeline({ date, employees, bookings }: DispatchTimeline
         ) : (
           employees.map(member => {
             const memberBookings = bookings.filter(b => b.resource_ids?.includes(member.id))
-            
+
             return (
               <div key={member.id} className="flex border-b last:border-0 group hover:bg-slate-50/30 transition-colors">
                 {/* Fixed Resource Column */}
                 <div className="w-56 p-4 border-r shrink-0 flex items-center gap-3 bg-white sticky left-0 z-20 group-hover:bg-slate-50/50 transition-colors">
-                  <div 
+                  <div
                     className="h-9 w-9 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-md border-2 border-white"
                     style={{ backgroundColor: member.calendar_color || '#4f46e5' }}
                   >
@@ -122,18 +169,28 @@ export function DispatchTimeline({ date, employees, bookings }: DispatchTimeline
                 </div>
 
                 {/* Timeline Row Area */}
-                <div className="flex-1 relative h-24 min-w-[1200px] bg-[linear-gradient(to_right,#f1f5f9_1px,transparent_1px)] bg-[size:60px_100%]">
+                <div
+                  className={cn(
+                    "flex-1 relative h-24 min-w-[1200px] bg-[linear-gradient(to_right,#f1f5f9_1px,transparent_1px)] bg-[size:60px_100%] transition-colors",
+                    dragOverMember === member.id && "bg-indigo-50/50 ring-2 ring-indigo-400 ring-inset"
+                  )}
+                  onDragOver={(e) => handleDragOver(e, member.id)}
+                  onDrop={(e) => handleDrop(e, member.id)}
+                >
                   {/* Event Blocks */}
                   {memberBookings.map(booking => {
                     const left = getXPosition(booking.start_time)
                     const width = getWidth(booking.start_time, booking.end_time)
-                    
+
                     return (
                       <button
                         key={booking.id}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, booking)}
+                        onDragEnd={handleDragEnd}
                         onClick={() => setSelectedBooking(booking)}
                         className="absolute top-4 h-16 rounded-xl border-l-4 p-2.5 text-left shadow-lg transition-all hover:scale-[1.02] hover:z-50 active:scale-95 z-10"
-                        style={{ 
+                        style={{
                           left: `${left}px`,
                           width: `${width}px`,
                           backgroundColor: `${member.calendar_color}15`,
@@ -146,9 +203,7 @@ export function DispatchTimeline({ date, employees, bookings }: DispatchTimeline
                             <span className="text-[10px] font-black uppercase truncate">
                               {booking.property_name}
                             </span>
-                            <Badge className="h-4 px-1 text-[8px] uppercase font-bold" variant="outline">
-                              {booking.status}
-                            </Badge>
+                            <Badge className="h-4 px-1 text-[8px] uppercase font-bold" variant="outline" />
                           </div>
                           <div className="flex items-center justify-between text-[9px] font-bold opacity-80">
                             <span className="flex items-center gap-1">
@@ -180,7 +235,7 @@ export function DispatchTimeline({ date, employees, bookings }: DispatchTimeline
             </div>
             <SheetDescription>Gerencie o status e a equipe deste turnover.</SheetDescription>
           </SheetHeader>
-          
+
           {selectedBooking && (
             <div className="space-y-8 animate-in fade-in slide-in-from-right duration-300">
               <div className="space-y-4">

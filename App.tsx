@@ -17,6 +17,7 @@ import { AuthFlow } from './components/AuthFlow.tsx';
 import { DialerWidget } from './components/telephony/dialer-widget.tsx';
 import { UnifiedInbox } from './components/telephony/UnifiedInbox.tsx';
 import { Resources } from './components/Resources.tsx';
+import AirbnbDispatch from './components/AirbnbDispatch.tsx';
 import { TelnyxProvider } from './contexts/telnyx-context.tsx';
 import { TabType } from './types.ts';
 import { createClient } from './lib/supabase/client.ts';
@@ -165,6 +166,7 @@ const App: React.FC = () => {
       case TabType.TELEPHONY: return <UnifiedInbox />;
       case TabType.SUPPORT: return <TenantSupport />;
       case TabType.RESOURCES: return <Resources />;
+      case TabType.AIRBNB_CENTER: return <AirbnbDispatch />;
       default: return <Overview />;
     }
   };

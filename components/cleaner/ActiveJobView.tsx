@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ArrowLeft, MapPin, Camera, CheckSquare, Clock, AlertTriangle } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { Button } from '../ui/button';
@@ -24,6 +24,83 @@ export const ActiveJobView: React.FC<ActiveJobViewProps> = ({ job, onBack }) => 
     const { t } = useTranslation();
     const supabase = createClient();
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [inventory, setInventory] = useState<any[]>([]);
+    const [fetchingInventory, setFetchingInventory] = useState(false);
+
+    useEffect(() => {
+        const fetchInventory = async () => {
+            if (!job?.id) return;
+            setFetchingInventory(true);
+            try {
+                // 1. Try fetching booking-specific inventory
+                const { data: bInv } = await supabase
+                    .from('booking_inventory')
+                    .select('quantity, inventory_items(name, unit)')
+                    .eq('booking_id', job.id);
+
+                if (bInv && bInv.length > 0) {
+                    setInventory(bInv.map((bi: any) => ({
+                        name: bi.inventory_items?.name,
+                        quantity: bi.quantity,
+                        unit: bi.inventory_items?.unit
+                    })));
+                    return;
+                }
+
+                // 2. Fallback to service-level defaults
+                if (job.service_id) {
+                    const { data: sInv } = await supabase
+                        .from('service_inventory')
+                        .select('quantity, inventory_items(name, unit)')
+                        .eq('service_id', job.service_id);
+
+                    if (sInv && sInv.length > 0) {
+                        setInventory(sInv.map((si: any) => ({
+                            name: si.inventory_items?.name,
+                            quantity: si.quantity,
+                            unit: si.inventory_items?.unit
+                        })));
+                        return;
+                    }
+
+                    // 3. Last fallback: Historical task-based requirements
+                    const { data: tInv } = await supabase
+                        .from('service_def_tasks')
+                        .select(`
+                            tasks (
+                                task_inventory_requirements (
+                                    quantity_needed,
+                                    inventory_items ( name, unit )
+                                )
+                            )
+                        `)
+                        .eq('service_id', job.service_id);
+
+                    const itemsMap = new Map();
+                    tInv?.forEach((dt: any) => {
+                        dt.tasks?.task_inventory_requirements?.forEach((req: any) => {
+                            const name = req.inventory_items?.name;
+                            if (name) {
+                                const existing = itemsMap.get(name) || { quantity: 0, unit: req.inventory_items?.unit };
+                                itemsMap.set(name, {
+                                    name: name,
+                                    quantity: existing.quantity + req.quantity_needed,
+                                    unit: req.inventory_items?.unit
+                                });
+                            }
+                        });
+                    });
+                    setInventory(Array.from(itemsMap.values()));
+                }
+            } catch (err) {
+                console.error('Error fetching inventory:', err);
+            } finally {
+                setFetchingInventory(false);
+            }
+        };
+
+        fetchInventory();
+    }, [job?.id, job?.service_id]);
 
     const notifyClient = (type: string, payload?: any) => {
         // Simulação de Gatilho de Notificação (Webhooks)
@@ -202,17 +279,21 @@ export const ActiveJobView: React.FC<ActiveJobViewProps> = ({ job, onBack }) => 
 
                 {step === 'inspect' && (
                     <div className="flex-1 flex flex-col space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                        <div className="bg-orange-50 p-6 rounded-2xl border border-orange-100">
-                            <h3 className="font-bold text-orange-800 mb-2 flex items-center gap-2"><CheckSquare size={18} /> Inventário</h3>
-                            <div className="space-y-3">
-                                {['Toalhas (4x)', 'Papel Higiênico (2x)', 'Shampoo'].map((item, i) => (
-                                    <label key={i} className="flex items-center gap-3 p-3 bg-white rounded-xl border border-orange-100 cursor-pointer">
-                                        <input type="checkbox" className="h-5 w-5 text-orange-600 rounded" />
-                                        <span className="font-medium text-slate-700">{item}</span>
-                                    </label>
-                                ))}
+                        {inventory.length > 0 && (
+                            <div className="bg-orange-50 p-6 rounded-2xl border border-orange-100">
+                                <h3 className="font-bold text-orange-800 mb-2 flex items-center gap-2"><CheckSquare size={18} /> Inventário</h3>
+                                <div className="space-y-3">
+                                    {inventory.map((item, i) => (
+                                        <label key={i} className="flex items-center gap-3 p-3 bg-white rounded-xl border border-orange-100 cursor-pointer">
+                                            <input type="checkbox" className="h-5 w-5 text-orange-600 rounded" />
+                                            <span className="font-medium text-slate-700">
+                                                {item.name} ({item.quantity}x)
+                                            </span>
+                                        </label>
+                                    ))}
+                                </div>
                             </div>
-                        </div>
+                        )}
                         <input
                             type="file"
                             accept="image/*"

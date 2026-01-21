@@ -1,12 +1,12 @@
-
 'use client'
 
 import React from 'react'
-import { 
-  LayoutDashboard, 
-  Users, 
-  Wallet, 
-  Settings, 
+import Link from 'next/link'
+import {
+  LayoutDashboard,
+  Users,
+  Wallet,
+  Settings,
   LogOut,
   Plane,
   Calendar,
@@ -14,7 +14,8 @@ import {
   ClipboardCheck,
   Loader2,
   Receipt,
-  FileText
+  FileText,
+  LayoutGrid
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { signOut } from '../../app/(auth)/actions'
@@ -25,54 +26,61 @@ export function Sidebar() {
   const { role, isOwner, isManager, isCleaner, isLoading } = usePermissions()
 
   const menuItems = [
-    { 
-      id: 'overview', 
-      icon: LayoutDashboard, 
-      label: 'Dashboard', 
+    {
+      id: 'overview',
+      icon: LayoutDashboard,
+      label: 'Dashboard',
       href: '/dashboard',
-      visible: true 
+      visible: true
     },
-    { 
-      id: 'calendar', 
-      icon: Calendar, 
-      label: 'Agenda Operacional', 
+    {
+      id: 'calendar',
+      icon: Calendar,
+      label: 'Agenda Operacional',
       href: '/dashboard/calendar',
-      visible: true 
+      visible: true
     },
-    { 
-      id: 'my-jobs', 
-      icon: ClipboardCheck, 
-      label: 'Meus Jobs', 
+    {
+      id: 'airbnb',
+      icon: LayoutGrid,
+      label: 'Airbnb Center',
+      href: '/airbnb-center',
+      visible: true
+    },
+    {
+      id: 'my-jobs',
+      icon: ClipboardCheck,
+      label: 'Meus Jobs',
       href: '/dashboard/jobs',
-      visible: isCleaner 
+      visible: isCleaner
     },
-    { 
-      id: 'customers', 
-      icon: Users, 
-      label: 'Clientes CRM', 
+    {
+      id: 'customers',
+      icon: Users,
+      label: 'Clientes CRM',
       href: '/dashboard/customers',
-      visible: isManager 
+      visible: isManager
     },
-    { 
-      id: 'invoicing', 
-      icon: FileText, 
-      label: 'Faturamento', 
+    {
+      id: 'invoicing',
+      icon: FileText,
+      label: 'Faturamento',
       href: '/dashboard/invoices',
-      visible: isManager 
+      visible: isManager
     },
-    { 
-      id: 'payroll', 
-      icon: Receipt, 
-      label: 'Folha de Pagamento', 
+    {
+      id: 'payroll',
+      icon: Receipt,
+      label: 'Folha de Pagamento',
       href: '/dashboard/payroll',
-      visible: isManager 
+      visible: isManager
     },
-    { 
-      id: 'wallet', 
-      icon: Wallet, 
-      label: 'Financeiro', 
+    {
+      id: 'wallet',
+      icon: Wallet,
+      label: 'Financeiro',
       href: '/dashboard/wallet',
-      visible: isOwner 
+      visible: isOwner
     },
   ]
 
@@ -105,8 +113,9 @@ export function Sidebar() {
               {menuItems
                 .filter(item => item.visible)
                 .map((item) => (
-                  <button
+                  <Link
                     key={item.id}
+                    href={item.href}
                     className={cn(
                       "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all group",
                       "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -119,7 +128,7 @@ export function Sidebar() {
                       )} />
                       {item.label}
                     </div>
-                  </button>
+                  </Link>
                 ))}
             </nav>
           </div>
@@ -131,7 +140,7 @@ export function Sidebar() {
               Configurações
             </p>
             <nav className="space-y-1">
-              <button 
+              <button
                 className={cn(
                   "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                 )}
@@ -145,7 +154,7 @@ export function Sidebar() {
       </div>
 
       <div className="mt-auto border-t border-slate-100 p-4 space-y-1 bg-slate-50/30">
-        <button 
+        <button
           onClick={() => signOut()}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50 transition-colors"
         >

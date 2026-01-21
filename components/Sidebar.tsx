@@ -15,7 +15,8 @@ import {
   Map,
   Package,
   DollarSign,
-  LifeBuoy
+  LifeBuoy,
+  LayoutGrid
 } from 'lucide-react';
 import { createClient } from '../lib/supabase/client.ts';
 
@@ -41,6 +42,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen, onClo
   const allItems = [
     { id: TabType.OVERVIEW, icon: LayoutDashboard, label: t('sidebar.dashboard'), permission: PERMISSIONS.TASKS_VIEW }, // Basic access
     { id: TabType.BOOKINGS, icon: CalendarDays, label: t('sidebar.bookings'), permission: PERMISSIONS.TASKS_VIEW },
+    { id: TabType.AIRBNB_CENTER, icon: LayoutGrid, label: 'Airbnb Center', permission: PERMISSIONS.TASKS_VIEW },
     { id: TabType.CUSTOMERS, icon: Users, label: t('sidebar.customers'), permission: PERMISSIONS.CUSTOMERS_VIEW },
     { id: TabType.TEAM, icon: Users, label: t('sidebar.team', { defaultValue: 'Equipe' }), permission: PERMISSIONS.TEAM_VIEW },
     { id: TabType.PAYROLL, icon: WalletIcon, label: t('sidebar.payroll', { defaultValue: 'Folha Pagamento' }), permission: PERMISSIONS.PAYROLL_VIEW },

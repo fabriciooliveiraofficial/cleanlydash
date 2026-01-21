@@ -71,6 +71,14 @@ interface RecurrenceInstance {
     isEditing?: boolean;
 }
 
+interface BookingInventoryItem {
+    id?: string;
+    item_id: string;
+    quantity: number;
+    name?: string;
+    unit?: string;
+}
+
 type RecurrenceType = 'none' | 'daily' | 'weekly' | 'biweekly' | 'monthly';
 type NotificationType = 'none' | 'email' | 'sms' | 'both';
 
@@ -166,6 +174,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     // Notes tab
     const [activeNotesTab, setActiveNotesTab] = useState<'internal' | 'client' | 'staff'>('internal');
 
+    // Inventory State
+    const [bookingInventory, setBookingInventory] = useState<BookingInventoryItem[]>([]);
+    const [availableInventory, setAvailableInventory] = useState<any[]>([]);
+    const [isLoadingInventory, setIsLoadingInventory] = useState(false);
+    const [activeTab, setActiveTab] = useState<'details' | 'notes' | 'inventory'>('details');
+
     const { tenant_id: sessionTenantId } = useRole();
     const [saving, setSaving] = useState(false);
     const [isInitialized, setIsInitialized] = useState(false);
@@ -231,12 +245,64 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         }
     };
 
+    const fetchServiceInventory = async (serviceId: string) => {
+        setIsLoadingInventory(true);
+        const { data, error } = await supabase
+            .from('service_inventory')
+            .select(`
+                item_id,
+                quantity,
+                inventory_items ( name, unit )
+            `)
+            .eq('service_id', serviceId);
+
+        if (!error && data) {
+            setBookingInventory(data.map((d: any) => ({
+                item_id: d.item_id,
+                quantity: d.quantity,
+                name: d.inventory_items?.name,
+                unit: d.inventory_items?.unit
+            })));
+        }
+        setIsLoadingInventory(false);
+    };
+
+    const fetchBookingInventory = async (bookingId: string) => {
+        setIsLoadingInventory(true);
+        const { data, error } = await supabase
+            .from('booking_inventory')
+            .select(`
+                id,
+                item_id,
+                quantity,
+                inventory_items ( name, unit )
+            `)
+            .eq('booking_id', bookingId);
+
+        if (!error && data) {
+            setBookingInventory(data.map((d: any) => ({
+                id: d.id,
+                item_id: d.item_id,
+                quantity: d.quantity,
+                name: d.inventory_items?.name,
+                unit: d.inventory_items?.unit
+            })));
+        }
+        setIsLoadingInventory(false);
+    };
+
     // Update fetch when service changes
     useEffect(() => {
         if (formData.service_id) {
             fetchServiceTasks(formData.service_id);
+            // Only fetch defaults if creating NEW booking. 
+            // If editing, skip this as the form load will fetch actual stored inventory.
+            if (!booking?.id) {
+                fetchServiceInventory(formData.service_id);
+            }
         } else {
             setServiceTasks([]);
+            if (!booking?.id) setBookingInventory([]);
         }
     }, [formData.service_id]);
 
@@ -256,10 +322,20 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         if (isOpen) {
             fetchCustomers();
             fetchCategories();
-            fetchServices();
             fetchStaff();
 
+            const fetchAvailableInventory = async () => {
+                const { data } = await supabase.from('inventory_items').select('id, name, unit').order('name');
+                if (data) setAvailableInventory(data);
+            };
+            fetchAvailableInventory();
+
             if (booking) {
+                // Fetch inventory for existing booking
+                (async () => {
+                    await fetchBookingInventory(booking.id);
+                })();
+
                 // Fetch assigned addons for this specific booking
                 const fetchAssignedAddons = async () => {
                     const { data } = await supabase
@@ -702,6 +778,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
     const handleSave = async () => {
         setSaving(true);
+        let createdBookingId: string | null = null;
 
         const startDateTime = new Date(`${formData.start_date}T${formData.start_time}:00`);
         const endDateTime = new Date(startDateTime.getTime() + formData.duration_minutes * 60 * 1000);
@@ -894,6 +971,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     .single();
 
                 if (error) throw error;
+                if (parentBooking) createdBookingId = (parentBooking as any).id;
 
                 // Insert Addons for Parent
                 if (selectedAddons.length > 0) {
@@ -954,13 +1032,27 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 }
 
                 // Trigger Notification (Background)
-                if (formData.notify_client !== 'none' || formData.notify_staff !== 'none') {
+                if ((formData.notify_client !== 'none' || formData.notify_staff !== 'none') && createdBookingId) {
                     supabase.functions.invoke('send_booking_notification', {
-                        body: { booking_id: (parentBooking as any).id }
+                        body: { booking_id: createdBookingId }
                     }).catch(err => console.error("Notification Trigger Error:", err));
                 }
 
                 toast.success(`${recurrenceInstances.length > 1 ? recurrenceInstances.length + ' agendamentos criados!' : 'Agendamento criado!'}`);
+            }
+
+            // Update Inventory (Replace all)
+            const finalBookingId = isEditMode ? booking.id : createdBookingId;
+            if (finalBookingId && bookingInventory.length > 0) {
+                await supabase.from('booking_inventory').delete().eq('booking_id', finalBookingId);
+                await supabase.from('booking_inventory').insert(
+                    bookingInventory.map(item => ({
+                        booking_id: finalBookingId,
+                        item_id: item.item_id,
+                        quantity: item.quantity,
+                        tenant_id: sessionTenantId
+                    }))
+                );
             }
 
             onSave();
@@ -1432,37 +1524,111 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                             </div>
                         </div>
 
-                        {/* Notes Section */}
+                        {/* Notes & Inventory Section */}
                         <div className="flex-1 border border-slate-100 rounded-3xl flex flex-col overflow-hidden bg-slate-50/30">
                             <div className="flex gap-1 p-1.5 bg-slate-100 rounded-t-3xl shrink-0">
-                                {(['internal', 'client', 'staff'] as const).map(tab => (
-                                    <button
-                                        key={tab}
-                                        onClick={() => setActiveNotesTab(tab)}
-                                        className={`flex-1 py-1.5 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeNotesTab === tab
-                                            ? 'bg-white text-slate-800 shadow-sm'
-                                            : 'text-slate-400 hover:text-slate-600'
-                                            }`}
-                                    >
-                                        {tab === 'internal' ? 'Interna' : tab === 'client' ? 'Cliente' : 'Staff'}
-                                    </button>
-                                ))}
+                                <button
+                                    onClick={() => setActiveTab('details')}
+                                    className={`flex-1 py-1.5 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === 'details'
+                                        ? 'bg-white text-slate-800 shadow-sm'
+                                        : 'text-slate-400 hover:text-slate-600'
+                                        }`}
+                                >
+                                    Notas
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('inventory')}
+                                    className={`flex-1 py-1.5 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === 'inventory'
+                                        ? 'bg-white text-slate-800 shadow-sm'
+                                        : 'text-slate-400 hover:text-slate-600'
+                                        }`}
+                                >
+                                    Inventário
+                                </button>
                             </div>
-                            <div className="p-4 flex-1">
-                                <textarea
-                                    className="w-full h-full bg-transparent border-none focus:ring-0 text-sm text-slate-600 placeholder:text-slate-300 italic resize-none"
-                                    placeholder={`Escreva notas para o ${activeNotesTab === 'internal' ? 'escritório' : activeNotesTab === 'client' ? 'cliente' : 'quem irá executar'}...`}
-                                    value={
-                                        activeNotesTab === 'internal' ? formData.notes_internal :
-                                            activeNotesTab === 'client' ? formData.notes_client :
-                                                formData.notes_staff
-                                    }
-                                    onChange={e => setFormData({
-                                        ...formData,
-                                        [activeNotesTab === 'internal' ? 'notes_internal' : activeNotesTab === 'client' ? 'notes_client' : 'notes_staff']: e.target.value
-                                    })}
-                                />
-                            </div>
+
+                            {activeTab === 'details' ? (
+                                <div className="flex flex-col flex-1 overflow-hidden">
+                                    <div className="flex gap-1 p-1.5 bg-slate-50 border-b border-slate-100 shrink-0">
+                                        {(['internal', 'client', 'staff'] as const).map(tab => (
+                                            <button
+                                                key={tab}
+                                                onClick={() => setActiveNotesTab(tab)}
+                                                className={`flex-1 py-1.5 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeNotesTab === tab
+                                                    ? 'bg-slate-800 text-white shadow-sm'
+                                                    : 'text-slate-400 hover:text-slate-600'
+                                                    }`}
+                                            >
+                                                {tab === 'internal' ? 'Interna' : tab === 'client' ? 'Cliente' : 'Staff'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="p-4 flex-1 overflow-y-auto">
+                                        <textarea
+                                            className="w-full h-full bg-transparent border-none focus:ring-0 text-sm text-slate-600 placeholder:text-slate-300 italic resize-none"
+                                            placeholder={`Escreva notas para o ${activeNotesTab === 'internal' ? 'escritório' : activeNotesTab === 'client' ? 'cliente' : 'quem irá executar'}...`}
+                                            value={
+                                                activeNotesTab === 'internal' ? formData.notes_internal :
+                                                    activeNotesTab === 'client' ? formData.notes_client :
+                                                        formData.notes_staff
+                                            }
+                                            onChange={e => setFormData({
+                                                ...formData,
+                                                [activeNotesTab === 'internal' ? 'notes_internal' : activeNotesTab === 'client' ? 'notes_client' : 'notes_staff']: e.target.value
+                                            })}
+                                        />
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest">Suprimentos p/ este Job</h4>
+                                        <span className="text-[10px] text-slate-400 font-bold">{bookingInventory.length} itens</span>
+                                    </div>
+
+                                    {isLoadingInventory ? (
+                                        <div className="text-center py-8"><div className="animate-spin h-5 w-5 border-2 border-indigo-600 border-t-transparent rounded-full mx-auto"></div></div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {bookingInventory.map((item, idx) => (
+                                                <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-2xl group">
+                                                    <div>
+                                                        <p className="text-xs font-bold text-slate-700">{item.name}</p>
+                                                        <p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {item.unit}(s)</p>
+                                                    </div>
+                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button
+                                                            onClick={() => setBookingInventory(bookingInventory.filter((_, i) => i !== idx))}
+                                                            className="p-1.5 text-rose-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+
+                                            <div className="pt-2">
+                                                <select
+                                                    className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-500 outline-none focus:ring-2 focus:ring-indigo-500"
+                                                    onChange={(e) => {
+                                                        const item = availableInventory.find(i => i.id === e.target.value);
+                                                        if (item) {
+                                                            setBookingInventory([...bookingInventory, { item_id: item.id, quantity: 1, name: item.name, unit: item.unit }]);
+                                                        }
+                                                        e.target.value = '';
+                                                    }}
+                                                    value=""
+                                                >
+                                                    <option value="">+ Adicionar Item Extra</option>
+                                                    {availableInventory.filter(i => !bookingInventory.some(bi => bi.item_id === i.id)).map(i => (
+                                                        <option key={i.id} value={i.id}>{i.name}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                     </div>

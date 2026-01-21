@@ -19,6 +19,19 @@ interface Task {
     room_id: string | null;
 }
 
+interface InventoryItem {
+    id: string;
+    name: string;
+    unit: string;
+}
+
+interface ServiceInventoryItem {
+    item_id: string;
+    quantity: number;
+    name?: string;
+    unit?: string;
+}
+
 interface Category {
     id: string;
     name: string;
@@ -49,6 +62,9 @@ export const ServiceCatalog: React.FC = () => {
     const [categories, setCategories] = useState<Category[]>([]);
     const [rooms, setRooms] = useState<Room[]>([]);
     const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+    const [serviceInventory, setServiceInventory] = useState<ServiceInventoryItem[]>([]);
+    const [availableInventory, setAvailableInventory] = useState<InventoryItem[]>([]);
+    const [showInventoryDrawer, setShowInventoryDrawer] = useState(false);
 
     const [filterCategory, setFilterCategory] = useState<string>('');
 
@@ -68,7 +84,30 @@ export const ServiceCatalog: React.FC = () => {
         const { data: roomData } = await supabase.from('rooms').select('id, name').order('name');
         if (roomData) setRooms(roomData);
 
+        const { data: invData } = await supabase.from('inventory_items').select('id, name, unit').order('name');
+        if (invData) setAvailableInventory(invData);
+
         setIsLoading(false);
+    };
+
+    const fetchServiceInventory = async (serviceId: string) => {
+        const { data, error } = await supabase
+            .from('service_inventory')
+            .select(`
+                item_id,
+                quantity,
+                inventory_items ( name, unit )
+            `)
+            .eq('service_id', serviceId);
+
+        if (!error && data) {
+            setServiceInventory(data.map((d: any) => ({
+                item_id: d.item_id,
+                quantity: d.quantity,
+                name: d.inventory_items?.name,
+                unit: d.inventory_items?.unit
+            })));
+        }
     };
 
     const fetchServiceTasks = async (serviceId: string) => {
@@ -89,10 +128,12 @@ export const ServiceCatalog: React.FC = () => {
                 category_id: service.category_id || ''
             });
             await fetchServiceTasks(service.id);
+            await fetchServiceInventory(service.id);
         } else {
             setEditingService(null);
             setFormData({ name: '', description: '', price_default: 0, duration_minutes: 60, category_id: '' });
             setSelectedTaskIds([]);
+            setServiceInventory([]);
         }
         setFilterCategory('');
         setShowModal(true);
@@ -105,6 +146,7 @@ export const ServiceCatalog: React.FC = () => {
         setEditingService(null);
         setFormData({ name: '', description: '', price_default: 0, duration_minutes: 60, category_id: '' });
         setSelectedTaskIds([]);
+        setServiceInventory([]);
         setFilterCategory('');
     };
 
@@ -114,45 +156,50 @@ export const ServiceCatalog: React.FC = () => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
+        let finalServiceId = editingService?.id;
+
         if (editingService) {
             // Update service
-            const { error } = await supabase.from('services').update(formData as any).eq('id', editingService.id);
+            const { error } = await (supabase.from('services') as any).update(formData as any).eq('id', editingService.id);
             if (error) { console.error(error); toast.error(`Erro: ${error.message}`); return; }
-
-            // Update task links: delete old, insert new
-            await supabase.from('service_def_tasks').delete().eq('service_id', editingService.id);
-            if (selectedTaskIds.length > 0) {
-                await supabase.from('service_def_tasks').insert(
-                    selectedTaskIds.map((taskId, index) => ({
-                        service_id: editingService.id,
-                        task_id: taskId,
-                        order: index,
-                        is_mandatory: true
-                    })) as any
-                );
-            }
-            toast.success("Serviço atualizado!");
         } else {
-            // Create service
-            const { data: service, error } = await supabase
-                .from('services')
-                .insert({ ...formData, tenant_id: user.id } as any)
-                .select()
-                .single();
+            // Create New Service
+            const { data, error } = await supabase.from('services').insert({ ...formData, tenant_id: user.id } as any).select().single() as any;
+            if (error) { console.error(error); toast.error(`Erro: ${error.message}`); return; }
+            if (data) finalServiceId = data.id;
+        }
 
-            if (error || !service) { toast.error("Erro ao criar serviço"); return; }
-
+        if (finalServiceId) {
+            // Update task links: delete old, insert new
+            await supabase.from('service_def_tasks').delete().eq('service_id', finalServiceId);
             if (selectedTaskIds.length > 0) {
                 await supabase.from('service_def_tasks').insert(
                     selectedTaskIds.map((taskId, index) => ({
-                        service_id: (service as any).id,
+                        service_id: finalServiceId,
                         task_id: taskId,
                         order: index,
                         is_mandatory: true
                     })) as any
                 );
             }
-            toast.success("Serviço criado com sucesso!");
+
+            // --- INVENTORY SAVING LOGIC ---
+            // Delete existing associations
+            await supabase.from('service_inventory').delete().eq('service_id', finalServiceId);
+
+            // Insert new associations
+            if (serviceInventory.length > 0) {
+                await supabase.from('service_inventory').insert(
+                    serviceInventory.map(item => ({
+                        service_id: finalServiceId,
+                        item_id: item.item_id,
+                        quantity: item.quantity,
+                        tenant_id: user.id
+                    })) as any
+                );
+            }
+
+            toast.success(editingService ? "Serviço atualizado!" : "Serviço criado com sucesso!");
         }
 
         closeModal();
@@ -314,7 +361,7 @@ export const ServiceCatalog: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Checklist Summary Section */}
+                            {/* Checklist Section */}
                             <div className="pt-4 border-t border-slate-100">
                                 <div className="flex justify-between items-center mb-4">
                                     <h4 className="font-bold text-slate-700 flex items-center gap-2 text-sm uppercase tracking-wider"><GripVertical size={16} /> Checklist</h4>
@@ -357,6 +404,48 @@ export const ServiceCatalog: React.FC = () => {
                                     </div>
                                 )}
                             </div>
+
+                            {/* Inventory Section */}
+                            <div className="pt-4 border-t border-slate-100">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h4 className="font-bold text-slate-700 flex items-center gap-2 text-sm uppercase tracking-wider"><Plus size={16} className="text-orange-500" /> Inventário Padrão</h4>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowInventoryDrawer(true)}
+                                        className="text-xs font-bold text-orange-600 hover:text-orange-700 flex items-center gap-1 bg-orange-50 px-3 py-1.5 rounded-full transition-colors"
+                                    >
+                                        {serviceInventory.length > 0 ? 'Editar Inventário' : 'Definir Inventário'}
+                                    </button>
+                                </div>
+
+                                {serviceInventory.length > 0 ? (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {serviceInventory.map((item, idx) => (
+                                            <div key={idx} className="bg-orange-50/50 border border-orange-100 rounded-xl p-3 flex justify-between items-center">
+                                                <div>
+                                                    <p className="text-xs font-bold text-slate-700">{item.name}</p>
+                                                    <p className="text-[10px] text-orange-600 font-black">{item.quantity} {item.unit}(s)</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => setServiceInventory(serviceInventory.filter((_, i) => i !== idx))}
+                                                    className="p-1.5 text-orange-300 hover:text-orange-600 hover:bg-white rounded-lg transition-colors"
+                                                >
+                                                    <Trash2 size={12} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div
+                                        onClick={() => setShowInventoryDrawer(true)}
+                                        className="border-2 border-dashed border-orange-100 rounded-xl p-8 text-center cursor-pointer hover:border-orange-200 hover:bg-orange-50/30 transition-all group"
+                                    >
+                                        <Plus className="mx-auto text-orange-200 group-hover:text-orange-400 mb-2" size={24} />
+                                        <p className="text-sm font-medium text-orange-400 group-hover:text-orange-600">Nenhum item definido</p>
+                                        <p className="text-[10px] text-orange-400 uppercase font-bold mt-1">Defina o que o cleaner deve conferir por padrão</p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between rounded-b-2xl shrink-0">
@@ -376,13 +465,10 @@ export const ServiceCatalog: React.FC = () => {
                 </div>
             )}
 
-            {/* Checklist Drawer (Slide-over) */}
+            {/* Checklist Drawer */}
             {showDrawer && (
                 <div className="fixed inset-0 z-[60] flex justify-end">
-                    {/* Backdrop */}
                     <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in" onClick={() => setShowDrawer(false)}></div>
-
-                    {/* Drawer Content */}
                     <div className="relative w-full max-w-xl bg-white shadow-2xl h-full flex flex-col animate-in slide-in-from-right duration-300">
                         <div className="px-6 py-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
                             <div>
@@ -393,7 +479,7 @@ export const ServiceCatalog: React.FC = () => {
                         </div>
 
                         <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-8">
-                            {/* Step 1: Category */}
+                            {/* Category Filter */}
                             <div>
                                 <label className="block text-xs font-black text-slate-400 uppercase mb-2 tracking-widest flex items-center gap-2 italic">
                                     <span className="bg-slate-800 text-white h-4 w-4 rounded-full flex items-center justify-center not-italic text-[10px]">1</span>
@@ -411,7 +497,7 @@ export const ServiceCatalog: React.FC = () => {
                                 </select>
                             </div>
 
-                            {/* Step 2: Rooms */}
+                            {/* Room Selection */}
                             <div>
                                 <label className="block text-xs font-black text-slate-400 uppercase mb-3 tracking-widest flex items-center gap-2 italic">
                                     <span className="bg-slate-800 text-white h-4 w-4 rounded-full flex items-center justify-center not-italic text-[10px]">2</span>
@@ -449,7 +535,7 @@ export const ServiceCatalog: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Step 3: Tasks */}
+                            {/* Task List */}
                             <div className="flex flex-col flex-1 border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
                                 <div className="px-4 py-3 bg-slate-800 text-white flex justify-between items-center italic">
                                     <span className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2 not-italic">
@@ -472,9 +558,9 @@ export const ServiceCatalog: React.FC = () => {
                                                         <span className="text-[9px] font-bold text-slate-400 uppercase bg-slate-100 px-1.5 py-0.5 rounded">
                                                             {rooms.find(r => r.id === task.room_id)?.name || 'Geral'}
                                                         </span>
-                                                        {task.price > 0 && (
+                                                        {((task as any).price || 0) > 0 && (
                                                             <span className="text-[9px] font-black text-emerald-600 uppercase">
-                                                                + R$ {task.price}
+                                                                + R$ {(task as any).price}
                                                             </span>
                                                         )}
                                                     </div>
@@ -499,6 +585,87 @@ export const ServiceCatalog: React.FC = () => {
                                 className="w-full py-4 bg-slate-800 text-white font-black uppercase tracking-widest rounded-2xl hover:bg-slate-900 transition-all shadow-xl shadow-slate-200 active:scale-[0.98]"
                             >
                                 Concluído
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Inventory Drawer */}
+            {showInventoryDrawer && (
+                <div className="fixed inset-0 z-[70] flex justify-end">
+                    <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in" onClick={() => setShowInventoryDrawer(false)}></div>
+                    <div className="relative w-full max-w-md bg-white shadow-2xl h-full flex flex-col animate-in slide-in-from-right duration-300">
+                        <div className="px-6 py-5 border-b border-orange-100 bg-orange-50 flex justify-between items-center shrink-0">
+                            <div>
+                                <h3 className="font-black text-orange-800 uppercase tracking-tight text-lg">Inventário do Serviço</h3>
+                                <p className="text-xs text-orange-600 font-medium leading-none mt-1">Selecione os itens e quantidades padrão</p>
+                            </div>
+                            <button onClick={() => setShowInventoryDrawer(false)} className="p-2 bg-white border border-orange-200 rounded-xl text-orange-400 hover:text-orange-600 shadow-sm">✕</button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                            <div className="grid grid-cols-1 gap-3">
+                                {availableInventory.map(item => {
+                                    const existing = serviceInventory.find(i => i.item_id === item.id);
+                                    return (
+                                        <div key={item.id} className={`p-4 rounded-2xl border transition-all flex items-center justify-between ${existing ? 'bg-orange-50 border-orange-200' : 'bg-white border-slate-200 hover:border-orange-200'}`}>
+                                            <div className="flex items-center gap-3">
+                                                <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${existing ? 'bg-orange-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                                                    <Plus size={18} />
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-slate-800">{item.name}</p>
+                                                    <p className="text-[10px] text-slate-400 uppercase font-bold">{item.unit}</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-2">
+                                                {existing ? (
+                                                    <div className="flex items-center bg-white border border-orange-200 rounded-lg overflow-hidden shadow-sm">
+                                                        <button
+                                                            onClick={() => {
+                                                                if (existing.quantity <= 1) {
+                                                                    setServiceInventory(serviceInventory.filter(i => i.item_id !== item.id));
+                                                                } else {
+                                                                    setServiceInventory(serviceInventory.map(i => i.item_id === item.id ? { ...i, quantity: i.quantity - 1 } : i));
+                                                                }
+                                                            }}
+                                                            className="px-2 py-1 text-orange-600 hover:bg-orange-50"
+                                                        >
+                                                            -
+                                                        </button>
+                                                        <span className="px-3 py-1 font-black text-sm text-slate-800 min-w-[32px] text-center">
+                                                            {existing.quantity}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => setServiceInventory(serviceInventory.map(i => i.item_id === item.id ? { ...i, quantity: i.quantity + 1 } : i))}
+                                                            className="px-2 py-1 text-orange-600 hover:bg-orange-50"
+                                                        >
+                                                            +
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => setServiceInventory([...serviceInventory, { item_id: item.id, quantity: 1, name: item.name, unit: item.unit }])}
+                                                        className="px-4 py-2 bg-indigo-600 text-white text-[10px] font-black uppercase rounded-lg shadow-lg shadow-indigo-200 active:scale-95 transition-all"
+                                                    >
+                                                        Adicionar
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        <div className="p-6 border-t border-slate-100 bg-slate-50 shrink-0">
+                            <button
+                                onClick={() => setShowInventoryDrawer(false)}
+                                className="w-full py-4 bg-orange-600 text-white font-black uppercase tracking-widest rounded-2xl hover:bg-orange-700 transition-all shadow-xl shadow-orange-100 active:scale-[0.98]"
+                            >
+                                Confirmar Itens
                             </button>
                         </div>
                     </div>
