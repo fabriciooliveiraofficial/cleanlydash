@@ -290,8 +290,6 @@ const App: React.FC = () => {
         {platformModule === 'support' && <SupportInbox />}
         {platformModule === 'broadcast' && <BroadcastCenter />}
         {platformModule === 'telephony' && <TelephonyManager />}
-
-
       </SuperAdminLayout>
     );
   }
