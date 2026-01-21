@@ -28,13 +28,28 @@ export const PlatformCallback: React.FC = () => {
             }
 
             try {
+                // Ensure we have a valid session before calling the function
+                const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+                if (sessionError || !session) {
+                    console.warn("No active session found in callback. Configuring anonymous exchange if allowed or prompting login.");
+                    // If your architecture requires Auth, redirect to login
+                    // If you want to allow anonymous exchange (unlikely for account linking), handle here.
+
+                    // Attempt to refresh session if possible
+                    const { data: refreshData } = await supabase.auth.refreshSession();
+                    if (!refreshData.session) {
+                        throw new Error("Sessão expirada. Faça login novamente para concluir a conexão.");
+                    }
+                }
+
                 // Call the Edge Function to exchange the token
                 const { data, error: functionError } = await supabase.functions.invoke('stripe-connect-oauth', {
                     body: { action: 'exchange_token', code }
                 });
 
-                if (functionError || data.error) {
-                    throw new Error(functionError?.message || data.error);
+                if (functionError || data?.error) {
+                    throw new Error(functionError?.message || data?.error || "Unknown function error");
                 }
 
                 setStatus('success');
