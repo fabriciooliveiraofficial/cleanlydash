@@ -219,48 +219,22 @@ const App: React.FC = () => {
   //  Loading State (Wait for session AND role data AND permissions)
   //  Permission loading is crucial to avoid sidebar flickering
   // =====================================================
-  if (loading || (user && (roleContext.loading || permissionContext.loading))) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
-        <div className="flex flex-col items-center gap-6 animate-in fade-in zoom-in duration-500">
-          <div className="relative">
-            <div className="h-16 w-16 animate-spin rounded-full border-4 border-indigo-100 border-t-indigo-600"></div>
-            <Plane className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-indigo-600" size={24} />
-          </div>
-          <div className="text-center space-y-1">
-            <h2 className="text-lg font-bold text-slate-900">Cleanlydash</h2>
-            <p className="text-sm font-medium text-slate-400">Preparando sua experiência premium...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Priority 1: Auth Flow (if explicitly requested)
-  if (view === 'auth' && !user) {
-    return (
-      <>
-        <AuthFlow
-          onBack={() => setView('landing')}
-          onAuthenticated={() => setView('dashboard')}
-          selectedPlan={selectedPlan}
-          initialMode={authMode} // Pass authMode to AuthFlow
-        />
-        <Toaster position="top-center" richColors />
-      </>
-    );
-  }
-
-  // Priority 3: Platform Operations Center (Super Admin) & Stripe Callback
+  // Priority 1: Platform Operations Center (Super Admin) & Stripe Callback
   const isPlatformRoute = typeof window !== 'undefined' && (
     window.location.pathname.startsWith('/admin/platform') ||
-    window.location.pathname.startsWith('/platform')
+    window.location.pathname.startsWith('/platform') ||
+    window.location.pathname.startsWith('/callback')
   );
 
   if (isPlatformRoute) {
-    const isCallbackPage = window.location.pathname === '/platform/callback';
+    const isCallbackPage = window.location.pathname === '/platform/callback' || window.location.pathname === '/callback';
     if (isCallbackPage) {
-      return <PlatformCallback />;
+      return (
+        <>
+          <PlatformCallback />
+          <Toaster position="top-right" richColors />
+        </>
+      );
     }
 
     // If not logged in or not super admin, show platform login
@@ -271,6 +245,8 @@ const App: React.FC = () => {
     }
 
     // Checking "God Mode" Access
+    if (loading) return null; // Wait for session only for protected platform tools
+
     if (!user || role !== 'super_admin') {
       // If we are not authenticated as super admin, force login
       return <PlatformLogin onSuccess={() => window.location.reload()} />;
@@ -290,7 +266,38 @@ const App: React.FC = () => {
         {platformModule === 'support' && <SupportInbox />}
         {platformModule === 'broadcast' && <BroadcastCenter />}
         {platformModule === 'telephony' && <TelephonyManager />}
+        <Toaster position="top-right" richColors />
       </SuperAdminLayout>
+    );
+  }
+
+  // Priority 2: Loading State (Wait for session AND role data AND permissions)
+  if (loading || (user && (roleContext.loading || permissionContext.loading))) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white">
+        <div className="flex flex-col items-center gap-6 animate-in fade-in zoom-in duration-500">
+          <div className="relative">
+            <div className="h-16 w-16 animate-spin rounded-full border-4 border-indigo-100 border-t-indigo-600"></div>
+            <Plane className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-indigo-600" size={24} />
+          </div>
+          <div className="text-center space-y-1">
+            <h2 className="text-lg font-bold text-slate-900">Cleanlydash</h2>
+            <p className="text-sm font-medium text-slate-400">Preparando sua experiência premium...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Priority 3: Auth Flow (if explicitly requested)
+  if (view === 'auth' && !user) {
+    return (
+      <AuthFlow
+        onBack={() => setView('landing')}
+        onAuthenticated={() => setView('dashboard')}
+        selectedPlan={selectedPlan}
+        initialMode={authMode} // Pass authMode to AuthFlow
+      />
     );
   }
 
@@ -310,7 +317,6 @@ const App: React.FC = () => {
         }}
         onFeatures={() => setView('features')}
       />
-
     );
   }
 

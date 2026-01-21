@@ -123,6 +123,7 @@ export const Bookings: React.FC = () => {
       // Map bookings to ensure resource_ids is available for DispatchTimeline
       const mappedBookings = (bookingsData || []).map((b: any) => ({
         ...b,
+        property_name: b.summary || b.customers?.name || 'Sem Nome',
         resource_ids: b.assigned_to ? [b.assigned_to] : []
       }));
       setBookings(mappedBookings as any);

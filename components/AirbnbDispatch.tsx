@@ -53,8 +53,7 @@ export default function AirbnbDispatch() {
                     status,
                     price,
                     assigned_to,
-                    customers ( name ),
-                    property_name
+                    customers ( name )
                 `)
                 .gte('start_date', startOfDay.toISOString())
                 .lte('start_date', endOfDay.toISOString())
