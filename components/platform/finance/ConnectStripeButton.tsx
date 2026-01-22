@@ -27,27 +27,45 @@ export const ConnectStripeButton: React.FC<ConnectStripeButtonProps> = ({ connec
                 return;
             }
 
-            // Use the standard invoke method which handles auth automatically
-            const { data, error: functionError } = await supabase.functions.invoke('stripe-connect-oauth', {
-                body: {
+            // Manual fetch to ensure we see the raw response body even on 401
+            const response = await fetch('https://jjbokilvurxztqiwvxhy.supabase.co/functions/v1/stripe-connect-oauth', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
                     action: 'get_authorize_url',
                     redirect_uri: window.location.origin + '/platform/callback'
-                }
+                })
             });
 
-            if (functionError) {
-                throw new Error(functionError.message);
+            const text = await response.text();
+            console.log("[DEBUG] Raw Response Status:", response.status);
+            console.log("[DEBUG] Raw Response Body:", text);
+
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                throw new Error(`Erro do servidor (${response.status})`);
+            }
+
+            if (!response.ok) {
+                const errorMsg = data?.details || data?.error || text || "Erro desconhecido";
+                throw new Error(errorMsg);
             }
 
             if (data?.url) {
                 window.location.href = data.url;
             } else {
-                throw new Error(data?.error || "No URL returned");
+                throw new Error("Resposta inesperada: URL ausente no corpo.");
             }
 
-        } catch (err) {
-            console.error("Stripe Connect Error:", err);
-            toast.error("Erro ao iniciar conexão com Stripe.");
+        } catch (err: any) {
+            console.error("Stripe Connect Final Error:", err);
+            toast.error(err.message || "Erro ao iniciar conexão com Stripe.");
             setLoading(false);
         }
     };

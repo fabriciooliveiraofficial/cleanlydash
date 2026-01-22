@@ -7,23 +7,51 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+    console.log(`[stripe-connect-oauth] INCOMING REQUEST: ${req.method} ${req.url}`);
+
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders });
     }
 
     try {
         const authHeader = req.headers.get('Authorization');
+        const anonKeyHeader = req.headers.get('apikey');
+
+        console.log('[stripe-connect-oauth] Headers Check:', {
+            hasAuth: !!authHeader,
+            hasApiKey: !!anonKeyHeader
+        });
+
         if (!authHeader) {
-            return new Response(JSON.stringify({ error: 'Missing Authorization header' }), {
+            return new Response(JSON.stringify({
+                error: 'Unauthorized',
+                details: 'Missing Authorization header in request'
+            }), {
                 status: 401,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
         }
 
-        // Create clients
-        const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-        const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
-        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+        // Create clients - check if env vars are present
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+        if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey) {
+            const missing = [];
+            if (!supabaseUrl) missing.push('SUPABASE_URL');
+            if (!supabaseAnonKey) missing.push('SUPABASE_ANON_KEY');
+            if (!supabaseServiceKey) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+
+            console.error('[stripe-connect-oauth] Missing Env Vars:', missing);
+            return new Response(JSON.stringify({
+                error: 'Internal Server Error',
+                details: `Missing environment variables: ${missing.join(', ')}`
+            }), {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
 
         // Verification client (User's context)
         const supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
@@ -40,7 +68,7 @@ serve(async (req) => {
             console.warn('[stripe-connect-oauth] Auth Failure:', userError?.message || 'No user found');
             return new Response(JSON.stringify({
                 error: 'Unauthorized',
-                details: 'Invalid session or user not found'
+                details: userError?.message || 'Session invalid or expired'
             }), {
                 status: 401,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -49,11 +77,16 @@ serve(async (req) => {
 
         console.log('[stripe-connect-oauth] Authenticated User:', user.email);
 
-        // Parse body
-        const body = await req.json();
-        const { action, code, redirect_uri, state } = body;
+        // Check if we have a valid body
+        let body;
+        try {
+            body = await req.json();
+        } catch (e) {
+            throw new Error("Invalid JSON body");
+        }
 
-        console.log('[stripe-connect-oauth] Received action:', action);
+        const { action, code, redirect_uri, state } = body;
+        console.log('[stripe-connect-oauth] Action:', action);
 
         // Fetch settings - reuse user context if possible, otherwise admin
         const getSetting = async (key: string) => {
