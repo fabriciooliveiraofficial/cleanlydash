@@ -217,7 +217,7 @@ export const Customers: React.FC = () => {
       <Dialog open={!!editingCustomer} onOpenChange={(open) => !open && setEditingCustomer(null)}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Edit Customer</DialogTitle>
+            <DialogTitle>{t('crm.edit_client_title')}</DialogTitle>
           </DialogHeader>
           {editingCustomer && (
             <CustomerForm

@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { UserAuthForm } from "@/components/auth/user-auth-form"
 
 export const metadata: Metadata = {
-  title: "Login | AirGoverness",
+  title: "Login | Cleanlydash",
   description: "Entre na sua conta para gerenciar suas operações.",
 }
 
@@ -20,7 +20,7 @@ export default function LoginPage() {
             <Plane size={32} />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            AirGoverness
+            Cleanlydash
           </h1>
           <p className="text-sm text-slate-500">
             Gestão profissional para locações de temporada

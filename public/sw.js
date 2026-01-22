@@ -1,4 +1,4 @@
-// Airgoverness Service Worker (Push Notifications)
+// Cleanlydash Service Worker (Push Notifications)
 // Version: 1.0.0
 
 self.addEventListener('push', function (event) {
@@ -23,7 +23,7 @@ self.addEventListener('push', function (event) {
             };
 
             event.waitUntil(
-                self.registration.showNotification(data.title || 'Airgoverness', options)
+                self.registration.showNotification(data.title || 'Cleanlydash', options)
             );
         } catch (e) {
             console.error('Push error:', e);

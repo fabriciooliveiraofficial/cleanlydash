@@ -61,7 +61,7 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
                 {
                     headers: {
                         'Accept-Language': 'pt-BR,en',
-                        'User-Agent': 'AirGoverness/1.0' // Required by Nominatim ToS
+                        'User-Agent': 'Cleanlydash/1.0' // Required by Nominatim ToS
                     }
                 }
             );

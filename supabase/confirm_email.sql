@@ -3,6 +3,6 @@
 
 UPDATE auth.users 
 SET email_confirmed_at = now() 
-WHERE email = 'admin@airgoverness.com'; -- Replace with your email if different
+WHERE email = 'admin@cleanlydash.com'; -- Replace with your email if different
 
 -- Email confirmed manually.

@@ -88,10 +88,7 @@ export function Sidebar() {
     <aside className="hidden w-64 flex-col border-r border-slate-200 bg-white md:flex">
       <div className="flex h-16 items-center border-b border-slate-100 px-6 justify-between">
         <div className="flex items-center gap-2 cursor-pointer">
-          <div className="rounded-lg bg-indigo-600 p-1.5 text-white shadow-sm">
-            <Plane size={20} />
-          </div>
-          <span className="text-lg font-bold tracking-tight text-slate-900 uppercase">AirGoverness</span>
+          <img src="/logo-full.png" alt="Cleanlydash" className="h-8 w-auto" />
         </div>
       </div>
 

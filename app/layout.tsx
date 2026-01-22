@@ -5,7 +5,7 @@ import type { Metadata } from "next"
 import { cn } from "../lib/utils"
 
 export const metadata: Metadata = {
-  title: "AirGoverness | Gestão de Turnovers",
+  title: "Cleanlydash | Gestão Operacional",
   description: "Plataforma profissional para gestão de operações em locações de curta temporada.",
 }
 

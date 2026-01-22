@@ -4,7 +4,7 @@
 DO $$
 DECLARE
     -- REPLACE With your Admin Email
-    target_email TEXT := 'admin@airgoverness.com'; 
+    target_email TEXT := 'admin@cleanlydash.com'; 
     target_user_id UUID;
 BEGIN
     -- 1. Find User

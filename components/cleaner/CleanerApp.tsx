@@ -9,11 +9,13 @@ import { format } from 'date-fns';
 import { ptBR, enUS, es } from 'date-fns/locale';
 import { useTranslation } from 'react-i18next';
 import { LanguageSwitcher } from '../language-switcher';
+import { LanguageFloatingWidget } from '../LanguageFloatingWidget';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { BookingDetailsDrawer } from './BookingDetailsDrawer';
 import { CleanerNotificationsDrawer } from './CleanerNotificationsDrawer';
 import { DelayModal } from './DelayModal';
 import { Bell } from 'lucide-react';
+import { PWAInstallPrompt } from '../PWAInstallPrompt';
 
 interface CleanerAppProps {
     userName?: string;
@@ -58,7 +60,7 @@ export const CleanerApp: React.FC<CleanerAppProps> = ({ userName, userId: initia
 
             // 3. Simulated success
             setTimeout(() => {
-                toast.success(`Cliente notificado do atraso (${minutes}m) via ${channel.toUpperCase()}.`, {
+                toast.success(t('cleaner.notifications.delay_success', { minutes, channel: channel.toUpperCase() }), {
                     icon: '✉️'
                 });
                 setSelectedDelayJob(null);
@@ -66,7 +68,7 @@ export const CleanerApp: React.FC<CleanerAppProps> = ({ userName, userId: initia
 
         } catch (error) {
             console.error('Error notifying delay:', error);
-            toast.error("Falha ao comunicar atraso.");
+            toast.error(t('cleaner.notifications.delay_failed'));
         }
     };
     const [notifications, setNotifications] = useState<any[]>([
@@ -160,9 +162,6 @@ export const CleanerApp: React.FC<CleanerAppProps> = ({ userName, userId: initia
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        <div className="scale-90 origin-right">
-                            <LanguageSwitcher />
-                        </div>
                         <div className="relative">
                             <div className="flex items-center gap-2">
                                 <button
@@ -185,14 +184,14 @@ export const CleanerApp: React.FC<CleanerAppProps> = ({ userName, userId: initia
                                         className="w-full px-4 py-3 text-left flex items-center gap-3 hover:bg-slate-50 text-sm font-medium text-slate-700"
                                     >
                                         <Key size={16} className="text-indigo-500" />
-                                        Alterar Senha
+                                        {t('cleaner.menu.change_password')}
                                     </button>
                                     <button
                                         onClick={handleLogout}
                                         className="w-full px-4 py-3 text-left flex items-center gap-3 hover:bg-rose-50 text-sm font-medium text-rose-600"
                                     >
                                         <LogOut size={16} />
-                                        Sair da Conta
+                                        {t('cleaner.menu.logout')}
                                     </button>
                                 </div>
                             )}
@@ -260,7 +259,7 @@ export const CleanerApp: React.FC<CleanerAppProps> = ({ userName, userId: initia
                         }`}
                 >
                     <Briefcase size={22} />
-                    <span className="text-xs font-bold">Trabalhos</span>
+                    <span className="text-xs font-bold">{t('cleaner.tabs.jobs')}</span>
                 </button>
                 <button
                     onClick={() => setActiveTab('earnings')}
@@ -270,7 +269,7 @@ export const CleanerApp: React.FC<CleanerAppProps> = ({ userName, userId: initia
                         }`}
                 >
                     <DollarSign size={22} />
-                    <span className="text-xs font-bold">Ganhos</span>
+                    <span className="text-xs font-bold">{t('cleaner.tabs.earnings')}</span>
                 </button>
             </nav>
 
@@ -300,6 +299,9 @@ export const CleanerApp: React.FC<CleanerAppProps> = ({ userName, userId: initia
                 onConfirm={handleNotifyDelay}
                 bookingName={selectedDelayJob?.customers?.name || "Propriedade"}
             />
+
+            <PWAInstallPrompt />
+            <LanguageFloatingWidget />
         </div>
     );
 };

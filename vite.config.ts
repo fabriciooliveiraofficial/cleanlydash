@@ -16,10 +16,10 @@ export default defineConfig(({ mode }) => {
         registerType: 'autoUpdate',
         includeAssets: ['favicon.png', 'icons/*.png'],
         manifest: {
-          name: 'AirGoverness - Gestão de Turnovers',
-          short_name: 'AirGov',
+          name: 'Cleanlydash - Gestão Operacional Airbnb',
+          short_name: 'Cleanlydash',
           description: 'Sistema Operacional para gestores de Airbnb',
-          theme_color: '#4f46e5',
+          theme_color: '#6366f1',
           background_color: '#f8fafc',
           display: 'standalone',
           start_url: '/',

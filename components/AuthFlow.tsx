@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plane, ArrowLeft, Loader2, ShieldCheck, Mail, Lock, Building, User, Star, CreditCard, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Loader2, ShieldCheck, Mail, Lock, Building, User, Star, CreditCard, Eye, EyeOff } from 'lucide-react';
 import { Button } from './ui/button.tsx';
 import { Input } from './ui/input.tsx';
 import { InternationalPhoneInput } from './ui/InternationalPhoneInput.tsx';
 import { createClient } from '../lib/supabase/client.ts';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
+import { LanguageSwitcher } from './language-switcher';
 
 interface AuthFlowProps {
   onBack: () => void;
@@ -15,6 +17,7 @@ interface AuthFlowProps {
 }
 
 export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, selectedPlan, initialMode }) => {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<'login' | 'register' | 'verify' | 'forgot_password' | 'recovery_sent'>(initialMode || (selectedPlan ? 'register' : 'login'));
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -183,11 +186,15 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
     formData.password !== formData.confirmPassword;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center px-6 py-12">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center px-6 py-12 relative">
       <div className="absolute top-8 left-8">
         <Button variant="ghost" onClick={onBack} className="gap-2 font-bold text-slate-500">
-          <ArrowLeft size={18} /> Voltar
+          <ArrowLeft size={18} /> {t('common.back')}
         </Button>
+      </div>
+
+      <div className="absolute top-8 right-8">
+        <LanguageSwitcher />
       </div>
 
       <motion.div
@@ -196,11 +203,8 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
         className="w-full max-w-md"
       >
         <div className="text-center mb-8">
-          <div className="mx-auto h-16 w-16 bg-indigo-600 rounded-2xl text-white flex items-center justify-center shadow-2xl shadow-indigo-100 mb-4">
-            <Plane size={32} />
-          </div>
-          <h2 className="text-3xl font-black text-slate-900 tracking-tight">Cleanlydash</h2>
-          <p className="text-slate-500 font-medium">Gestão profissional para seus turnovers.</p>
+          <img src="/logo-full.png" alt="Cleanlydash" className="h-12 w-auto mx-auto mb-4" />
+          <p className="text-slate-500 font-medium">{t('auth.title_login')}</p>
         </div>
 
         <AnimatePresence mode="wait">
@@ -214,16 +218,16 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
               <div className="h-20 w-20 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center mx-auto mb-6">
                 <Mail size={40} />
               </div>
-              <h3 className="text-2xl font-black mb-2">Verifique seu e-mail</h3>
+              <h3 className="text-2xl font-black mb-2">{t('auth.verify_title')}</h3>
               <p className="text-slate-500 text-sm mb-8 leading-relaxed">
-                Enviamos um link de confirmação para <span className="text-indigo-600 font-bold">{formData.email}</span>. Clique no link para ativar sua conta.
+                {t('auth.verify_desc')} <span className="text-indigo-600 font-bold">{formData.email}</span>.
               </p>
               <Button
                 variant="outline"
                 className="w-full h-12 rounded-xl border-slate-200 font-bold"
                 onClick={() => setMode('login')}
               >
-                Voltar para Login
+                {t('auth.back_login')}
               </Button>
             </motion.div>
           ) : mode === 'recovery_sent' ? (
@@ -236,16 +240,16 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
               <div className="h-20 w-20 rounded-full bg-indigo-50 text-indigo-500 flex items-center justify-center mx-auto mb-6">
                 <Mail size={40} />
               </div>
-              <h3 className="text-2xl font-black mb-2">Verifique seu e-mail</h3>
+              <h3 className="text-2xl font-black mb-2">{t('auth.recovery_title')}</h3>
               <p className="text-slate-500 text-sm mb-8 leading-relaxed">
-                Enviamos instruções de recuperação para <span className="text-indigo-600 font-bold">{formData.email}</span>.
+                {t('auth.recovery_desc')} <span className="text-indigo-600 font-bold">{formData.email}</span>.
               </p>
               <Button
                 variant="outline"
                 className="w-full h-12 rounded-xl border-slate-200 font-bold"
                 onClick={() => setMode('login')}
               >
-                Voltar para Login
+                {t('auth.back_login')}
               </Button>
             </motion.div>
           ) : (
@@ -259,14 +263,14 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
               <form onSubmit={handleAuth} className="space-y-4">
                 {mode === 'forgot_password' && (
                   <div className="text-center mb-6">
-                    <h3 className="text-xl font-black text-slate-900">Recuperar Senha</h3>
-                    <p className="text-slate-500 text-sm">Digite seu e-mail para receber o link.</p>
+                    <h3 className="text-xl font-black text-slate-900">{t('auth.recovery_header')}</h3>
+                    <p className="text-slate-500 text-sm">{t('auth.recovery_sub')}</p>
                   </div>
                 )}
                 {mode === 'register' && (
                   <>
                     <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 pl-1">Plano Escolhido</label>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 pl-1">{t('auth.plan_label')}</label>
                       <div className="relative">
                         <CreditCard className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                         <select
@@ -274,8 +278,8 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
                           value={selectedPlanId}
                           onChange={(e) => setSelectedPlanId(e.target.value)}
                         >
-                          <option value="" disabled>Selecione um plano</option>
-                          <optgroup label="Combos Promocionais">
+                          <option value="" disabled>{t('auth.select_plan')}</option>
+                          <optgroup label={t('auth.combos_label')}>
                             {combos.map(combo => {
                               // Normalize name for matching
                               const name = combo.name.toLowerCase();
@@ -291,7 +295,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
                               );
                             })}
                           </optgroup>
-                          <optgroup label="Planos Individuais">
+                          <optgroup label={t('auth.individual_plans_label')}>
                             {plans.map(plan => {
                               const name = plan.name.toLowerCase();
                               let displayPrice = plan.price_monthly_usd;
@@ -309,11 +313,11 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 pl-1">Nome da Empresa</label>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 pl-1">{t('auth.company_label')}</label>
                       <div className="relative">
                         <Building className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                         <Input
-                          placeholder="Minha Gestora Ltda"
+                          placeholder={t('auth.company_placeholder')}
                           className="pl-9 h-11"
                           value={formData.tenantName}
                           onChange={(e) => setFormData({ ...formData, tenantName: e.target.value })}
@@ -321,11 +325,11 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
                       </div>
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 pl-1">Seu Nome</label>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 pl-1">{t('auth.name_label')}</label>
                       <div className="relative">
                         <User className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                         <Input
-                          placeholder="João Silva"
+                          placeholder={t('auth.name_placeholder')}
                           className="pl-9 h-11"
                           value={formData.adminName}
                           onChange={(e) => setFormData({ ...formData, adminName: e.target.value })}
@@ -336,12 +340,12 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
                 )}
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 pl-1">E-mail</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 pl-1">{t('auth.email_label')}</label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                     <Input
                       type="email"
-                      placeholder="seu@email.com"
+                      placeholder={t('auth.email_placeholder')}
                       className="pl-9 h-11"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -351,11 +355,11 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
 
                 {mode === 'register' && (
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 pl-1">Telefone</label>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 pl-1">{t('auth.phone_label')}</label>
                     <InternationalPhoneInput
                       value={formData.phone}
                       onChange={(val) => setFormData({ ...formData, phone: val })}
-                      placeholder="Phone number"
+                      placeholder={t('auth.phone_label')}
                       defaultCountry="US"
                     />
                   </div>
@@ -364,14 +368,14 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
                 {mode !== 'forgot_password' && (
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 pl-1">Senha</label>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 pl-1">{t('auth.password_label')}</label>
                       {mode === 'login' && (
                         <button
                           type="button"
                           onClick={() => setMode('forgot_password')}
                           className="text-[10px] font-bold text-indigo-600 hover:text-indigo-700 transition-colors"
                         >
-                          Esqueceu a senha?
+                          {t('auth.forgot_password')}
                         </button>
                       )}
                     </div>
@@ -379,7 +383,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
                       <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                       <Input
                         type={showPassword ? "text" : "password"}
-                        placeholder="••••••••"
+                        placeholder={t('auth.password_placeholder')}
                         className="pl-9 pr-10 h-11"
                         value={formData.password}
                         onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -398,12 +402,12 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
 
                 {mode === 'register' && (
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 pl-1">Confirmar Senha</label>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 pl-1">{t('auth.confirm_password_label')}</label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                       <Input
                         type={showConfirmPassword ? "text" : "password"}
-                        placeholder="••••••••"
+                        placeholder={t('auth.password_placeholder')}
                         className="pl-9 pr-10 h-11"
                         value={formData.confirmPassword}
                         onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
@@ -425,7 +429,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
                   disabled={loading || (mode === 'register' && isRegisterDisabled)}
                   className="w-full h-12 bg-indigo-600 font-black uppercase tracking-widest mt-6 shadow-xl shadow-indigo-100"
                 >
-                  {loading ? <Loader2 className="animate-spin" /> : mode === 'login' ? 'Entrar no Painel' : mode === 'forgot_password' ? 'Enviar Link' : 'Criar Conta Grátis'}
+                  {loading ? <Loader2 className="animate-spin" /> : mode === 'login' ? t('auth.login_button') : mode === 'forgot_password' ? t('auth.send_link') : t('auth.create_account_button')}
                 </Button>
 
                 <div className="pt-6 text-center">
@@ -434,7 +438,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
                     onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
                     className="text-xs font-bold text-slate-400 hover:text-indigo-600 transition-colors"
                   >
-                    {mode === 'login' ? 'Ainda não tem conta? Registre sua empresa' : mode === 'register' ? 'Já possui conta? Faça login' : 'Voltar para Login'}
+                    {mode === 'login' ? t('auth.no_account') : mode === 'register' ? t('auth.has_account') : t('auth.back_login')}
                   </button>
                 </div>
               </form>
@@ -446,12 +450,12 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
       <div className="mt-12 flex items-center gap-4 text-slate-300">
         <div className="flex items-center gap-1">
           <ShieldCheck size={14} />
-          <span className="text-[10px] font-black uppercase tracking-tighter">Security Grade A+</span>
+          <span className="text-[10px] font-black uppercase tracking-tighter">{t('auth.security_grade')}</span>
         </div>
         <div className="h-1 w-1 bg-slate-300 rounded-full"></div>
         <div className="flex items-center gap-1">
           <Star size={14} className="fill-amber-400 text-amber-400" />
-          <span className="text-[10px] font-black uppercase tracking-tighter">4.9/5 G2 Rating</span>
+          <span className="text-[10px] font-black uppercase tracking-tighter">{t('auth.rating_label')}</span>
         </div>
       </div>
     </div>

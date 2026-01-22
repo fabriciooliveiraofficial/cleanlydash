@@ -120,7 +120,7 @@ serve(async (req) => {
                 // Background: Send Web Push (Requires VAPID keys in Env)
                 const vapidPublic = Deno.env.get('VAPID_PUBLIC_KEY');
                 const vapidPrivate = Deno.env.get('VAPID_PRIVATE_KEY');
-                const vapidEmail = Deno.env.get('VAPID_EMAIL') || 'admin@airgoverness.com';
+                const vapidEmail = Deno.env.get('VAPID_EMAIL') || 'admin@cleanlydash.com';
 
                 if (vapidPublic && vapidPrivate) {
                     try {

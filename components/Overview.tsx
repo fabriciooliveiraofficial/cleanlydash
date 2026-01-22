@@ -4,10 +4,10 @@ import {
   Calendar,
   CheckCircle2,
   TrendingUp,
-  Plane,
   BrainCircuit,
   Loader2,
-  HardHat
+  HardHat,
+  Users
 } from 'lucide-react';
 import {
   XAxis,
@@ -29,6 +29,7 @@ export const Overview: React.FC = () => {
   const [aiInsight, setAiInsight] = useState<{ summary: string; sentiment: number } | null>(null);
   const supabase = createClient();
   const { role, isOwner, isStaff, isAdmin } = useRole();
+  console.log('Overview Debug:', { role, isOwner });
 
   useEffect(() => {
     async function fetchData() {
@@ -46,7 +47,7 @@ export const Overview: React.FC = () => {
           .from('bookings')
           .select('price, status, start_date')
           .gte('start_date', startOfMonth)
-          .or('status.eq.confirmed,status.eq.completed');
+          .or('status.eq.confirmed,status.eq.completed') as { data: any[] };
 
         // 2. Fetch Team Count
         const { count: teamCount } = await supabase
@@ -62,7 +63,7 @@ export const Overview: React.FC = () => {
           .limit(20) as any;
 
         // Process Data
-        const validBookings = bookings || [];
+        const validBookings: any[] = bookings || [];
         const mtdRevenue = validBookings.reduce((acc, curr) => acc + (Number(curr.price) || 0), 0);
         const totalBookings = validBookings.length;
 
@@ -92,7 +93,7 @@ export const Overview: React.FC = () => {
 
         setStats([
           { label: 'Turnovers (Mês)', value: totalBookings.toString(), change: '', icon: Calendar, color: 'text-blue-500' },
-          { label: 'Equipe em Campo', value: (teamCount || 0).toString(), change: '', icon: Plane, color: 'text-indigo-500' },
+          { label: 'Equipe em Campo', value: (teamCount || 0).toString(), change: '', icon: Users, color: 'text-indigo-500' },
           { label: 'Faturamento MTD', value: `R$ ${mtdRevenue.toFixed(2)}`, change: '', icon: TrendingUp, color: 'text-emerald-500' },
           { label: 'IA Score Médio', value: aiScoreLabel, change: '', icon: BrainCircuit, color: 'text-purple-500' },
         ]);
@@ -133,8 +134,9 @@ export const Overview: React.FC = () => {
     </div>
   );
 
+
   // 1. Owner View
-  if (isOwner) {
+  if (isOwner || role === 'super_admin' || role === 'property_owner') {
     return <OwnerDashboard />;
   }
 
@@ -190,7 +192,7 @@ export const Overview: React.FC = () => {
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 glass-panel p-8 rounded-[2.5rem]">
           <h3 className="text-xl font-bold text-[var(--text-primary)] mb-8">Performance Financeira</h3>
-          <div className="h-[350px] w-full">
+          <div className="h-[350px] min-h-[350px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
                 <defs>

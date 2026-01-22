@@ -115,9 +115,7 @@ export const ActiveJobView: React.FC<ActiveJobViewProps> = ({ job, onBack }) => 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-
-        toast.loading("Uploading evidence...");
-
+        toast.loading(t('cleaner.active_job.uploading'));
         // Simulating upload delay
         setTimeout(async () => {
             // In a real scenario, we upload to Supabase Storage:
@@ -136,7 +134,7 @@ export const ActiveJobView: React.FC<ActiveJobViewProps> = ({ job, onBack }) => 
             });
 
             notifyClient('DAMAGE_REPORT', { url: mockUrl });
-            toast.success("Foto enviada! O proprietário foi notificado.");
+            toast.success(t('cleaner.active_job.photo_sent'));
         }, 1500);
     };
 
@@ -214,9 +212,9 @@ export const ActiveJobView: React.FC<ActiveJobViewProps> = ({ job, onBack }) => 
                 }, 1000);
             },
             {
-                loading: 'Syncing with HQ...',
-                success: 'Job Completed Successfully!',
-                error: 'Failed to update status.'
+                loading: t('cleaner.active_job.syncing'),
+                success: t('cleaner.active_job.completed_success'),
+                error: t('cleaner.active_job.completed_error')
             }
         );
     };
@@ -249,29 +247,28 @@ export const ActiveJobView: React.FC<ActiveJobViewProps> = ({ job, onBack }) => 
                             <MapPin size={48} />
                         </div>
                         <div>
-                            <h3 className="text-2xl font-black text-slate-900">Cheguei</h3>
-                            <p className="text-slate-500 max-w-[200px] mx-auto mt-2">Valide sua localização via GPS para liberar o acesso.</p>
+                            <h3 className="text-2xl font-black text-slate-900">{t('cleaner.active_job.arrive_title')}</h3>
+                            <p className="text-slate-500 max-w-[200px] mx-auto mt-2">{t('cleaner.active_job.arrive_subtitle')}</p>
                         </div>
                         <Button onClick={handleCheckIn} className="w-full h-14 text-lg bg-indigo-600 hover:bg-indigo-700 rounded-2xl shadow-xl shadow-indigo-200">
-                            Fazer Check-in
+                            {t('cleaner.active_job.check_in_button')}
                         </Button>
-
-                        {loadingLocation && <p className="text-sm text-slate-400 animate-pulse">Consultando satélites...</p>}
+                        {loadingLocation && <p className="text-sm text-slate-400 animate-pulse">{t('cleaner.active_job.locating')}</p>}
 
                         {/* Fallback / Fail-safe */}
                         <div className={`transition-opacity duration-500 ${step === 'arrive' ? 'opacity-100' : 'opacity-0'}`}>
                             <button
                                 onClick={async () => {
-                                    if (confirm("Tem certeza que está no local? O uso desta opção será auditado.")) {
+                                    if (confirm(t('cleaner.active_job.manual_confirm'))) {
                                         await (supabase.from('bookings') as any).update({ status: 'in_progress' }).eq('id', job.id);
                                         notifyClient('CHECK_IN_BYPASS');
-                                        toast.warning("Check-in manual registrado via Bypass.");
+                                        toast.warning(t('cleaner.active_job.manual_success'));
                                         setStep('inspect');
                                     }
                                 }}
                                 className="text-xs font-semibold text-slate-400 underline mt-4 hover:text-indigo-600"
                             >
-                                Problemas com GPS? Check-in Manual
+                                {t('cleaner.active_job.manual_check_in')}
                             </button>
                         </div>
                     </div>
@@ -281,7 +278,7 @@ export const ActiveJobView: React.FC<ActiveJobViewProps> = ({ job, onBack }) => 
                     <div className="flex-1 flex flex-col space-y-6 animate-in fade-in slide-in-from-bottom-4">
                         {inventory.length > 0 && (
                             <div className="bg-orange-50 p-6 rounded-2xl border border-orange-100">
-                                <h3 className="font-bold text-orange-800 mb-2 flex items-center gap-2"><CheckSquare size={18} /> Inventário</h3>
+                                <h3 className="font-bold text-orange-800 mb-2 flex items-center gap-2"><CheckSquare size={18} /> {t('booking_modal.tab_inventory')}</h3>
                                 <div className="space-y-3">
                                     {inventory.map((item, i) => (
                                         <label key={i} className="flex items-center gap-3 p-3 bg-white rounded-xl border border-orange-100 cursor-pointer">
@@ -306,10 +303,10 @@ export const ActiveJobView: React.FC<ActiveJobViewProps> = ({ job, onBack }) => 
                             variant="outline"
                             className="w-full py-6 border-dashed border-2 border-slate-300 text-slate-500 gap-2 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50 transition-colors"
                         >
-                            <Camera size={20} /> Reportar Dano (Foto)
+                            <Camera size={20} /> {t('cleaner.active_job.report_damage')}
                         </Button>
                         <Button onClick={handleInspectionDone} className="w-full h-14 text-lg bg-orange-600 hover:bg-orange-700 rounded-2xl shadow-xl shadow-orange-200 mt-auto">
-                            Tudo Pronto
+                            {t('cleaner.active_job.ready_button')}
                         </Button>
                     </div>
                 )}
@@ -320,14 +317,14 @@ export const ActiveJobView: React.FC<ActiveJobViewProps> = ({ job, onBack }) => 
                             <Clock size={64} />
                         </div>
                         <div>
-                            <h3 className="text-2xl font-black text-slate-900">Em Progresso</h3>
-                            <p className="text-slate-500">O cronômetro está rodando.</p>
+                            <h3 className="text-2xl font-black text-slate-900">{t('cleaner.active_job.in_progress_title')}</h3>
+                            <p className="text-slate-500">{t('cleaner.active_job.timer_running')}</p>
                         </div>
                         <div className="bg-slate-50 px-6 py-3 rounded-xl font-mono text-2xl font-bold text-slate-700">
                             00:15:23
                         </div>
                         <Button onClick={handleFinish} className="w-full h-14 text-lg bg-emerald-600 hover:bg-emerald-700 rounded-2xl shadow-xl shadow-emerald-200 mt-auto">
-                            Finalizar Serviço
+                            {t('cleaner.active_job.finish_button')}
                         </Button>
                     </div>
                 )}

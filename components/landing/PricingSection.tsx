@@ -9,41 +9,121 @@ type PlanCategory = 'SYSTEM' | 'COMBOS' | 'TELEPHONY';
 
 interface PricingSectionProps {
     onStart: (planId: string) => void;
+    lang?: 'en' | 'pt' | 'es';
 }
 
-export function PricingSection({ onStart }: PricingSectionProps) {
-    const [category, setCategory] = useState<PlanCategory>('COMBOS');
+const PRICING_DATA = {
+    en: {
+        title: "Choose the ideal plan for your operation",
+        subtitle: "Start with efficient management or boost with our communication combos.",
+        buttons: { system: "System Only", combos: "Combos + Voice", telephony: "Telephony" },
+        units: { month: "/mo", users: "Users Included", minutes: "Minutes Included/mo" },
+        badges: { recommended: "Recommended", lock: "Telephony Features" },
+        cta: "Get Started",
+        simulator: "Simulate your usage:",
+        footer: {
+            title: "Need more? See the power of $1",
+            simulator: "Each additional $1 adds:",
+            note: "*Add extra credits anytime without changing plans."
+        },
+        plans: {
+            system: [
+                { id: "system_essentials", name: "Essentials", description: "For small operations", features: ["Full System Access", "Property Management", "Task Automation", "Mobile App for Cleaners"] },
+                { id: "system_business", name: "Business", description: "For growing teams", features: ["Everything in Essentials", "Advanced Analytics", "Inventory Management", "API Access"] }
+            ],
+            combos: [
+                { id: "founders_combo", name: "Founders", features: ["Full System", "Local Number (US)", "Call Recording", "Voicemail Transcription"] },
+                { id: "solopreneur_combo", name: "Solopreneur", features: ["All Founders features", "Voice Menus (IVR)", "Call Queues", "SMS Marketing"] },
+                { id: "growth_team_combo", name: "Growth Team", features: ["Solopreneur Features", "Power Dialer", "Real-time Monitoring", "Advanced CRM"] }
+            ],
+            telephony: [
+                { id: "voice_starter", name: "Voice Starter", features: ["Business Line Only", "Web & Mobile Apps", "Call Recording", "Voicemail Drop"] },
+                { id: "voice_pro", name: "Voice Pro", features: ["All Starter features", "Call Queues", "Voice Menus (IVR)", "Warm Transfers"] },
+                { id: "voice_scale", name: "Voice Scale", features: ["All Pro features", "Power Dialer", "Sentiment Analysis", "Advanced Reporting"] }
+            ]
+        }
+    },
+    pt: {
+        title: "Escolha o plano ideal para sua operação",
+        subtitle: "Comece com uma gestão eficiente ou potencialize com nossos combos de comunicação.",
+        buttons: { system: "System Only", combos: "Combos + Voz", telephony: "Telefonia" },
+        units: { month: "/mês", users: "Usuários Incluídos", minutes: "Minutos Incluídos/mês" },
+        badges: { recommended: "Recomendado", lock: "Recursos de Telefonia" },
+        cta: "Começar Agora",
+        simulator: "Simule seu uso:",
+        footer: {
+            title: "Precisa de mais? Veja o poder de $1",
+            simulator: "Cada $1 Adicional adiciona:",
+            note: "*Adicione créditos extras a qualquer momento sem mudar de plano."
+        },
+        plans: {
+            system: [
+                { id: "system_essentials", name: "Essentials", description: "Para pequenas operações", features: ["Acesso completo ao Sistema", "Gestão de Propriedades", "Automação de Tarefas", "App Mobile para Cleaners"] },
+                { id: "system_business", name: "Business", description: "Para times em crescimento", features: ["Tudo do Essentials", "Analytics Avançado", "Gestão de Inventário", "API Acesso"] }
+            ],
+            combos: [
+                { id: "founders_combo", name: "Founders", features: ["Sistema Completo", "Número Local (EUA)", "Gravador de Chamadas", "Correio de Voz Transcrito"] },
+                { id: "solopreneur_combo", name: "Solopreneur", features: ["Todas features Founders", "Menus de Voz (IVR)", "Filas de Chamada", "SMS Marketing"] },
+                { id: "growth_team_combo", name: "Growth Team", features: ["Features Solopreneur", "Power Dialer", "Monitoramento em Tempo Real", "CRM Avançado"] }
+            ],
+            telephony: [
+                { id: "voice_starter", name: "Voice Starter", features: ["Apenas Linha Comercial", "Apps Web & Mobile", "Gravador de Chamadas", "Voicemail Drop"] },
+                { id: "voice_pro", name: "Voice Pro", features: ["Todas features Starter", "Filas de Chamada", "Menus de Voz (IVR)", "Transferências Quentes"] },
+                { id: "voice_scale", name: "Voice Scale", features: ["Todas features Pro", "Power Dialer", "Analise de Sentimento", "Relatórios Avançados"] }
+            ]
+        }
+    },
+    es: {
+        title: "Elige el plan ideal para tu operación",
+        subtitle: "Comienza con una gestión eficiente o potencia con nuestros combos de comunicación.",
+        buttons: { system: "Solo Sistema", combos: "Combos + Voz", telephony: "Telefonía" },
+        units: { month: "/mes", users: "Usuarios Incluidos", minutes: "Minutos Incluidos/mes" },
+        badges: { recommended: "Recomendado", lock: "Funciones de Telefonía" },
+        cta: "Empezar Ahora",
+        simulator: "Simula tu uso:",
+        footer: {
+            title: "¿Necesitas más? Mira el poder de $1",
+            simulator: "Cada $1 Adicional agrega:",
+            note: "*Agrega créditos extra en cualquier momento sin cambiar de plan."
+        },
+        plans: {
+            system: [
+                { id: "system_essentials", name: "Essentials", description: "Para pequeñas operaciones", features: ["Acceso completo al Sistema", "Gestión de Propiedades", "Automatización de Tareas", "App Móvil para Cleaners"] },
+                { id: "system_business", name: "Business", description: "Para equipos en crecimiento", features: ["Todo de Essentials", "Analytics Avanzado", "Gestión de Inventario", "Acceso API"] }
+            ],
+            combos: [
+                { id: "founders_combo", name: "Founders", features: ["Sistema Completo", "Número Local (EE.UU.)", "Grabador de Llamadas", "Transcripción de Buzón de Voz"] },
+                { id: "solopreneur_combo", name: "Solopreneur", features: ["Todas las funciones Founders", "Menús de Voz (IVR)", "Colas de Llamada", "SMS Marketing"] },
+                { id: "growth_team_combo", name: "Growth Team", features: ["Funciones Solopreneur", "Power Dialer", "Monitoreo en Tiempo Real", "CRM Avanzado"] }
+            ],
+            telephony: [
+                { id: "voice_starter", name: "Voice Starter", features: ["Solo Línea Comercial", "Apps Web y Móvil", "Grabador de Llamadas", "Voicemail Drop"] },
+                { id: "voice_pro", name: "Voice Pro", features: ["Todas las funciones Starter", "Colas de Llamada", "Menús de Voz (IVR)", "Transferencias Calientes"] },
+                { id: "voice_scale", name: "Voice Scale", features: ["Todas las funciones Pro", "Power Dialer", "Análisis de Sentimiento", "Reportes Avanzados"] }
+            ]
+        }
+    }
+};
 
-    // System Plans (User-based)
+export function PricingSection({ onStart, lang = 'pt' }: PricingSectionProps) {
+    const [category, setCategory] = useState<PlanCategory>('COMBOS');
+    const t = PRICING_DATA[lang];
+
+    // Reconstruct plans with translations but keeping static data like price/users/icons
     const systemPlans = [
         {
-            id: "system_essentials",
-            name: "Essentials",
-            description: "Para pequenas operações",
+            ...t.plans.system[0],
             price: 29.90,
             users: 2,
-            features: [
-                "Acesso completo ao Sistema",
-                "Gestão de Propriedades",
-                "Automação de Tarefas",
-                "App Mobile para Cleaners"
-            ],
-            telephonyMethods: false, // Bloqueado
+            telephonyMethods: false,
             icon: Building2,
-            color: "blue"
+            color: "blue",
+            recommended: false
         },
         {
-            id: "system_business",
-            name: "Business",
-            description: "Para times em crescimento",
+            ...t.plans.system[1],
             price: 39.90,
             users: 4,
-            features: [
-                "Tudo do Essentials",
-                "Analytics Avançado",
-                "Gestão de Inventário",
-                "API Acesso"
-            ],
             telephonyMethods: false,
             recommended: true,
             icon: Briefcase,
@@ -51,103 +131,63 @@ export function PricingSection({ onStart }: PricingSectionProps) {
         }
     ];
 
-    // Combo Plans (User + Credits)
     const comboPlans = [
         {
-            id: "founders_combo",
-            name: "Founders",
+            ...t.plans.combos[0],
             price: 49.90,
             users: 2,
             minutes: 150,
-            features: [
-                "Sistema Completo",
-                "Número Local (EUA)",
-                "Gravador de Chamadas",
-                "Correio de Voz Transcrito"
-            ],
             icon: Zap,
-            color: "purple"
+            color: "purple",
+            recommended: false
         },
         {
-            id: "solopreneur_combo",
-            name: "Solopreneur",
+            ...t.plans.combos[1],
             price: 69.90,
             users: 4,
             minutes: 600,
-            features: [
-                "Todas features Founders",
-                "Menus de Voz (IVR)",
-                "Filas de Chamada",
-                "SMS Marketing"
-            ],
             recommended: true,
             icon: Rocket,
             color: "indigo"
         },
         {
-            id: "growth_team_combo",
-            name: "Growth Team",
+            ...t.plans.combos[2],
             price: 99.90,
             users: 5,
             minutes: 1500,
-            features: [
-                "Features Solopreneur",
-                "Power Dialer",
-                "Monitoramento em Tempo Real",
-                "CRM Avançado"
-            ],
             icon: Building2,
-            color: "orange"
+            color: "orange",
+            recommended: false
         }
     ];
 
-    // Telephony Plans (Only Credits)
     const telephonyPlans = [
         {
-            id: "voice_starter",
-            name: "Voice Starter",
+            ...t.plans.telephony[0],
             price: 14.99,
             users: 1,
             minutes: 150,
-            features: [
-                "Apenas Linha Comercial",
-                "Apps Web & Mobile",
-                "Gravador de Chamadas",
-                "Voicemail Drop"
-            ],
             icon: Phone,
-            color: "cyan"
+            color: "cyan",
+            recommended: false
         },
         {
-            id: "voice_pro",
-            name: "Voice Pro",
+            ...t.plans.telephony[1],
             price: 34.99,
             users: 3,
             minutes: 600,
-            features: [
-                "Todas features Starter",
-                "Filas de Chamada",
-                "Menus de Voz (IVR)",
-                "Transferências Quentes"
-            ],
             recommended: true,
             icon: Zap,
             color: "blue"
         },
         {
-            id: "voice_scale",
-            name: "Voice Scale",
+            ...t.plans.telephony[2],
             price: 89.99,
             users: 5,
             minutes: 1500,
-            features: [
-                "Todas features Pro",
-                "Power Dialer",
-                "Analise de Sentimento",
-                "Relatórios Avançados"
-            ],
             icon: Rocket,
-            color: "violet"
+            color: "violet",
+            recommended: false
         }
     ];
 
@@ -165,10 +205,10 @@ export function PricingSection({ onStart }: PricingSectionProps) {
             <div className="container px-4 mx-auto">
                 <div className="max-w-3xl mx-auto text-center mb-16">
                     <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
-                        Escolha o plano ideal para sua operação
+                        {t.title}
                     </h2>
                     <p className="mt-4 text-lg text-slate-600">
-                        Comece com uma gestão eficiente ou potencialize com nossos combos de comunicação.
+                        {t.subtitle}
                     </p>
 
                     <div className="flex justify-center mt-8">
@@ -182,7 +222,7 @@ export function PricingSection({ onStart }: PricingSectionProps) {
                                         : "text-slate-600 hover:bg-slate-50"
                                 )}
                             >
-                                System Only
+                                {t.buttons.system}
                             </button>
                             <button
                                 onClick={() => setCategory('COMBOS')}
@@ -194,7 +234,7 @@ export function PricingSection({ onStart }: PricingSectionProps) {
                                 )}
                             >
                                 <Zap size={16} />
-                                Combos + Voz
+                                {t.buttons.combos}
                             </button>
                             <button
                                 onClick={() => setCategory('TELEPHONY')}
@@ -206,7 +246,7 @@ export function PricingSection({ onStart }: PricingSectionProps) {
                                 )}
                             >
                                 <Phone size={16} />
-                                Telefonia
+                                {t.buttons.telephony}
                             </button>
                         </div>
                     </div>
@@ -230,7 +270,7 @@ export function PricingSection({ onStart }: PricingSectionProps) {
                             {plan.recommended && (
                                 <div className="absolute top-0 right-0 -mt-3 -mr-3">
                                     <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-600 text-white shadow-sm">
-                                        Recomendado
+                                        {t.badges.recommended}
                                     </span>
                                 </div>
                             )}
@@ -250,19 +290,19 @@ export function PricingSection({ onStart }: PricingSectionProps) {
 
                             <div className="mb-6">
                                 <span className="text-4xl font-bold text-slate-900">${plan.price}</span>
-                                <span className="text-slate-500">/mês</span>
+                                <span className="text-slate-500">{t.units.month}</span>
                             </div>
 
                             <div className="space-y-4 mb-8 flex-1">
                                 <div className="flex items-center gap-3 text-sm text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-100">
                                     <User size={16} className="text-slate-400" />
-                                    <span className="font-semibold">{plan.users} Usuários Incluídos</span>
+                                    <span className="font-semibold">{plan.users} {t.units.users}</span>
                                 </div>
 
                                 {(category === 'COMBOS' || category === 'TELEPHONY') && plan.minutes && (
                                     <div className="flex items-center gap-3 text-sm text-indigo-700 bg-indigo-50 p-3 rounded-lg border border-indigo-100">
                                         <Phone size={16} className="text-indigo-500" />
-                                        <span className="font-semibold">{plan.minutes} Minutos Incluídos/mês</span>
+                                        <span className="font-semibold">{plan.minutes} {t.units.minutes}</span>
                                     </div>
                                 )}
 
@@ -278,7 +318,7 @@ export function PricingSection({ onStart }: PricingSectionProps) {
                                     {category === 'SYSTEM' && (
                                         <li className="flex items-center gap-3 text-sm text-slate-400 opacity-60">
                                             <Lock size={16} className="text-slate-400 flex-shrink-0" />
-                                            Recursos de Telefonia
+                                            {t.badges.lock}
                                         </li>
                                     )}
                                 </ul>
@@ -287,7 +327,7 @@ export function PricingSection({ onStart }: PricingSectionProps) {
                             {/* Simulation for Combos & Telephony */}
                             {(category === 'COMBOS' || category === 'TELEPHONY') && plan.minutes && (
                                 <div className="mt-2 mb-6 -mx-2">
-                                    <UsageSimulator initialMinutes={plan.minutes} label="Simule seu uso:" />
+                                    <UsageSimulator initialMinutes={plan.minutes} label={t.simulator} lang={lang} />
                                 </div>
                             )}
 
@@ -298,7 +338,7 @@ export function PricingSection({ onStart }: PricingSectionProps) {
                                     plan.recommended ? "bg-indigo-600 hover:bg-indigo-700" : "bg-slate-900 hover:bg-slate-800"
                                 )}
                             >
-                                Começar Agora
+                                {t.cta}
                             </Button>
                         </div>
                     ))}
@@ -307,17 +347,18 @@ export function PricingSection({ onStart }: PricingSectionProps) {
                 {/* Global Simulator for "Each Additional $1" */}
                 <div className="max-w-2xl mx-auto mt-20 pt-10 border-t border-slate-200">
                     <h3 className="text-xl font-bold text-center text-slate-900 mb-8">
-                        Precisa de mais? Veja o poder de $1
+                        {t.footer.title}
                     </h3>
                     <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-1">
                         <UsageSimulator
                             initialMinutes={125}
-                            label="Cada $1 Adicional adiciona:"
+                            label={t.footer.simulator}
                             className="border-0 shadow-none bg-transparent"
+                            lang={lang}
                         />
                     </div>
                     <p className="text-center text-sm text-slate-500 mt-4">
-                        *Adicione créditos extras a qualquer momento sem mudar de plano.
+                        {t.footer.note}
                     </p>
                 </div>
             </div>

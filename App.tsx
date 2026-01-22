@@ -19,6 +19,7 @@ import { UnifiedInbox } from './components/telephony/UnifiedInbox.tsx';
 import { Resources } from './components/Resources.tsx';
 import AirbnbDispatch from './components/AirbnbDispatch.tsx';
 import { TelnyxProvider } from './contexts/telnyx-context.tsx';
+import { CommandMenu } from './components/CommandMenu.tsx';
 import { TabType } from './types.ts';
 import { createClient } from './lib/supabase/client.ts';
 import { User } from '@supabase/supabase-js';
@@ -55,89 +56,36 @@ import { SessionGuard } from './components/system/SessionGuard.tsx';
 const App: React.FC = () => {
   useSessionManager(); // Active Session Enforcement
   const [activeTab, setActiveTab] = useState<TabType>(TabType.OVERVIEW);
-  const [user, setUser] = useState<User | null>(null);
   const [view, setView] = useState<'landing' | 'auth' | 'dashboard' | 'features'>('landing');
   const [selectedPlan, setSelectedPlan] = useState<string | undefined>(undefined);
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'verify'>('register'); // Default to register for Landing Page CTAs
-  const [loading, setLoading] = useState(true);
-  const supabase = createClient();
+
+  // Removed local loading state - relying on roleContext
+  // Removed local supabase client - using hooks
+
   const roleContext = useRole(); // Fetch role context
-  const { role } = roleContext;
+  const { role, user, loading: roleLoading } = roleContext;
   const [platformModule, setPlatformModule] = useState<'dashboard' | 'tenants' | 'finance' | 'system' | 'logs' | 'support' | 'broadcast' | 'telephony'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
+
 
 
   useEffect(() => {
-    let sessionTimeout: NodeJS.Timeout;
-
-    // Safety timeout - if session check takes too long, something is stuck
-    // Safety timeout - if session check takes too long, something is stuck
-    sessionTimeout = setTimeout(() => {
-      console.warn('Session check timeout - check network or supabase status');
-      // Do NOT clear storage - just stop loading to show UI (maybe offline mode)
-      setLoading(false);
-      // Optional: setView('landing') if you really want, but better to stay and let user retry
-    }, 15000); // 15 second timeout
-
-    supabase.auth.getSession()
-      .then(({ data: { session }, error }) => {
-        clearTimeout(sessionTimeout);
-
-        if (error) {
-          console.error('Session error:', error);
-          // Only sign out if it's a real Auth error, not just network
-          // But strict security preference: if error, safe to sign out.
-          supabase.auth.signOut().catch(() => { });
-          setUser(null);
-          setView('landing');
-        } else {
-          setUser(session?.user ?? null);
-          if (session?.user) setView('dashboard');
-        }
-        setLoading(false);
-      })
-      .catch((err: any) => {
-        clearTimeout(sessionTimeout);
-
-        // Ignore AbortError - it happens on navigation/unmount and is NOT a fatal session error
-        if (err?.name === 'AbortError') {
-          console.warn('Session fetch aborted (non-fatal)');
-          return; // Do NOT clear user/session
-        }
-
-        console.error('Session fetch failed:', err);
-        setLoading(false);
-        // Do not force logout on fetch fail - might be offline
-      });
-
-    // Simple Routing Logic
-    const path = window.location.pathname;
-    const params = new URLSearchParams(window.location.search);
-    const modeParam = params.get('mode');
-
-    if (path === '/auth') {
-      setView('auth');
-      if (modeParam === 'login' || modeParam === 'register' || modeParam === 'verify') {
-        setAuthMode(modeParam);
-      }
-    }
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      setUser(session?.user ?? null);
-
-      if (session?.user) {
+    // Simple View Logic based on RoleContext
+    if (user) {
+      if (view === 'landing' || view === 'auth') {
         setView('dashboard');
-      } else if (event === 'SIGNED_OUT') {
-        // Only force landing if explicitly signed out
+      }
+    } else {
+      // If no user...
+      if (!roleLoading && view === 'dashboard') {
+        // Only force landing if we were in dashboard and lost user (e.g. logout)
         setView('landing');
       }
-      // If just checking session and no user found, DO NOT force landing.
-      // This allows 'auth' view to persist when clicked.
-
-      setLoading(false);
-    });
+    }
 
     // Auto-Register Service Worker for Notifications
     if ('serviceWorker' in navigator && user && (role === 'cleaner' || role === 'staff')) {
@@ -145,12 +93,7 @@ const App: React.FC = () => {
         .then(reg => console.log('Push SW Registered:', reg.scope))
         .catch(err => console.error('Push SW Registration failed:', err));
     }
-
-    return () => {
-      clearTimeout(sessionTimeout);
-      subscription.unsubscribe();
-    };
-  }, [user, role]); // Run when user or role changes
+  }, [user, role, roleLoading, view]); // Run when user or role changes
 
   const renderDashboardContent = () => {
     switch (activeTab) {
@@ -245,7 +188,7 @@ const App: React.FC = () => {
     }
 
     // Checking "God Mode" Access
-    if (loading) return null; // Wait for session only for protected platform tools
+    if (roleLoading) return null; // Wait for session only for protected platform tools
 
     if (!user || role !== 'super_admin') {
       // If we are not authenticated as super admin, force login
@@ -272,13 +215,14 @@ const App: React.FC = () => {
   }
 
   // Priority 2: Loading State (Wait for session AND role data AND permissions)
-  if (loading || (user && (roleContext.loading || permissionContext.loading))) {
+  if (roleLoading || (user && (roleContext.loading || permissionContext.loading))) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white">
         <div className="flex flex-col items-center gap-6 animate-in fade-in zoom-in duration-500">
           <div className="relative">
-            <div className="h-16 w-16 animate-spin rounded-full border-4 border-indigo-100 border-t-indigo-600"></div>
-            <Plane className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-indigo-600" size={24} />
+            <div className="h-16 w-16 animate-spin rounded-full border-4 border-indigo-100 border-t-indigo-600 flex items-center justify-center p-2">
+              <img src="/favicon.png" alt="Loading" className="w-8 h-8" />
+            </div>
           </div>
           <div className="text-center space-y-1">
             <h2 className="text-lg font-bold text-slate-900">Cleanlydash</h2>
@@ -390,13 +334,14 @@ const App: React.FC = () => {
                 >
                   <Menu size={20} />
                 </button>
-                <div className="relative hidden md:block">
+                <div
+                  className="relative hidden md:block cursor-text"
+                  onClick={() => setIsCommandMenuOpen(true)}
+                >
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Buscar... (Cmd+K)"
-                    className="h-10 w-64 rounded-full border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-                  />
+                  <div className="flex items-center h-10 w-64 rounded-full border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm text-slate-400">
+                    Buscar... (Cmd+K)
+                  </div>
                 </div>
               </div>
 
@@ -434,6 +379,14 @@ const App: React.FC = () => {
       <SessionGuard />
       {/* Softphone flutuante persistente com IA Live Coach */}
       <DialerWidget />
+      <CommandMenu
+        open={isCommandMenuOpen}
+        onOpenChange={setIsCommandMenuOpen}
+        onNavigate={(tab) => {
+          setActiveTab(tab);
+          setIsCommandMenuOpen(false);
+        }}
+      />
       <Toaster position="top-right" richColors />
     </TelnyxProvider>
   );

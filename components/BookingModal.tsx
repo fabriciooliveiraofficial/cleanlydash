@@ -1,4 +1,5 @@
 ﻿import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createClient } from '../lib/supabase/client';
 import {
     X, ChevronRight, ChevronLeft, User, Calendar, Clock,
@@ -11,6 +12,7 @@ import { ptBR } from 'date-fns/locale';
 import { CustomerCombobox } from './CustomerCombobox';
 import { InternationalPhoneInput } from './ui/InternationalPhoneInput';
 import { useRole } from '../hooks/use-role';
+import { DeleteRecurrenceModal } from './DeleteRecurrenceModal';
 
 interface BookingModalProps {
     isOpen: boolean;
@@ -106,10 +108,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     defaultDate
 }) => {
     const supabase = createClient();
+    const { t } = useTranslation();
     const isEditMode = !!booking;
 
-
-    // Interface states
     // Interface states
     const [showDrawer, setShowDrawer] = useState(false);
     const [drawerMode, setDrawerMode] = useState<'schedule' | 'customer' | 'service'>('schedule');
@@ -182,6 +183,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
     const { tenant_id: sessionTenantId } = useRole();
     const [saving, setSaving] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [recurrenceSeriesForDelete, setRecurrenceSeriesForDelete] = useState<any[]>([]);
+
     const [isInitialized, setIsInitialized] = useState(false);
     const initialValuesRef = React.useRef<any>(null);
 
@@ -322,6 +327,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         if (isOpen) {
             fetchCustomers();
             fetchCategories();
+            fetchServices();
             fetchStaff();
 
             const fetchAvailableInventory = async () => {
@@ -776,6 +782,73 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
     // Navigation logic removed
 
+    const handleDeleteClick = async () => {
+        if (!booking) return;
+
+        // If not recurrence, confirm simple delete
+        if (formData.recurrence_type === 'none' && !booking.recurrence_rule && !booking.parent_booking_id) {
+            if (window.confirm("Tem certeza que deseja excluir este agendamento?")) {
+                setSaving(true);
+                const { error } = await supabase.from('bookings').delete().eq('id', booking.id);
+                if (error) {
+                    toast.error("Erro ao excluir");
+                } else {
+                    toast.success("Agendamento excluído");
+                    onSave();
+                    onClose();
+                }
+                setSaving(false);
+            }
+            return;
+        }
+
+        // Is Recurrence
+        setIsDeleting(true);
+        // Find parent ID
+        const parentId = booking.parent_booking_id || booking.id;
+
+        // Fetch series
+        const { data } = await supabase.from('bookings')
+            .select(`
+            id, start_date, price, status, assigned_to
+        `)
+            .or(`id.eq.${parentId},parent_booking_id.eq.${parentId}`)
+            .order('start_date', { ascending: true });
+
+        // Fetch team member names
+        // Note: Relation might be tricky if not set up, so manual fetch is safer or use join if confident
+        // We'll trust the join if it's there, but to be safe let's map form staff list
+
+        if (data) {
+            const series = data.map((b: any) => ({
+                id: b.id,
+                start_date: b.start_date,
+                price: b.price,
+                status: b.status,
+                cleaner_name: staff.find(s => s.id === b.assigned_to)?.name || 'Sem Staff'
+            }));
+            setRecurrenceSeriesForDelete(series);
+            setShowDeleteModal(true);
+        }
+        setIsDeleting(false);
+    };
+
+    const confirmDeleteSeries = async (ids: string[]) => {
+        setIsDeleting(true);
+        try {
+            await supabase.from('bookings').delete().in('id', ids);
+            toast.success(`${ids.length} agendamentos excluídos`);
+            onSave();
+            onClose();
+        } catch (e) {
+            console.error(e);
+            toast.error("Erro ao excluir");
+        } finally {
+            setIsDeleting(false);
+            setShowDeleteModal(false);
+        }
+    };
+
     const handleSave = async () => {
         setSaving(true);
         let createdBookingId: string | null = null;
@@ -938,7 +1011,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     await supabase.from('bookings').delete().eq('parent_booking_id', booking.id);
                 }
 
-                toast.success("Série de agendamentos atualizada!");
+                toast.success(t('booking_modal.success_series_updated'));
             } else {
                 // Create parent booking
                 // For single booking, price includes addons
@@ -1038,7 +1111,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     }).catch(err => console.error("Notification Trigger Error:", err));
                 }
 
-                toast.success(`${recurrenceInstances.length > 1 ? recurrenceInstances.length + ' agendamentos criados!' : 'Agendamento criado!'}`);
+                toast.success(recurrenceInstances.length > 1
+                    ? t('booking_modal.success_created_count', { count: recurrenceInstances.length })
+                    : t('booking_modal.success_created')
+                );
             }
 
             // Update Inventory (Replace all)
@@ -1062,9 +1138,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             let errorMessage = e.message || 'Erro desconhecido ao salvar';
 
             if (e.code === '23503' && e.message?.includes('bookings_tenant_id_fkey')) {
-                errorMessage = "Erro de Sincronização: Seu cadastro de empresa ainda não foi totalmente processado. Por favor, tente recarregar a página ou contate o suporte.";
+                errorMessage = t('booking_modal.error_sync');
             } else if (e.code === '23503') {
-                errorMessage = "Erro de integridade: " + (e.details || e.message);
+                errorMessage = t('booking_modal.error_integrity') + (e.details || e.message);
             }
 
             toast.error(errorMessage);
@@ -1179,9 +1255,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                         </div>
                         <div>
                             <h3 className="font-black text-xl text-slate-800 tracking-tight">
-                                {isEditMode ? 'Editar Agendamento' : 'Novo Agendamento'}
+                                {isEditMode ? t('booking_modal.edit_title') : t('booking_modal.new_title')}
                             </h3>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none mt-0.5">Gestáo de Serviços e Clientes</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none mt-0.5">{t('booking_modal.subtitle')}</p>
                         </div>
                     </div>
                     <button onClick={onClose} className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-slate-600 rounded-xl hover:bg-white transition-all">
@@ -1198,7 +1274,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                         {/* Section: Cliente Card */}
                         <div className="space-y-2">
                             <div className="flex items-center justify-between">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cliente</label>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t('booking_modal.client_label')}</label>
                                 {formData.customer_id && (
                                     <button
                                         onClick={() => {
@@ -1207,7 +1283,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                         }}
                                         className="text-xs text-indigo-600 font-bold hover:text-indigo-700"
                                     >
-                                        Trocar
+                                        {t('booking_modal.change_button')}
                                     </button>
                                 )}
                             </div>
@@ -1248,7 +1324,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                     <div className="w-8 h-8 rounded-full bg-slate-100 group-hover:bg-indigo-100 flex items-center justify-center text-slate-400 group-hover:text-indigo-600 transition-colors">
                                         <UserPlus size={16} />
                                     </div>
-                                    <span className="font-bold text-slate-400 group-hover:text-indigo-600">Selecionar Cliente</span>
+                                    <span className="font-bold text-slate-400 group-hover:text-indigo-600">{t('booking_modal.select_client_placeholder')}</span>
                                 </button>
                             )}
                         </div>
@@ -1257,20 +1333,20 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                         <div className="space-y-4 animate-in fade-in slide-in-from-left-4 duration-500 delay-100">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Atribuir a</label>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t('booking_modal.assign_to_label')}</label>
                                     <select
                                         className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-slate-700 transition-all"
                                         value={formData.assigned_to}
                                         onChange={e => handleStaffChange(e.target.value)}
                                     >
-                                        <option value="">Aguardando Atribuição</option>
-                                        <optgroup label="Disponíveis">
+                                        <option value="">{t('booking_modal.waiting_assignment')}</option>
+                                        <optgroup label={t('booking_modal.available_group')}>
                                             {availableStaff.map(s => (
                                                 <option key={s.id} value={s.id}>✅ {s.name} ({s.role})</option>
                                             ))}
                                         </optgroup>
                                         {unavailableStaff.length > 0 && (
-                                            <optgroup label="Outros (Fora de Horário)">
+                                            <optgroup label={t('booking_modal.unavailable_group')}>
                                                 {unavailableStaff.map(s => (
                                                     <option key={s.id} value={s.id}>⚠️ {s.name} ({s.role})</option>
                                                 ))}
@@ -1280,12 +1356,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                     {!isStaffAvailable(formData.assigned_to) && formData.assigned_to && (
                                         <div className="flex items-center gap-2 mt-2 p-2 bg-amber-50 rounded-lg text-xs text-amber-700 border border-amber-200 animate-in fade-in">
                                             <div className="min-w-4"><Clock size={14} /></div>
-                                            <span><strong>Atenção:</strong> Este horário pode estar fora do turno deste membro ou em um dia de folga.</span>
+                                            <span><strong>{t('booking_modal.warning_unavailable', { defaultValue: 'Warning:' })}</strong> {t('booking_modal.warning_unavailable_text', { defaultValue: 'This time might be outside the shift.' })}</span>
                                         </div>
                                     )}
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cor no Calendário</label>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t('booking_modal.color_label')}</label>
                                     <div className="flex gap-2 p-1.5 bg-slate-50 border border-slate-100 rounded-2xl">
                                         {PRESET_COLORS.slice(0, 6).map(color => (
                                             <button
@@ -1302,7 +1378,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
                         {/* Section: Serviço e Valores */}
                         <div className={`space-y-4 transition-all duration-300 ${!formData.assigned_to ? 'opacity-40 pointer-events-none grayscale' : ''}`}>
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Serviço</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t('booking_modal.service_label')}</label>
                             <div className="space-y-4">
                                 {/* Smart Service Selector */}
                                 <div className="space-y-3">
@@ -1335,7 +1411,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                                 </div>
                                                 <div className="ml-auto">
                                                     <button className="text-[10px] font-black uppercase tracking-widest text-indigo-400 group-hover:text-indigo-600">
-                                                        Editar
+                                                        {t('booking_modal.edit_button')}
                                                     </button>
                                                 </div>
                                             </div>
@@ -1351,7 +1427,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                             <div className="w-8 h-8 rounded-full bg-slate-100 group-hover:bg-indigo-100 flex items-center justify-center text-slate-400 group-hover:text-indigo-600 transition-colors">
                                                 <Sparkles size={16} />
                                             </div>
-                                            <span className="font-bold text-slate-400 group-hover:text-indigo-600">Selecionar Serviço</span>
+                                            <span className="font-bold text-slate-400 group-hover:text-indigo-600">{t('booking_modal.select_service_placeholder')}</span>
                                         </button>
                                     )}
 
@@ -1376,7 +1452,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                             {/* Checklist (What's Included) */}
                                             {serviceTasks.length > 0 && (
                                                 <div className="p-4 bg-slate-50/50 border-b border-slate-100">
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 block">O que está incluso</label>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 block">{t('booking_modal.whats_included')}</label>
                                                     <div className="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto custom-scrollbar pr-1">
                                                         {serviceTasks.map(task => (
                                                             <div key={task.id} className="flex items-start gap-2.5 group">
@@ -1396,7 +1472,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                             <div className="p-4 grid grid-cols-2 gap-4">
                                                 {/* Base Price */}
                                                 <div>
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">Preço Base (R$)</label>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">{t('booking_modal.base_price_label')}</label>
                                                     <div className="relative group">
                                                         <DollarSign size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-hover:text-indigo-500 transition-colors" />
                                                         <input
@@ -1411,7 +1487,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
                                                 {/* Discount Selector */}
                                                 <div>
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">Aplicar Desconto</label>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">{t('booking_modal.apply_discount_label')}</label>
                                                     <div className="flex gap-2">
                                                         <select
                                                             className="bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 px-2 outline-none focus:border-indigo-500"
@@ -1439,7 +1515,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                                     <input
                                                         type="text"
                                                         className="w-full px-3 py-2 bg-rose-50 border border-rose-100 rounded-xl text-xs text-rose-700 placeholder:text-rose-300 focus:ring-1 focus:ring-rose-500 outline-none"
-                                                        placeholder="Motivo do desconto (ex: Primeira compra)"
+                                                        placeholder={t('booking_modal.discount_reason_placeholder')}
                                                         value={discount.reason}
                                                         onChange={e => setDiscount({ ...discount, reason: e.target.value })}
                                                     />
@@ -1457,7 +1533,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
                         {/* Section: Status */}
                         <div className="space-y-2">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Status do Agendamento</label>
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t('booking_modal.status_label')}</label>
                             <div className="flex gap-2">
                                 {['pending', 'confirmed', 'completed', 'cancelled'].map(st => (
                                     <button
@@ -1468,7 +1544,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                             : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-300 hover:text-indigo-600'
                                             }`}
                                     >
-                                        {st === 'pending' ? 'Pendente' : st === 'confirmed' ? 'Confirmado' : st === 'completed' ? 'Concluído' : 'Cancelado'}
+                                        {st === 'pending' ? t('booking_modal.status_pending') : st === 'confirmed' ? t('booking_modal.status_confirmed') : st === 'completed' ? t('booking_modal.status_completed') : t('booking_modal.status_cancelled')}
                                     </button>
                                 ))}
                             </div>
@@ -1492,7 +1568,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                     <Clock size={20} />
                                 </div>
                                 <div className="px-3 py-1 bg-white/20 rounded-full text-[10px] font-black uppercase tracking-widest backdrop-blur-md">
-                                    {formData.recurrence_type === 'none' ? 'Único' : 'Recorrente'}
+                                    {formData.recurrence_type === 'none' ? t('booking_modal.type_single') : t('booking_modal.type_recurring')}
                                 </div>
                             </div>
 
@@ -1513,13 +1589,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                 </div>
                             ) : (
                                 <div className="py-2">
-                                    <div className="text-lg font-bold">Horário não definido</div>
-                                    <div className="text-white/60 text-xs">Clique para configurar data e hora</div>
+                                    <div className="text-lg font-bold">{t('booking_modal.time_undefined')}</div>
+                                    <div className="text-white/60 text-xs">{t('booking_modal.click_to_configure')}</div>
                                 </div>
                             )}
 
                             <div className="mt-5 pt-4 border-t border-white/10 flex justify-between items-center group-hover:border-white/20 transition-colors">
-                                <span className="text-[10px] font-bold uppercase tracking-widest text-white/70">Configurar Horários</span>
+                                <span className="text-[10px] font-bold uppercase tracking-widest text-white/70">{t('booking_modal.configure_schedule')}</span>
                                 <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
                             </div>
                         </div>
@@ -1534,7 +1610,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                         : 'text-slate-400 hover:text-slate-600'
                                         }`}
                                 >
-                                    Notas
+                                    {t('booking_modal.tab_notes')}
                                 </button>
                                 <button
                                     onClick={() => setActiveTab('inventory')}
@@ -1543,7 +1619,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                         : 'text-slate-400 hover:text-slate-600'
                                         }`}
                                 >
-                                    Inventário
+                                    {t('booking_modal.tab_inventory')}
                                 </button>
                             </div>
 
@@ -1559,14 +1635,18 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                                     : 'text-slate-400 hover:text-slate-600'
                                                     }`}
                                             >
-                                                {tab === 'internal' ? 'Interna' : tab === 'client' ? 'Cliente' : 'Staff'}
+                                                {tab === 'internal' ? t('booking_modal.tab_internal') : tab === 'client' ? t('booking_modal.tab_client') : t('booking_modal.tab_staff')}
                                             </button>
                                         ))}
                                     </div>
                                     <div className="p-4 flex-1 overflow-y-auto">
                                         <textarea
                                             className="w-full h-full bg-transparent border-none focus:ring-0 text-sm text-slate-600 placeholder:text-slate-300 italic resize-none"
-                                            placeholder={`Escreva notas para o ${activeNotesTab === 'internal' ? 'escritório' : activeNotesTab === 'client' ? 'cliente' : 'quem irá executar'}...`}
+                                            placeholder={
+                                                activeNotesTab === 'internal' ? t('booking_modal.notes_placeholder_internal') :
+                                                    activeNotesTab === 'client' ? t('booking_modal.notes_placeholder_client') :
+                                                        t('booking_modal.notes_placeholder_staff')
+                                            }
                                             value={
                                                 activeNotesTab === 'internal' ? formData.notes_internal :
                                                     activeNotesTab === 'client' ? formData.notes_client :
@@ -1582,8 +1662,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                             ) : (
                                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
                                     <div className="flex items-center justify-between">
-                                        <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest">Suprimentos p/ este Job</h4>
-                                        <span className="text-[10px] text-slate-400 font-bold">{bookingInventory.length} itens</span>
+                                        <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest">{t('booking_modal.supplies_label')}</h4>
+                                        <span className="text-[10px] text-slate-400 font-bold">{bookingInventory.length} {t('booking_modal.items_count')}</span>
                                     </div>
 
                                     {isLoadingInventory ? (
@@ -1619,7 +1699,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                                     }}
                                                     value=""
                                                 >
-                                                    <option value="">+ Adicionar Item Extra</option>
+                                                    <option value="">{t('booking_modal.add_extra_item')}</option>
                                                     {availableInventory.filter(i => !bookingInventory.some(bi => bi.item_id === i.id)).map(i => (
                                                         <option key={i.id} value={i.id}>{i.name}</option>
                                                     ))}
@@ -1637,32 +1717,48 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 {/* Footer */}
                 <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-between rounded-b-3xl">
                     <div className="flex flex-col">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Total do Agendamento</span>
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{t('booking_modal.total_label')}</span>
                         <div className="flex items-center gap-2">
                             {formData.recurrence_type !== 'none' && (
-                                <span className="text-xs text-slate-400 font-bold">Total Geral:</span>
+                                <span className="text-xs text-slate-400 font-bold">{t('booking_modal.grand_total_label')}</span>
                             )}
                             <span className="text-2xl font-black text-indigo-700">R$ {totalPriceRecurrence().toFixed(2)}</span>
                         </div>
                     </div>
                     <div className="flex gap-4">
                         <button onClick={onClose} className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-200 rounded-2xl transition-colors text-sm">
-                            Cancelar
+                            {t('booking_modal.cancel_button')}
                         </button>
+                        {isEditMode && (
+                            <button
+                                onClick={handleDeleteClick}
+                                className="px-4 py-3 text-rose-500 font-bold hover:bg-rose-50 rounded-2xl transition-colors text-sm flex items-center gap-2"
+                            >
+                                <Trash2 size={18} />
+                            </button>
+                        )}
                         <button
                             onClick={handleSave}
                             disabled={saving || !formData.customer_id || !formData.assigned_to || !formData.service_id || !formData.start_date || !formData.start_time}
                             className={`px-8 py-3 bg-indigo-600 text-white font-black rounded-2xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-indigo-100 transition-all active:scale-95 flex items-center gap-2 text-sm ${(!formData.customer_id || !formData.assigned_to || !formData.service_id || !formData.start_date || !formData.start_time) ? 'grayscale' : ''}`}
                         >
                             {saving ? (
-                                <span className="flex items-center gap-2"><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Salvando</span>
+                                <span className="flex items-center gap-2"><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> {t('booking_modal.saving')}</span>
                             ) : (
-                                <>{isEditMode ? 'Salvar Alterações' : 'Confirmar Agendamento'} <ChevronRight size={18} /></>
+                                <>{isEditMode ? t('booking_modal.save_changes') : t('booking_modal.confirm_booking')} <ChevronRight size={18} /></>
                             )}
                         </button>
                     </div>
                 </div>
             </div>
+
+            <DeleteRecurrenceModal
+                isOpen={showDeleteModal}
+                onClose={() => setShowDeleteModal(false)}
+                onConfirm={confirmDeleteSeries}
+                instances={recurrenceSeriesForDelete}
+                isDeleting={isDeleting}
+            />
 
             {/* Slide-over (Scheduling & Recurrence) */}
             {showDrawer && (
@@ -1675,10 +1771,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                         <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center shrink-0">
                             <div>
                                 <h3 className="font-black text-slate-800 uppercase tracking-tight text-lg">
-                                    {drawerMode === 'schedule' ? 'Configurar Horário' : 'Selecionar Cliente'}
+                                    {drawerMode === 'schedule' ? t('booking_modal.drawer_schedule_title') : drawerMode === 'service' ? t('booking_modal.drawer_service_title') : t('booking_modal.drawer_client_title')}
                                 </h3>
                                 <p className="text-xs text-slate-500 font-bold uppercase tracking-widest leading-none mt-1">
-                                    {drawerMode === 'schedule' ? 'Data, Hora e Repetições' : drawerMode === 'service' ? 'Configurar Serviços' : 'Busque ou Adicione um Cliente'}
+                                    {drawerMode === 'schedule' ? t('booking_modal.drawer_schedule_subtitle') : drawerMode === 'service' ? t('booking_modal.subtitle') : t('booking_modal.drawer_client_subtitle')}
                                 </p>
                             </div>
                             <button onClick={() => setShowDrawer(false)} className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-slate-600 shadow-sm transition-all active:scale-95">✕</button>

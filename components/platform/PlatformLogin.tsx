@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { createClient } from '../../lib/supabase/client';
 import { ShieldAlert, Loader2, Lock, Mail, Eye, EyeOff } from 'lucide-react';
 import { useRole } from '../../hooks/use-role';
+import { LanguageFloatingWidget } from '../LanguageFloatingWidget';
 
 interface PlatformLoginProps {
     onSuccess: () => void;
@@ -155,6 +156,7 @@ export const PlatformLogin: React.FC<PlatformLoginProps> = ({ onSuccess }) => {
                     </p>
                 </div>
             </div>
+            <LanguageFloatingWidget />
         </div>
     );
 };

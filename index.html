@@ -53,7 +53,37 @@
 </head>
 
 <body class="bg-slate-50 text-slate-900 selection:bg-indigo-100 selection:text-indigo-900">
-  <div id="root"></div>
+  <div id="root">
+    <style>
+      /* Preloader styles accessible before JS loads */
+      .preloader-container {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #f8fafc;
+        z-index: 9999;
+        transition: opacity 0.3s ease-in-out;
+      }
+      .preloader-logo {
+        width: 80px;
+        height: 80px;
+        animation: pulse-breathe 2s infinite ease-in-out;
+      }
+      @keyframes pulse-breathe {
+        0% { transform: scale(0.95); opacity: 0.8; }
+        50% { transform: scale(1.05); opacity: 1; }
+        100% { transform: scale(0.95); opacity: 0.8; }
+      }
+      @media (prefers-color-scheme: dark) {
+        .preloader-container { background-color: #0f172a; }
+      }
+    </style>
+    <div class="preloader-container">
+      <img src="/favicon.png" alt="Cleanlydash" class="preloader-logo" />
+    </div>
+  </div>
   <script type="module" src="/index.tsx"></script>
 </body>
 

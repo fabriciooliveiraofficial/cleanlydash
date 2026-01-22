@@ -1,6 +1,5 @@
 ﻿import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { LanguageSwitcher } from './language-switcher.tsx';
 import { TabType } from '../types.ts';
 import {
   LayoutDashboard,
@@ -21,6 +20,8 @@ import {
 import { createClient } from '../lib/supabase/client.ts';
 
 import { usePermission, PERMISSIONS } from '../hooks/use-permission.ts';
+import { PWAInstallPrompt } from './PWAInstallPrompt.tsx';
+import { LanguageFloatingWidget } from './LanguageFloatingWidget.tsx';
 
 interface SidebarProps {
   activeTab: TabType;
@@ -35,14 +36,14 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen, onClose, isMobileOpen, isCollapsed, onToggleCollapse }) => {
   const supabase = createClient();
-  const { can } = usePermission();
+  const { can, loading: permissionsLoading } = usePermission();
   const { t } = useTranslation();
 
   // Define base items with required permissions
   const allItems = [
     { id: TabType.OVERVIEW, icon: LayoutDashboard, label: t('sidebar.dashboard'), permission: PERMISSIONS.TASKS_VIEW }, // Basic access
     { id: TabType.BOOKINGS, icon: CalendarDays, label: t('sidebar.bookings'), permission: PERMISSIONS.TASKS_VIEW },
-    { id: TabType.AIRBNB_CENTER, icon: LayoutGrid, label: 'Airbnb Center', permission: PERMISSIONS.TASKS_VIEW },
+    { id: TabType.AIRBNB_CENTER, icon: LayoutGrid, label: t('sidebar.airbnb_center'), permission: PERMISSIONS.TASKS_VIEW },
     { id: TabType.CUSTOMERS, icon: Users, label: t('sidebar.customers'), permission: PERMISSIONS.CUSTOMERS_VIEW },
     { id: TabType.TEAM, icon: Users, label: t('sidebar.team', { defaultValue: 'Equipe' }), permission: PERMISSIONS.TEAM_VIEW },
     { id: TabType.PAYROLL, icon: WalletIcon, label: t('sidebar.payroll', { defaultValue: 'Folha Pagamento' }), permission: PERMISSIONS.PAYROLL_VIEW },
@@ -56,7 +57,11 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen, onClo
   ];
 
   // Filter items based on permissions
-  const visibleItems = allItems.filter(item => can(item.permission));
+  const visibleItems = allItems.filter(item => {
+    return can(item.permission);
+  });
+
+
 
   const handleSignOut = async () => {
     try {
@@ -81,15 +86,11 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen, onClo
     <>
       <div className={`flex h-20 items-center ${isCollapsed ? 'justify-center px-0' : 'px-6'}`}>
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/30">
-            <Plane size={20} className="transform -rotate-12" />
-          </div>
-          {!isCollapsed && (
-            <div className="flex flex-col animate-in fade-in duration-300">
-              <span className="text-lg font-bold tracking-tight text-[var(--text-primary)] leading-none">Cleanlydash</span>
-              <span className="text-[10px] font-medium text-[var(--text-secondary)] tracking-wide uppercase">
-                PRO SUITE
-              </span>
+          {!isCollapsed ? (
+            <img src="/logo-full.png" alt="Cleanlydash" className="h-10 w-auto animate-in fade-in duration-300" />
+          ) : (
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/30">
+              <img src="/favicon.png" alt="C" className="h-6 w-6" />
             </div>
           )}
         </div>
@@ -99,7 +100,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen, onClo
         <p className="px-3 mb-2 text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest opacity-80">Menu</p>
 
         {/* Loading Skeleton */}
-        {visibleItems.length === 0 && (
+        {permissionsLoading && (
           <div className="space-y-2 px-1">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <div key={i} className="flex h-11 w-full animate-pulse items-center gap-3 rounded-xl bg-slate-100/50 px-4">
@@ -107,6 +108,18 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen, onClo
                 <div className="h-3 w-24 rounded bg-slate-200" />
               </div>
             ))}
+          </div>
+        )}
+
+        {!permissionsLoading && visibleItems.length === 0 && (
+          <div className="px-4 py-8 text-center space-y-2">
+            <div className="flex justify-center">
+              <div className="h-10 w-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-300">
+                <Settings size={20} />
+              </div>
+            </div>
+            <p className="text-[11px] font-medium text-slate-400">Sem itens disponíveis</p>
+            <p className="text-[10px] text-slate-300 px-4 leading-relaxed">Verifique suas permissões com o administrador.</p>
           </div>
         )}
 
@@ -137,10 +150,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen, onClo
       </nav>
 
       <div className="mt-auto p-4 space-y-1">
-        <div className={`flex items-center mb-2 ${isCollapsed ? 'justify-center' : 'justify-between px-2'}`}>
-          {!isCollapsed && <span className="text-xs font-semibold text-slate-400">{t('settings.language')}</span>}
-          <LanguageSwitcher showLabel={!isCollapsed} />
-        </div>
         {can(PERMISSIONS.SETTINGS_VIEW) && (
           <button
             onClick={() => {
@@ -205,6 +214,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen, onClo
           </aside>
         </div>
       )}
+      <PWAInstallPrompt />
+      <LanguageFloatingWidget />
     </>
   );
 };

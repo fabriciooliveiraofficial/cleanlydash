@@ -4,6 +4,8 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App.tsx';
 
+import { RoleProvider } from './contexts/RoleContext';
+
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error("Could not find root element to mount to");
@@ -12,12 +14,15 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    <RoleProvider>
+      <App />
+    </RoleProvider>
   </React.StrictMode>
 );
 
 // PWA Cleanup for Dev Mode
 // Force unregister any existing service workers to prevent stale cache issues
+/*
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then((registrations) => {
     for (let registration of registrations) {
@@ -26,3 +31,4 @@ if ('serviceWorker' in navigator) {
     }
   });
 }
+*/

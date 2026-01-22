@@ -16,6 +16,27 @@ export enum TabType {
   AIRBNB_CENTER = 'airbnb_center'
 }
 
+
+export type AppRole = 'super_admin' | 'property_owner' | 'staff' | 'guest' | 'cleaner';
+
+export interface UserRoleContext {
+  user: any | null;
+  name: string | null;
+  role: AppRole | null;
+  loading: boolean;
+  isAdmin: boolean;
+  isOwner: boolean;
+  isStaff: boolean;
+  isGuest: boolean;
+  isCleaner: boolean;
+  app_access: 'dashboard' | 'cleaner_app' | null;
+  canAccessFinance: boolean;
+  canAccessSettings: boolean;
+  canViewAllProperties: boolean;
+  tenant_id: string | null;
+  customRoleName: string | null;
+}
+
 export interface Customer {
   id: string;
   tenant_id: string;

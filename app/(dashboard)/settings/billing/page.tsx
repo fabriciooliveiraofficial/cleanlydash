@@ -6,8 +6,8 @@ import { CreditCard, Wallet, ArrowRight, Zap, History } from 'lucide-react'
 import { AddFundsDialog } from '../../wallet/add-funds-dialog'
 
 export default async function BillingPage() {
-  const stats = await getWalletStats()
-  const transactions = await getTransactions()
+  const stats = (await getWalletStats()) as any
+  const transactions = (await getTransactions()) as any[]
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val)
@@ -37,7 +37,7 @@ export default async function BillingPage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <Zap size={18} className="text-amber-500 fill-amber-500" />
-              Plano AirGoverness
+              Plano Cleanlydash
             </CardTitle>
             <CardDescription>Você está no plano gratuito (Trial).</CardDescription>
           </CardHeader>
@@ -67,9 +67,8 @@ export default async function BillingPage() {
             {transactions.slice(0, 5).map((tx) => (
               <div key={tx.id} className="flex items-center justify-between p-4 hover:bg-slate-50/30 transition-colors">
                 <div className="flex items-center gap-3">
-                  <div className={`h-8 w-8 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                    tx.amount > 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
-                  }`}>
+                  <div className={`h-8 w-8 rounded-full flex items-center justify-center text-[10px] font-bold ${tx.amount > 0 ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
+                    }`}>
                     {tx.amount > 0 ? '+' : '-'}
                   </div>
                   <div>

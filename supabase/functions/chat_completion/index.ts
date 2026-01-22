@@ -75,7 +75,7 @@ serve(async (req) => {
                 aiResponseText = "Entendo. Para prosseguir com a verificação KYC, precisamos garantir que todos os dados estejam corretos. Você tem alguma dúvida específica sobre os documentos ou o formulário?";
             }
         } else {
-            aiResponseText = "Como posso ajudar você hoje com a plataforma AirGoverness?";
+            aiResponseText = "Como posso ajudar você hoje com a plataforma Cleanlydash?";
         }
 
         // Slight delay to simulate AI thinking

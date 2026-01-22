@@ -35,6 +35,7 @@ import {
   addDays,
   subDays
 } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 type ViewMode = 'month' | 'week' | 'day' | 'dispatch';
 
@@ -311,6 +312,7 @@ export const Bookings: React.FC = () => {
   };
 
   // Specific handler for DispatchTimeline (matches its signature)
+  // Specific handler for DispatchTimeline (matches its signature)
   const handleDispatchUpdate = async (bookingId: string, updates: any) => {
     try {
       const assigned_to = updates.resource_ids && updates.resource_ids.length > 0
@@ -322,6 +324,13 @@ export const Bookings: React.FC = () => {
       if (updates.start_time) payload.start_date = updates.start_time;
       if (updates.end_time) payload.end_date = updates.end_time;
 
+      // Optimistic Update
+      setBookings(prev => prev.map(b =>
+        b.id === bookingId
+          ? { ...b, ...payload, resource_ids: assigned_to ? [assigned_to] : b.resource_ids }
+          : b
+      ));
+
       const { error } = await (supabase
         .from('bookings') as any)
         .update(payload)
@@ -329,10 +338,14 @@ export const Bookings: React.FC = () => {
 
       if (error) throw error;
       toast.success('Escala atualizada!');
-      fetchData();
+
+      // We don't need to refetch immediately if optimistic update was successful, 
+      // but refetching ensures consistency with backend triggers/webhooks
+      // fetchData(); 
     } catch (e) {
       console.error(e);
       toast.error('Erro ao atualizar escala');
+      fetchData(); // Revert on error
     }
   };
 
@@ -890,7 +903,9 @@ export const Bookings: React.FC = () => {
           </div>
 
           <span className="text-lg lg:text-xl font-semibold text-slate-700">
-            {format(currentDate, 'MMMM yyyy')}
+            {viewMode === 'month' || viewMode === 'week'
+              ? format(currentDate, 'MMMM yyyy', { locale: ptBR })
+              : format(currentDate, "eeee, d 'de' MMMM", { locale: ptBR })}
           </span>
         </div>
 
@@ -1130,7 +1145,13 @@ export const Bookings: React.FC = () => {
           <DispatchTimeline
             date={currentDate}
             employees={employees}
-            bookings={bookings as any}
+            bookings={bookings
+              .filter(b => isSameDay(parseISO(b.start_date), currentDate))
+              .map(b => ({
+                ...b,
+                start_time: b.start_date,
+                end_time: b.end_date
+              })) as any}
             onBookingUpdate={handleDispatchUpdate}
           />
         )}

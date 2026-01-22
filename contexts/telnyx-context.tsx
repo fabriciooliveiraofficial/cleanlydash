@@ -123,7 +123,7 @@ export function TelnyxProvider({ children }: { children: React.ReactNode }) {
         try {
             const newCall = client.newCall({
                 destinationNumber: destination,
-                callerNumber: 'AirGoverness-System',
+                callerNumber: 'Cleanlydash-System',
                 audio: true
             })
             setCall(newCall)

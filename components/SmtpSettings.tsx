@@ -35,7 +35,7 @@ export const SmtpSettings: React.FC = () => {
             .from('smtp_settings')
             .select('*')
             .eq('user_id', user.id)
-            .single();
+            .single<any>();
 
         if (data) {
             // Determine encryption mode from new column or legacy secure bool
@@ -291,7 +291,7 @@ export const SmtpSettings: React.FC = () => {
                                 type="text"
                                 value={config.from_name}
                                 onChange={e => setConfig({ ...config, from_name: e.target.value })}
-                                placeholder="Equipe AirGoverness"
+                                placeholder="Equipe Cleanlydash"
                                 className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none"
                                 required
                             />

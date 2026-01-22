@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { createClient } from '../lib/supabase/client';
 import { useRole } from './use-role';
 
@@ -42,102 +42,112 @@ export function usePermission(): PermissionContext {
     const [roleName, setRoleName] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const supabase = createClient();
-    const { role: globalRole, isOwner, user } = useRole(); // Get user from useRole
+    const { role: globalRole, isOwner, isAdmin, user, loading: roleLoading } = useRole();
+
+    // Consolidated full access flag
+    const hasFullAccess = useMemo(() => {
+        return !roleLoading && (isOwner || isAdmin || globalRole === 'super_admin' || globalRole === 'property_owner');
+    }, [isOwner, isAdmin, globalRole, roleLoading]);
 
     useEffect(() => {
         let mounted = true;
 
         async function fetchPermissions() {
-            try {
-                // Optimize: Use user from useRole if available, otherwise fetch
-                let targetUser = user;
+            if (roleLoading) return;
 
+            try {
+                // Determine target user
+                let targetUser = user;
                 if (!targetUser) {
                     const { data } = await supabase.auth.getUser();
                     targetUser = data.user;
                 }
 
-                if (!targetUser) {
-                    // Start loading only if useRole is not yet loaded? 
-                    // Actually if user is null from useRole, useRole might be loading OR user is logged out.
-                    // But if we are here, we might need to wait for useRole?
-                    // Simplified: just try to get user.
-                    if (mounted) setLoading(false);
-                    return;
-                }
-
-                // If owner, grant all permissions
-                if (isOwner) {
+                // 1. Full Access Override
+                if (hasFullAccess) {
                     if (mounted) {
                         setPermissions(Object.values(PERMISSIONS));
-                        setRoleName('Owner');
+                        setRoleName(globalRole || 'Owner');
                         setLoading(false);
                     }
                     return;
                 }
 
-                // Fetch Role ID from team_members
-                // Note: assuming single tenant context or active tenant logic
-                const { data: member, error: memberError } = await supabase
-                    .from('team_members')
-                    .select(`
-                        role_id,
-                        custom_roles (
-                            name,
-                            permissions
-                        )
-                    `)
-                    .eq('user_id', targetUser.id)
-                    .maybeSingle();
-
-                if (memberError) throw memberError;
-
-                // Explicitly cast to any to avoid TS errors with join inference
-                const memberData = member as any;
-
-                if (memberData?.custom_roles) {
-                    const customRole = memberData.custom_roles;
+                // 2. Guest / Unauthenticated
+                if (!targetUser) {
                     if (mounted) {
-                        setPermissions(customRole.permissions || []);
-                        setRoleName(customRole.name);
+                        setPermissions([PERMISSIONS.TASKS_VIEW]);
+                        setRoleName('guest');
+                        setLoading(false);
                     }
-                } else {
-                    // Fallback to legacy role mapping if no custom role assigned yet
-                    // This creates a smooth transition
+                    return;
+                }
+
+                // 3. Custom DB Permissions
+                let foundCustom = false;
+                try {
+                    const { data: member } = await supabase
+                        .from('team_members')
+                        .select('role_id, custom_roles(name, permissions)')
+                        .eq('user_id', targetUser.id)
+                        .maybeSingle();
+
+                    if ((member as any)?.custom_roles) {
+                        const custom = (member as any).custom_roles;
+                        if (mounted) {
+                            setPermissions(custom.permissions || []);
+                            setRoleName(custom.name);
+                            foundCustom = true;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('usePermission: DB check failed', e);
+                }
+
+                // 4. Legacy Fallbacks
+                if (!foundCustom && globalRole) {
                     const legacyDefaults: Record<string, PermissionKey[]> = {
-                        'admin': Object.values(PERMISSIONS), // Legacy admin
-                        'super_admin': Object.values(PERMISSIONS), // Fix for Super Admin
-                        'property_owner': Object.values(PERMISSIONS), // Fix for Owner
+                        'admin': Object.values(PERMISSIONS),
+                        'super_admin': Object.values(PERMISSIONS),
+                        'property_owner': Object.values(PERMISSIONS),
                         'manager': [PERMISSIONS.TEAM_MANAGE, PERMISSIONS.TASKS_MANAGE_ALL, PERMISSIONS.CUSTOMERS_MANAGE],
                         'cleaner': [PERMISSIONS.TASKS_VIEW],
-                        'staff': [PERMISSIONS.TEAM_VIEW, PERMISSIONS.TASKS_VIEW]
+                        'staff': [PERMISSIONS.TEAM_VIEW, PERMISSIONS.TASKS_VIEW, PERMISSIONS.CUSTOMERS_VIEW],
+                        'guest': [PERMISSIONS.TASKS_VIEW]
                     };
 
-                    if (globalRole && legacyDefaults[globalRole]) {
-                        if (mounted) {
-                            setPermissions(legacyDefaults[globalRole]);
-                            setRoleName(globalRole); // "admin", "cleaner" etc
-                        }
+                    const defaults = legacyDefaults[globalRole];
+                    if (defaults && mounted) {
+                        setPermissions(defaults);
+                        setRoleName(globalRole);
                     }
                 }
 
             } catch (err) {
-                console.error("Permission Fetch Error", err);
+                console.error("usePermission Error:", err);
             } finally {
                 if (mounted) setLoading(false);
             }
         }
 
         fetchPermissions();
-
         return () => { mounted = false; };
-    }, [isOwner, globalRole]);
+    }, [hasFullAccess, globalRole, user, roleLoading]);
 
     const can = (permission: PermissionKey) => {
-        if (loading) return false;
-        if (isOwner) return true; // Owner super-override
+        // Direct inline check for admins/owners - bypass all state dependencies
+        const isFullAccess = isOwner || isAdmin || globalRole === 'super_admin' || globalRole === 'property_owner';
+
+        if (isFullAccess) {
+            return true;
+        }
+
+        if (roleLoading || loading) {
+            return false; // Still loading, deny for now
+        }
+
         return permissions.includes(permission);
     };
 
-    return { permissions, loading, can, roleName };
+    return { permissions, loading: loading || roleLoading, can, roleName };
 }

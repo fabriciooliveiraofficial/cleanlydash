@@ -31,6 +31,7 @@ import {
   SheetTitle,
 } from "./ui/sheet";
 import { Menu } from 'lucide-react';
+import { PWAInstallPrompt } from './PWAInstallPrompt';
 
 interface LandingPageProps {
   onStart: (planId?: string) => void;
@@ -89,7 +90,10 @@ const translations = {
     },
     footer: {
       tag: "Made by hosts, for hosts. The first platform that takes scaling operations seriously.",
-      rights: "© 2024 Cleanlydash. All Rights Reserved."
+      rights: "© 2024 Cleanlydash. All Rights Reserved.",
+      platform: "Platform",
+      legal: "Legal",
+      links: { features: "Features", founders: "Founder's Club", login: "Login", terms: "Terms of Use", privacy: "Privacy", sla: "SLA" }
     }
   },
   pt: {
@@ -141,7 +145,10 @@ const translations = {
     },
     footer: {
       tag: "Feito por anfitriões, para anfitriões. A primeira plataforma que leva a sério a operação de quem escala.",
-      rights: "© 2024 Cleanlydash. Todos os direitos reservados."
+      rights: "© 2024 Cleanlydash. Todos os direitos reservados.",
+      platform: "Plataforma",
+      legal: "Legal",
+      links: { features: "Funcionalidades", founders: "Clube de Fundadores", login: "Entrar", terms: "Termos de Uso", privacy: "Privacidade", sla: "SLA" }
     }
   },
   es: {
@@ -193,29 +200,38 @@ const translations = {
     },
     footer: {
       tag: "Hecho por anfitriones, para anfitriones. La primera plataforma que toma en serio la operación de quienes escalan.",
-      rights: "© 2024 Cleanlydash. Todos los derechos reservados."
+      rights: "© 2024 Cleanlydash. Todos los derechos reservados.",
+      platform: "Plataforma",
+      legal: "Legal",
+      links: { features: "Funcionalidades", founders: "Club de Fundadores", login: "Entrar", terms: "Términos de Uso", privacy: "Privacidad", sla: "SLA" }
     }
   }
 };
 
+import { useTranslation } from 'react-i18next';
+import { LanguageFloatingWidget } from './LanguageFloatingWidget';
+
+interface LandingPageProps {
+  onStart: (planId?: string) => void;
+  onLogin: () => void;
+}
+
 export const LandingPage: React.FC<LandingPageProps & { onFeatures: () => void }> = ({ onStart, onLogin, onFeatures }) => {
   const [pricingTab, setPricingTab] = useState<'system' | 'telephony' | 'combos'>('combos');
-  const [lang, setLang] = useState<Language>('en'); // Default to US English
+  const { t: i18n_t, i18n } = useTranslation();
   const [detailPlanId, setDetailPlanId] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  const t = translations[lang];
+  const lang = (i18n.language || 'en').split('-')[0] as Language;
+  const t = translations[lang] || translations['en'];
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 scroll-smooth font-sans">
-      {/* ... keeping other parts via context matching ... */}
+    <div className="min-h-screen bg-slate-50 text-slate-900 scroll-smooth font-sans text-left">
+      {/* ... header block ... */}
       <header className="fixed top-0 z-50 w-full glass border-b border-white/20 bg-white/70 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 md:px-6 py-4">
           <div className="flex items-center gap-2">
-            <div className="rounded-xl bg-indigo-600 p-1.5 text-white shadow-lg shadow-indigo-200">
-              <Plane size={22} strokeWidth={2.5} />
-            </div>
-            <span className="text-xl font-black tracking-tighter uppercase text-slate-900">Cleanlydash</span>
+            <img src="/logo-full.png" alt="Cleanlydash" className="h-12 md:h-14 w-auto" />
           </div>
 
           <nav className="hidden items-center gap-8 md:flex">
@@ -232,19 +248,6 @@ export const LandingPage: React.FC<LandingPageProps & { onFeatures: () => void }
 
 
           <div className="hidden md:flex items-center gap-4">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-full w-10 h-10 hover:bg-slate-100">
-                  <Globe className="h-5 w-5 text-slate-600" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="bg-white/80 backdrop-blur-md border-slate-200">
-                <DropdownMenuItem onClick={() => setLang('en')} className="font-bold cursor-pointer">🇺🇸 English</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setLang('pt')} className="font-bold cursor-pointer">🇧🇷 Português</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setLang('es')} className="font-bold cursor-pointer">🇪🇸 Español</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
             <Button variant="ghost" className="font-bold text-slate-600 hover:bg-slate-100" onClick={(e) => { e.preventDefault(); onLogin(); }} type="button">{t.login}</Button>
             <Button className="rounded-full bg-indigo-600 font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95" onClick={(e) => { e.preventDefault(); onStart(); }} type="button">
               {t.start}
@@ -254,18 +257,6 @@ export const LandingPage: React.FC<LandingPageProps & { onFeatures: () => void }
 
           {/* Mobile Menu Trigger */}
           <div className="flex md:hidden items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-full w-10 h-10 hover:bg-slate-100">
-                  <Globe className="h-5 w-5 text-slate-600" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="bg-white/80 backdrop-blur-md border-slate-200">
-                <DropdownMenuItem onClick={() => setLang('en')} className="font-bold cursor-pointer">🇺🇸 English</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setLang('pt')} className="font-bold cursor-pointer">🇧🇷 Português</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setLang('es')} className="font-bold cursor-pointer">🇪🇸 Español</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
 
             {/* Stunning Toggle Button */}
             <motion.button
@@ -284,10 +275,7 @@ export const LandingPage: React.FC<LandingPageProps & { onFeatures: () => void }
                 <div className="p-8 h-full flex flex-col">
                   <SheetHeader className="text-left mb-12">
                     <div className="flex items-center gap-2">
-                      <div className="rounded-xl bg-indigo-600 p-1.5 text-white shadow-lg shadow-indigo-200">
-                        <Plane size={18} strokeWidth={2.5} />
-                      </div>
-                      <span className="text-lg font-black tracking-tighter uppercase text-slate-900">Cleanlydash</span>
+                      <img src="/logo-full.png" alt="Cleanlydash" className="h-12 w-auto" />
                     </div>
                   </SheetHeader>
                   <div className="flex flex-col gap-6">
@@ -474,7 +462,7 @@ export const LandingPage: React.FC<LandingPageProps & { onFeatures: () => void }
       </section>
 
       {/* NEW PRICING SECTION (Replacing old Pricing & Calculator) */}
-      <PricingSection onStart={onStart} />
+      <PricingSection onStart={onStart} lang={lang} />
 
       {/* Footer */}
       <footer className="bg-slate-900 py-20 text-white border-t border-white/10">
@@ -488,19 +476,19 @@ export const LandingPage: React.FC<LandingPageProps & { onFeatures: () => void }
             </p>
           </div>
           <div>
-            <h4 className="font-black text-xs uppercase tracking-widest text-indigo-400 mb-6">Platform</h4>
+            <h4 className="font-black text-xs uppercase tracking-widest text-indigo-400 mb-6">{t.footer.platform}</h4>
             <ul className="space-y-4 text-slate-400 text-sm font-bold">
-              <li>Features</li>
-              <li>Founder's Club</li>
-              <li>Login</li>
+              <li>{t.footer.links.features}</li>
+              <li>{t.footer.links.founders}</li>
+              <li>{t.footer.links.login}</li>
             </ul>
           </div>
           <div>
-            <h4 className="font-black text-xs uppercase tracking-widest text-indigo-400 mb-6">Legal</h4>
+            <h4 className="font-black text-xs uppercase tracking-widest text-indigo-400 mb-6">{t.footer.legal}</h4>
             <ul className="space-y-4 text-slate-400 text-sm font-bold">
-              <li>Terms of Use</li>
-              <li>Privacy</li>
-              <li>SLA</li>
+              <li>{t.footer.links.terms}</li>
+              <li>{t.footer.links.privacy}</li>
+              <li>{t.footer.links.sla}</li>
             </ul>
           </div>
         </div>
@@ -517,7 +505,11 @@ export const LandingPage: React.FC<LandingPageProps & { onFeatures: () => void }
           setDetailPlanId(null);
           onStart(pid);
         }}
+        lang={lang}
       />
+
+      <PWAInstallPrompt />
+      <LanguageFloatingWidget />
     </div>
   );
 };

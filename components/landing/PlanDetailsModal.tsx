@@ -8,9 +8,61 @@ interface PlanDetailsModalProps {
     planId: string | null;
     onClose: () => void;
     onSelect: (planId: string) => void;
+    lang?: 'en' | 'pt' | 'es';
 }
 
-export const PlanDetailsModal: React.FC<PlanDetailsModalProps> = ({ planId, onClose, onSelect }) => {
+const UI_TEXT = {
+    en: {
+        subtitle: "Detailed feature breakdown and limitations.",
+        seats_title: "Included Seats",
+        seats_desc_prefix: "This plan includes",
+        seats_desc_suffix: "Active Users",
+        categories: {
+            management: 'Management & Sync',
+            guest_experience: 'Guest Experience',
+            operations: 'Operations & Maintenance',
+            telephony: 'Telephony & AI',
+            finance: 'Finance & Owners'
+        },
+        guarantee: "30-Day Money-Back Guarantee",
+        close: "Close",
+        select: "Select Plan"
+    },
+    pt: {
+        subtitle: "Detalhamento e limitações do plano.",
+        seats_title: "Assentos Incluídos",
+        seats_desc_prefix: "Este plano inclui",
+        seats_desc_suffix: "Usuários Ativos",
+        categories: {
+            management: 'Gerenciamento e Sincronização',
+            guest_experience: 'Experiência do Hóspede',
+            operations: 'Operações e Manutenção',
+            telephony: 'Telefonia e IA',
+            finance: 'Finanças e Proprietários'
+        },
+        guarantee: "Garantia de 30 Dias",
+        close: "Fechar",
+        select: "Selecionar Plano"
+    },
+    es: {
+        subtitle: "Desglose detallado y limitaciones.",
+        seats_title: "Asientos Incluidos",
+        seats_desc_prefix: "Este plan incluye",
+        seats_desc_suffix: "Usuarios Activos",
+        categories: {
+            management: 'Gestión y Sincronización',
+            guest_experience: 'Experiencia del Huésped',
+            operations: 'Operaciones y Mantenimiento',
+            telephony: 'Telefonía e IA',
+            finance: 'Finanzas y Propietarios'
+        },
+        guarantee: "Garantía de 30 Días",
+        close: "Cerrar",
+        select: "Seleccionar Plan"
+    }
+};
+
+export const PlanDetailsModal: React.FC<PlanDetailsModalProps> = ({ planId, onClose, onSelect, lang = 'en' }) => {
     if (!planId) return null;
 
     const config = PLAN_CONFIGS[planId];
@@ -18,15 +70,7 @@ export const PlanDetailsModal: React.FC<PlanDetailsModalProps> = ({ planId, onCl
     if (!config) return null;
 
     const includedFeatures = new Set(config.features);
-
-    // Categories map
-    const categories = {
-        management: 'Management & Sync',
-        guest_experience: 'Guest Experience',
-        operations: 'Operations & Maintenance',
-        telephony: 'Telephony & AI',
-        finance: 'Finance & Owners'
-    };
+    const t = UI_TEXT[lang];
 
     return (
         <AnimatePresence>
@@ -61,7 +105,7 @@ export const PlanDetailsModal: React.FC<PlanDetailsModalProps> = ({ planId, onCl
                                             </span>
                                         )}
                                     </div>
-                                    <p className="text-slate-500 font-medium">Detailed feature breakdown and limitations.</p>
+                                    <p className="text-slate-500 font-medium">{t.subtitle}</p>
                                 </div>
                                 <button
                                     onClick={onClose}
@@ -79,23 +123,23 @@ export const PlanDetailsModal: React.FC<PlanDetailsModalProps> = ({ planId, onCl
                                         <Users size={28} />
                                     </div>
                                     <div>
-                                        <h3 className="text-lg font-bold text-slate-900">Included Seats</h3>
+                                        <h3 className="text-lg font-bold text-slate-900">{t.seats_title}</h3>
                                         <p className="text-indigo-700 font-medium">
-                                            This plan includes <span className="font-black text-xl">{config.users} Active Users</span> (Staff or Admins).
+                                            {t.seats_desc_prefix} <span className="font-black text-xl">{config.users} {t.seats_desc_suffix}</span> (Staff or Admins).
                                         </p>
                                     </div>
                                 </div>
 
                                 {/* Features Grid */}
                                 <div className="grid md:grid-cols-2 gap-x-12 gap-y-10">
-                                    {(Object.keys(categories) as Array<keyof typeof categories>).map((catKey) => {
+                                    {(Object.keys(t.categories) as Array<keyof typeof t.categories>).map((catKey) => {
                                         const catFeatures = PLAN_FEATURES.filter(f => f.category === catKey);
                                         if (catFeatures.length === 0) return null;
 
                                         return (
                                             <div key={catKey}>
                                                 <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2">
-                                                    {categories[catKey]}
+                                                    {t.categories[catKey]}
                                                 </h3>
                                                 <ul className="space-y-3">
                                                     {catFeatures.map((feature) => {
@@ -111,7 +155,7 @@ export const PlanDetailsModal: React.FC<PlanDetailsModalProps> = ({ planId, onCl
                                                                 <div>
                                                                     <div className="flex items-center gap-2">
                                                                         <span className={`text-sm font-bold ${isIncluded ? 'text-slate-900' : 'text-slate-400'}`}>
-                                                                            {feature.label}
+                                                                            {feature.label[lang]}
                                                                         </span>
                                                                         {feature.premium && isIncluded && (
                                                                             <span className="text-[10px] font-black bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded border border-amber-100">
@@ -135,15 +179,15 @@ export const PlanDetailsModal: React.FC<PlanDetailsModalProps> = ({ planId, onCl
                             <div className="p-6 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
                                 <div className="flex items-center gap-2 text-slate-500 text-xs font-bold">
                                     <ShieldCheck size={14} className="text-emerald-500" />
-                                    30-Day Money-Back Guarantee
+                                    {t.guarantee}
                                 </div>
                                 <div className="flex gap-4">
-                                    <Button variant="ghost" onClick={onClose}>Close</Button>
+                                    <Button variant="ghost" onClick={onClose}>{t.close}</Button>
                                     <Button
                                         onClick={() => onSelect(planId)}
                                         className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-8 shadow-lg shadow-indigo-200"
                                     >
-                                        Select Plan
+                                        {t.select}
                                     </Button>
                                 </div>
                             </div>

@@ -157,7 +157,7 @@ export const KYCVerificationModal: React.FC<KYCVerificationModalProps> = ({
     };
 
     const getContextForStep = () => {
-        const baseContext = `You are a helpful KYC verification assistant for AirGoverness. 
+        const baseContext = `You are a helpful KYC verification assistant for Cleanlydash. 
         Current Step: ${step} of 5.
         Current Data: ${JSON.stringify(data)}.
         User needs help with: `;

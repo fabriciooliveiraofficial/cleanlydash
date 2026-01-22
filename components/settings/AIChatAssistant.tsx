@@ -130,7 +130,7 @@ export const AIChatAssistant: React.FC<AIChatAssistantProps> = ({
                         <Bot size={20} />
                     </div>
                     <div>
-                        <h3 className="font-semibold text-sm">Assistente AirGoverness</h3>
+                        <h3 className="font-semibold text-sm">Assistente Cleanlydash</h3>
                         <div className="text-[10px] text-indigo-100 flex items-center gap-1">
                             <DollarSign size={10} />
                             Saldo: ${balance?.toFixed(2)}
@@ -157,8 +157,8 @@ export const AIChatAssistant: React.FC<AIChatAssistantProps> = ({
                     >
                         <div
                             className={`max-w-[80%] p-3 rounded-2xl text-sm ${msg.role === 'user'
-                                    ? 'bg-indigo-600 text-white rounded-br-none'
-                                    : 'bg-white border border-slate-200 text-slate-700 rounded-bl-none shadow-sm'
+                                ? 'bg-indigo-600 text-white rounded-br-none'
+                                : 'bg-white border border-slate-200 text-slate-700 rounded-bl-none shadow-sm'
                                 }`}
                         >
                             {msg.content}

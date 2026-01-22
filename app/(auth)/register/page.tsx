@@ -7,8 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { UserAuthForm } from "@/components/auth/user-auth-form"
 
 export const metadata: Metadata = {
-  title: "Cadastro | AirGoverness",
-  description: "Crie sua conta corporativa no AirGoverness.",
+  title: "Cadastro | Cleanlydash",
+  description: "Crie sua conta corporativa no Cleanlydash.",
 }
 
 export default function RegisterPage() {
@@ -20,7 +20,7 @@ export default function RegisterPage() {
             <Plane size={32} />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            AirGoverness
+            Cleanlydash
           </h1>
           <p className="text-sm text-slate-500">
             Tudo o que sua operação de limpeza precisa

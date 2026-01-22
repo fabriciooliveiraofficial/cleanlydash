@@ -14,39 +14,21 @@ export const SessionTracker: React.FC = () => {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
 
-            // 1. Check if session exists (Manual UPSERT workaround for missing constraint)
-            const { data: existingSession } = await (supabase
+            // 1. Atomic UPSERT for session tracking
+            // This prevents race conditions and 409 conflicts
+            const { error: upsertError } = await (supabase
                 .from('active_sessions') as any)
-                .select('id')
-                .eq('session_id', currentSessionId)
-                .maybeSingle();
+                .upsert({
+                    user_id: user.id,
+                    session_id: currentSessionId,
+                    device_fingerprint: navigator.userAgent,
+                    last_active_at: new Date().toISOString()
+                }, {
+                    onConflict: 'user_id,session_id'
+                });
 
-            if (existingSession) {
-                // Update
-                await (supabase
-                    .from('active_sessions') as any)
-                    .update({
-                        last_active_at: new Date().toISOString(),
-                        user_id: user.id
-                    })
-                    .eq('session_id', currentSessionId);
-            } else {
-                // Insert (handled with try-catch for race conditions)
-                try {
-                    await (supabase
-                        .from('active_sessions') as any)
-                        .insert({
-                            user_id: user.id,
-                            session_id: currentSessionId,
-                            device_fingerprint: navigator.userAgent,
-                            last_active_at: new Date().toISOString()
-                        });
-                } catch (err: any) {
-                    // Ignore 409 (Conflict) - means another tab/process inserted it first
-                    if (err?.code !== '23505' && err?.status !== 409) {
-                        console.warn('Session Insert Error:', err);
-                    }
-                }
+            if (upsertError) {
+                console.warn('Session Sync Error:', upsertError);
             }
 
             // 2. Heartbeat Logic (Update Only)

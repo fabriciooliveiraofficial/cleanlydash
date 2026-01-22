@@ -3,7 +3,7 @@
 
 DO $$
 DECLARE
-    target_email TEXT := 'admin@airgoverness.com'; 
+    target_email TEXT := 'admin@cleanlydash.com'; 
     target_user_id UUID;
     target_tenant_id UUID;
 BEGIN

@@ -7,6 +7,7 @@ interface UsageSimulatorProps {
     initialMinutes: number;
     label?: string;
     className?: string;
+    lang?: 'en' | 'pt' | 'es';
 }
 
 // 4x Margin Pricing (Cost x 4)
@@ -16,9 +17,34 @@ const PRICES = {
     MMS: 0.020    // per mms
 };
 
-export function UsageSimulator({ initialMinutes, label = "Simulação de Uso", className }: UsageSimulatorProps) {
+const TRANSLATIONS = {
+    en: {
+        base_budget: "Base Budget",
+        minutes: "Minutes",
+        sms: "SMS",
+        mms: "MMS",
+        note: "*Estimated values based on flexible credit usage."
+    },
+    pt: {
+        base_budget: "Orçamento Base",
+        minutes: "Minutos",
+        sms: "SMS",
+        mms: "MMS",
+        note: "*Valores estimados baseados no uso flexível dos créditos inclusos."
+    },
+    es: {
+        base_budget: "Presupuesto Base",
+        minutes: "Minutos",
+        sms: "SMS",
+        mms: "MMS",
+        note: "*Valores estimados basados en el uso flexible de créditos incluidos."
+    }
+};
+
+export function UsageSimulator({ initialMinutes, label, className, lang = 'en' }: UsageSimulatorProps) {
     // Base budget is calculated from the initial minutes allocation
     const TOTAL_BUDGET = initialMinutes * PRICES.VOICE;
+    const t = TRANSLATIONS[lang];
 
     const [minutes, setMinutes] = useState(initialMinutes);
     const [sms, setSms] = useState(0);
@@ -28,6 +54,13 @@ export function UsageSimulator({ initialMinutes, label = "Simulação de Uso", c
     const maxMinutes = Math.floor(TOTAL_BUDGET / PRICES.VOICE);
     const maxSms = Math.floor(TOTAL_BUDGET / PRICES.SMS);
     const maxMms = Math.floor(TOTAL_BUDGET / PRICES.MMS);
+
+    // Reset when initialMinutes changes (e.g. switching plans)
+    useEffect(() => {
+        setMinutes(initialMinutes);
+        setSms(0);
+        setMms(0);
+    }, [initialMinutes]);
 
     // Helper to calculate current used budget
     const calculateUsed = (m: number, s: number, mm: number) => {
@@ -41,15 +74,10 @@ export function UsageSimulator({ initialMinutes, label = "Simulação de Uso", c
         // Constraint: Can't exceed budget
         if ((newMinutes * PRICES.VOICE) + currentCostOthers > TOTAL_BUDGET) {
             // Logic: If minutes increase, reduce others proportionally
-            // Simplified: Just clamp minutes to remaining budget? No, user wants to slide.
-            // Better: Reduce others to fit.
             const availableForOthers = Math.max(0, TOTAL_BUDGET - (newMinutes * PRICES.VOICE));
 
             // If we need to reduce others
             if (currentCostOthers > availableForOthers) {
-                // Reset others to 0 or reduce smartly? Let's reset for simplicity/clarity as "Mixer"
-                // Or distribute reduction?
-                // Let's protect the one being moved.
                 setSms(0);
                 setMms(0);
             }
@@ -71,12 +99,6 @@ export function UsageSimulator({ initialMinutes, label = "Simulação de Uso", c
             // Check if SMS+MMS fit
             let currentOthersCost = (sms * PRICES.SMS) + (mms * PRICES.MMS);
             if (currentOthersCost > remaining) {
-                // Reduce SMS/MMS. Strategy: Reduce proportionally or prioritize?
-                // Simple: Reduce MMS first (more expensive), then SMS.
-                // Or better: Reduce proportionally to maintain ratio?
-
-                // Let's zero them out if minutes take everything (simplest predictable behavior)
-                // Or precise scaling:
                 const ratio = remaining / currentOthersCost;
                 setSms(Math.floor(sms * ratio));
                 setMms(Math.floor(mms * ratio));
@@ -117,9 +139,9 @@ export function UsageSimulator({ initialMinutes, label = "Simulação de Uso", c
     return (
         <div className={cn("bg-white/50 backdrop-blur-sm rounded-xl p-4 border border-slate-200 shadow-sm", className)}>
             <div className="flex items-center justify-between mb-4">
-                <h4 className="text-sm font-semibold text-slate-700">{label}</h4>
+                <h4 className="text-sm font-semibold text-slate-700">{label || "Usage Simulation"}</h4>
                 <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded-full">
-                    Orçamento Base: ${TOTAL_BUDGET.toFixed(2)}
+                    {t.base_budget}: ${TOTAL_BUDGET.toFixed(2)}
                 </span>
             </div>
 
@@ -128,7 +150,7 @@ export function UsageSimulator({ initialMinutes, label = "Simulação de Uso", c
                 <div className="space-y-2">
                     <div className="flex justify-between text-xs font-medium">
                         <span className="flex items-center gap-1.5 text-indigo-600">
-                            <Phone size={14} /> Minutos
+                            <Phone size={14} /> {t.minutes}
                         </span>
                         <span className="text-slate-900">{minutes}</span>
                     </div>
@@ -145,7 +167,7 @@ export function UsageSimulator({ initialMinutes, label = "Simulação de Uso", c
                 <div className="space-y-2">
                     <div className="flex justify-between text-xs font-medium">
                         <span className="flex items-center gap-1.5 text-blue-600">
-                            <MessageSquare size={14} /> SMS
+                            <MessageSquare size={14} /> {t.sms}
                         </span>
                         <span className="text-slate-900">{sms}</span>
                     </div>
@@ -162,7 +184,7 @@ export function UsageSimulator({ initialMinutes, label = "Simulação de Uso", c
                 <div className="space-y-2">
                     <div className="flex justify-between text-xs font-medium">
                         <span className="flex items-center gap-1.5 text-purple-600">
-                            <ImageIcon size={14} /> MMS
+                            <ImageIcon size={14} /> {t.mms}
                         </span>
                         <span className="text-slate-900">{mms}</span>
                     </div>
@@ -177,7 +199,7 @@ export function UsageSimulator({ initialMinutes, label = "Simulação de Uso", c
             </div>
 
             <p className="text-[10px] text-slate-400 mt-4 text-center">
-                *Valores estimados baseados no uso flexível dos créditos inclusos.
+                {t.note}
             </p>
         </div>
     );

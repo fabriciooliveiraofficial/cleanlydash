@@ -54,25 +54,39 @@ export const TenantSupport: React.FC = () => {
 
     const fetchTickets = async () => {
         setLoading(true);
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                setLoading(false);
+                return;
+            }
 
-        // Fetch tenant ID
-        const { data: member } = await supabase.from('team_members').select('tenant_id').eq('user_id', user.id).maybeSingle();
-        if (!member) return;
-        const tenantId = (member as any).tenant_id;
-        if (!tenantId) return;
+            // Fetch tenant ID
+            const { data: member } = await supabase.from('team_members').select('tenant_id').eq('user_id', user.id).maybeSingle();
+            if (!member || !(member as any).tenant_id) {
+                setLoading(false);
+                return;
+            }
 
-        const { data, error } = await supabase
-            .from('support_tickets')
-            .select('*')
-            .eq('tenant_id', tenantId)
-            .order('created_at', { ascending: false });
+            const tenantId = (member as any).tenant_id;
 
-        if (error) toast.error("Error loading tickets");
-        else setTickets(data as any || []);
+            const { data, error } = await supabase
+                .from('support_tickets')
+                .select('*')
+                .eq('tenant_id', tenantId)
+                .order('created_at', { ascending: false });
 
-        setLoading(false);
+            if (error) {
+                toast.error("Error loading tickets");
+            } else {
+                setTickets(data as any || []);
+            }
+        } catch (error) {
+            console.error("Error in fetchTickets:", error);
+            toast.error("An unexpected error occurred");
+        } finally {
+            setLoading(false);
+        }
     };
 
     const fetchMessages = async (ticketId: string) => {

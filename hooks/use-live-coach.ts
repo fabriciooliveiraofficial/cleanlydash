@@ -11,7 +11,7 @@ const COACHING_TRIGGERS = [
   },
   {
     keywords: ['concorrente', 'outra empresa', 'vi no google', 'mais barato'],
-    tip: "Diferencial AirGoverness: 'Nós temos seguro de danos e todos os nossos parceiros passam por verificação de antecedentes criminais.'"
+    tip: "Diferencial Cleanlydash: 'Nós temos seguro de danos e todos os nossos parceiros passam por verificação de antecedentes criminais.'"
   },
   {
     keywords: ['atraso', 'demora', 'tempo', 'agilidade'],
@@ -43,7 +43,7 @@ export function useLiveCoach(isActive: boolean) {
         if (event.results[i].isFinal) {
           const text = event.results[i][0].transcript.toLowerCase()
           setTranscript(prev => prev + ' ' + text)
-          
+
           // Verificar Gatilhos
           COACHING_TRIGGERS.forEach(trigger => {
             if (trigger.keywords.some(k => text.includes(k))) {

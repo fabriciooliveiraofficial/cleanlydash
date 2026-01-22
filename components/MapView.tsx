@@ -7,6 +7,7 @@ import { createClient } from '../lib/supabase/client.ts';
 import { geocodeAddress } from '../lib/geocoding.ts';
 import { Loader2, MapPin, Phone, Mail, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 // Fix para ícones do Leaflet no Vite
 const customIcon = new Icon({
@@ -64,6 +65,7 @@ function FitBounds({ customers }: { customers: Customer[] }) {
 }
 
 export const MapView: React.FC = () => {
+    const { t } = useTranslation();
     const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
     const [loading, setLoading] = useState(true);
     const [geocoding, setGeocoding] = useState(false);
@@ -77,7 +79,7 @@ export const MapView: React.FC = () => {
 
         if (error) {
             console.error('[MapView] Error loading customers:', error);
-            toast.error('Erro ao carregar clientes');
+            toast.error(t('map.error_loading'));
         }
 
         setAllCustomers(data || []);
@@ -98,7 +100,7 @@ export const MapView: React.FC = () => {
 
     async function handleGeocodeAll() {
         if (customersWithoutCoords.length === 0) {
-            toast.info('Todos os clientes já possuem coordenadas!');
+            toast.info(t('map.all_done'));
             return;
         }
 
@@ -155,10 +157,10 @@ export const MapView: React.FC = () => {
         await loadCustomers();
 
         if (successCount > 0) {
-            toast.success(`${successCount} endereço(s) geocodificado(s) com sucesso!`);
+            toast.success(t('map.success_msg', { count: successCount }));
         }
         if (failCount > 0) {
-            toast.warning(`${failCount} endereço(s) não puderam ser geocodificados`);
+            toast.warning(t('map.fail_msg', { count: failCount }));
         }
     }
 
@@ -177,12 +179,12 @@ export const MapView: React.FC = () => {
         <div className="space-y-4">
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-2xl font-bold text-slate-900">Mapa de Imóveis</h2>
+                    <h2 className="text-2xl font-bold text-slate-900">{t('map.title')}</h2>
                     <p className="text-slate-500 text-sm">
-                        {customersWithCoords.length} imóveis no mapa
+                        {t('map.subtitle_count', { count: customersWithCoords.length })}
                         {customersWithoutCoords.length > 0 && (
                             <span className="text-amber-600 ml-2">
-                                • {customersWithoutCoords.length} sem coordenadas
+                                • {t('map.subtitle_missing', { count: customersWithoutCoords.length })}
                             </span>
                         )}
                     </p>
@@ -197,12 +199,12 @@ export const MapView: React.FC = () => {
                         {geocoding ? (
                             <>
                                 <Loader2 className="animate-spin" size={16} />
-                                <span>Geocodificando {geocodeProgress.current}/{geocodeProgress.total}...</span>
+                                <span>{t('map.geocoding', { current: geocodeProgress.current, total: geocodeProgress.total })}</span>
                             </>
                         ) : (
                             <>
                                 <RefreshCw size={16} />
-                                <span>Geocodificar Endereços ({customersWithoutCoords.length})</span>
+                                <span>{t('map.geocode_button', { count: customersWithoutCoords.length })}</span>
                             </>
                         )}
                     </button>
@@ -214,7 +216,7 @@ export const MapView: React.FC = () => {
                 <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-200">
                     <div className="flex items-center gap-2 text-sm text-indigo-700 mb-2">
                         <Loader2 className="animate-spin" size={14} />
-                        <span>Convertendo endereços em coordenadas via OpenStreetMap...</span>
+                        <span>{t('map.converting')}</span>
                     </div>
                     <div className="w-full bg-indigo-200 rounded-full h-2">
                         <div
@@ -223,7 +225,7 @@ export const MapView: React.FC = () => {
                         />
                     </div>
                     <p className="text-xs text-indigo-600 mt-1">
-                        Este processo pode demorar ~1 segundo por endereço devido aos limites da API gratuita.
+                        {t('map.delay_note')}
                     </p>
                 </div>
             )}
@@ -231,12 +233,12 @@ export const MapView: React.FC = () => {
             {customersWithCoords.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-[500px] bg-slate-100 rounded-2xl text-slate-500">
                     <MapPin size={48} className="mb-4 text-slate-300" />
-                    <p className="font-semibold">Nenhum imóvel com coordenadas</p>
-                    <p className="text-sm mb-4">Clique no botão acima para geocodificar os endereços automaticamente.</p>
+                    <p className="font-semibold">{t('map.no_coords_title')}</p>
+                    <p className="text-sm mb-4">{t('map.no_coords_desc')}</p>
                     {customersWithoutCoords.length > 0 && (
                         <div className="flex items-center gap-2 text-amber-600 bg-amber-50 px-4 py-2 rounded-lg">
                             <AlertCircle size={16} />
-                            <span className="text-sm">{customersWithoutCoords.length} endereço(s) aguardando geocodificação</span>
+                            <span className="text-sm">{t('map.waiting', { count: customersWithoutCoords.length })}</span>
                         </div>
                     )}
                 </div>

@@ -12,7 +12,8 @@
         "settings": "Configuración",
         "logout": "Cerrar Sesión",
         "wallet": "Billetera",
-        "support": "Ayuda y Soporte"
+        "support": "Ayuda y Soporte",
+        "airbnb_center": "Centro Airbnb"
     },
     "common": {
         "search": "Buscar...",
@@ -38,6 +39,7 @@
         "subtitle": "Administrar propietarios y unidades.",
         "new_client": "Nuevo Cliente",
         "add_client_title": "Agregar Nuevo Cliente",
+        "edit_client_title": "Editar Cliente",
         "search_placeholder": "Buscar por nombre o dirección...",
         "table_client": "Cliente",
         "table_contact": "Contacto",
@@ -79,5 +81,100 @@
         "title": "Gestión de Equipos",
         "subtitle": "Añadir instructores, personal y gerentes.",
         "invite": "Invitar Miembro"
+    },
+    "cleaner": {
+        "hello": "Hola",
+        "tabs": {
+            "jobs": "Trabajos",
+            "earnings": "Ganancias"
+        },
+        "notifications": {
+            "delay_success": "¡Notificación de retraso enviada!",
+            "delay_failed": "Error al enviar notificación de retraso."
+        },
+        "menu": {
+            "change_password": "Cambiar Contraseña",
+            "logout": "Cerrar Sesión"
+        },
+        "active_job": {
+            "check_in_button": "Check In",
+            "status_validating": "Validando su ubicación vía GPS para desbloquear acceso.",
+            "status_locating": "Localizando satélites...",
+            "gps_manual_button": "¿Problemas GPS? Check-in Manual",
+            "manual_confirm": "¿Estás seguro de que estás en la ubicación? Esto será auditado.",
+            "manual_success": "Check-in manual registrado vía Bypass.",
+            "report_damage": "Reportar Daño (Foto)",
+            "inventory_title": "Inventario",
+            "all_set": "Todo Listo",
+            "in_progress_title": "En Progreso",
+            "timer_running": "Cronómetro corriendo.",
+            "finish_button": "Terminar Trabajo",
+            "uploading": "Subiendo evidencia...",
+            "photo_sent": "¡Foto enviada! Propietario notificado.",
+            "syncing": "Sincronizando con Central...",
+            "completed_success": "¡Trabajo Completado con Éxito!",
+            "completed_error": "Error al actualizar estado."
+        }
+    },
+    "map": {
+        "title": "Mapa de Propiedades",
+        "subtitle_count": "{{count}} propiedades en el mapa",
+        "subtitle_missing": "{{count}} sin coordenadas",
+        "all_done": "¡Todos los clientes ya tienen coordenadas!",
+        "geocoding": "Geocodificando {{current}}/{{total}}...",
+        "geocode_button": "Geocodificar Direcciones ({{count}})",
+        "converting": "Convirtiendo direcciones a coordenadas vía OpenStreetMap...",
+        "delay_note": "Este proceso puede tardar ~1 segundo por dirección debido a límites gratuitos.",
+        "no_coords_title": "Sin propiedades con coordenadas",
+        "no_coords_desc": "Haga clic en el botón de arriba para geocodificar automáticamente.",
+        "waiting": "{{count}} dirección(es) esperando geocodificación",
+        "success_msg": "{{count}} dirección(es) geocodificada(s) con éxito!",
+        "fail_msg": "{{count}} dirección(es) no pudieron ser geocodificadas",
+        "error_loading": "Error al cargar clientes"
+    },
+    "auth": {
+        "title_login": "Gestión profesional para tus rotaciones.",
+        "email_label": "Correo Electrónico",
+        "password_label": "Contraseña",
+        "password_placeholder": "••••••••",
+        "email_placeholder": "tu@email.com",
+        "forgot_password": "¿Olvidaste tu contraseña?",
+        "login_button": "Entrar al Panel",
+        "loading": "Cargando...",
+        "need_account": "¿Necesitas ayuda o quieres una cuenta?",
+        "contact_support": "Contactar Soporte",
+        "back_login": "Volver al Login",
+        "register_title": "Crear Cuenta Gratis",
+        "register_subtitle": "Gestión profesional para tus rotaciones.",
+        "plan_label": "Plan Elegido",
+        "select_plan": "Selecciona un plan",
+        "company_label": "Nombre de la Empresa",
+        "company_placeholder": "Mi Empresa S.A.",
+        "name_label": "Tu Nombre",
+        "name_placeholder": "Juan Pérez",
+        "phone_label": "Teléfono",
+        "confirm_password_label": "Confirmar Contraseña",
+        "create_account_button": "Crear Cuenta Gratis",
+        "security_grade": "Grado de Seguridad A+",
+        "rating_label": "4.9/5 Calificación G2",
+        "verify_title": "Verifica tu correo",
+        "verify_desc": "Enviamos un enlace de confirmación a",
+        "recovery_title": "Revisa tu correo",
+        "recovery_desc": "Enviamos instrucciones de recuperación a",
+        "recovery_header": "Recuperar Contraseña",
+        "recovery_sub": "Ingresa tu correo para recibir el enlace.",
+        "send_link": "Enviar Enlace",
+        "has_account": "¿Ya tienes cuenta? Inicia sesión",
+        "no_account": "¿No tienes cuenta? Registra tu empresa",
+        "combos_label": "Combos Promocionales",
+        "individual_plans_label": "Planes Individuales"
+    },
+    "pwa": {
+        "title": "Instalar Aplicación",
+        "description": "Instale nuestra aplicación para una mejor experiencia, acceso sin conexión y navegación simplificada.",
+        "install_button": "Instalar Ahora",
+        "later_button": "Más Tarde",
+        "ios_step1": "Toque el botón Compartir",
+        "ios_step2": "Seleccione 'Agregar a Inicio'"
     }
 }

@@ -4,12 +4,12 @@
 import { useTheme } from 'next-themes'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
 } from '@/components/ui/select'
 import { Moon, Sun, Monitor, Languages } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -23,7 +23,7 @@ export default function PreferencesPage() {
         <CardHeader>
           <CardTitle>Aparência</CardTitle>
           <CardDescription>
-            Personalize o visual da plataforma AirGoverness.
+            Personalize o visual da plataforma Cleanlydash.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -87,7 +87,7 @@ export default function PreferencesPage() {
             </Select>
           </div>
           <p className="text-[10px] text-slate-400 italic">
-            * Nota: O AirGoverness utiliza tradução dinâmica. Algumas mensagens do sistema podem aparecer em inglês por padrão.
+            * Nota: O Cleanlydash utiliza tradução dinâmica. Algumas mensagens do sistema podem aparecer em inglês por padrão.
           </p>
         </CardContent>
       </Card>
