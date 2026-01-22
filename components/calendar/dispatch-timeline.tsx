@@ -358,7 +358,9 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
                             <span className="text-[10px] font-black uppercase truncate">
                               {booking.property_name}
                             </span>
-                            <Badge className="h-4 px-1 text-[8px] uppercase font-bold" variant="outline" />
+                            <Badge className="h-4 px-1 text-[8px] uppercase font-bold bg-white/50 border-current" variant="outline">
+                              {booking.status}
+                            </Badge>
                           </div>
                           <div className="flex items-center justify-between text-[9px] font-bold opacity-80 pointer-events-none">
                             <span className="flex items-center gap-1">

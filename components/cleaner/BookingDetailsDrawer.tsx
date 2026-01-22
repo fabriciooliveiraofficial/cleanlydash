@@ -1,18 +1,62 @@
 import React from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '../ui/sheet';
-import { MapPin, Clock, Calendar, Info, Navigation, User, FileText, ClipboardList, DollarSign } from 'lucide-react';
+import { MapPin, Clock, Calendar, Info, Navigation, User, FileText, ClipboardList, DollarSign, CheckCircle2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { Button } from '../ui/button';
 import { Separator } from '../ui/separator';
+import { createClient } from '../../lib/supabase/client';
+import { toast } from 'sonner';
 
 interface BookingDetailsDrawerProps {
     booking: any;
     isOpen: boolean;
     onClose: () => void;
+    onStatusUpdate?: () => void;
 }
 
-export const BookingDetailsDrawer: React.FC<BookingDetailsDrawerProps> = ({ booking, isOpen, onClose }) => {
+export const BookingDetailsDrawer: React.FC<BookingDetailsDrawerProps> = ({ booking, isOpen, onClose, onStatusUpdate }) => {
+    const supabase = createClient();
+    const [loading, setLoading] = React.useState(false);
+
     if (!booking) return null;
+
+    const handleFinishJob = async () => {
+        setLoading(true);
+        try {
+            // 1. Update status to completed
+            const { error: statusError } = await supabase
+                .from('bookings')
+                .update({ status: 'completed' })
+                .eq('id', booking.id);
+
+            if (statusError) throw statusError;
+
+            // 2. Create Invoice
+            const { error: invoiceError } = await supabase
+                .from('invoices')
+                .insert({
+                    booking_id: booking.id,
+                    tenant_id: booking.tenant_id,
+                    customer_id: booking.customer_id,
+                    amount: booking.price,
+                    status: 'draft',
+                    payment_method: booking.payment_method_preference || 'stripe'
+                } as any);
+
+            if (invoiceError && invoiceError.code !== '23505') { // Ignore if invoice already exists
+                console.error("Invoice creation error:", invoiceError);
+            }
+
+            toast.success("Job finalizado com sucesso!");
+            if (onStatusUpdate) onStatusUpdate();
+            onClose();
+        } catch (err: any) {
+            console.error(err);
+            toast.error("Erro ao finalizar job: " + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(booking.customers?.address || '')}`;
 
@@ -134,6 +178,28 @@ export const BookingDetailsDrawer: React.FC<BookingDetailsDrawerProps> = ({ book
                                 )}
                             </div>
                         </div>
+
+                        {booking.status !== 'completed' && (
+                            <div className="pt-4">
+                                <Button
+                                    className="w-full h-16 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl shadow-xl shadow-emerald-100 flex items-center justify-center gap-3 font-black text-xl transition-all active:scale-95 group"
+                                    onClick={handleFinishJob}
+                                    disabled={loading}
+                                >
+                                    {loading ? (
+                                        <div className="animate-spin h-6 w-6 border-2 border-white/30 border-t-white rounded-full" />
+                                    ) : (
+                                        <>
+                                            <CheckCircle2 size={24} className="group-hover:scale-110 transition-transform" />
+                                            FINALIZAR JOB
+                                        </>
+                                    )}
+                                </Button>
+                                <p className="text-[10px] text-slate-400 text-center mt-3 font-bold uppercase tracking-widest">
+                                    Ao finalizar, um recibo será gerado para o cliente.
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </div>
             </SheetContent>

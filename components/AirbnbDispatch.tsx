@@ -53,10 +53,15 @@ export default function AirbnbDispatch() {
                     status,
                     price,
                     assigned_to,
-                    customers ( name )
+                    customers ( name ),
+                    booking_assignments (
+                        member_id
+                    )
                 `)
                 .gte('start_date', startOfDay.toISOString())
                 .lte('start_date', endOfDay.toISOString())
+            // .not('calendar_id', 'is', null) // Commented out to show ALL bookings for testing
+
 
             if (bookingError) throw bookingError
 
@@ -68,11 +73,20 @@ export default function AirbnbDispatch() {
                 end_time: b.end_date,
                 status: b.status,
                 price: parseFloat(b.price || 0),
-                resource_ids: b.assigned_to ? [b.assigned_to] : [], // Convert single UUID to array for timeline
+                resource_ids: [
+                    ...(b.assigned_to ? [b.assigned_to] : []),
+                    ...(b.booking_assignments?.map((ba: any) => ba.member_id) || [])
+                ],
                 customers: b.customers
             }))
 
-            setBookings(transformedBookings)
+            // Deduplicate resource_ids
+            const dedupedBookings = transformedBookings.map((b: any) => ({
+                ...b,
+                resource_ids: Array.from(new Set(b.resource_ids))
+            }))
+
+            setBookings(dedupedBookings)
         } catch (err: any) {
             console.error('Error fetching dispatch data:', err)
             toast.error('Erro ao carregar dados de despacho.')
@@ -87,20 +101,38 @@ export default function AirbnbDispatch() {
 
     const handleBookingUpdate = async (bookingId: string, updates: any) => {
         try {
-            // Map resource_ids back to assigned_to (taking the first one)
-            const assigned_to = updates.resource_ids && updates.resource_ids.length > 0
-                ? updates.resource_ids[0]
-                : null;
+            // Logic: If resources changed -> Update assignments table
+            if (updates.resource_ids) {
+                // 1. Delete existing for this booking
+                await supabase.from('booking_assignments').delete().eq('booking_id', bookingId);
 
-            const { error } = await (supabase
-                .from('bookings') as any)
-                .update({
-                    assigned_to: assigned_to,
-                    start_date: updates.start_time
-                })
-                .eq('id', bookingId)
+                // 2. Insert new
+                if (updates.resource_ids.length > 0) {
+                    const toInsert = updates.resource_ids.map((rid: string) => ({
+                        booking_id: bookingId,
+                        member_id: rid,
+                        status: 'pending' // inherit status?
+                    }));
+                    await supabase.from('booking_assignments').insert(toInsert);
 
-            if (error) throw error
+                    // 3. Update legacy assigned_to for compatibility
+                    await (supabase.from('bookings') as any).update({ assigned_to: updates.resource_ids[0] } as any).eq('id', bookingId);
+                } else {
+                    await (supabase.from('bookings') as any).update({ assigned_to: null } as any).eq('id', bookingId);
+                }
+            }
+
+            // Update time if changed
+            if (updates.start_time) {
+                const { error } = await (supabase
+                    .from('bookings') as any)
+                    .update({
+                        start_date: updates.start_time
+                    })
+                    .eq('id', bookingId)
+                if (error) throw error
+            }
+
             toast.success('Agendamento atualizado com sucesso.')
             fetchData() // Refresh
         } catch (err: any) {

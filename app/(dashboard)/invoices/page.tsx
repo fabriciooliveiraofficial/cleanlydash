@@ -3,42 +3,42 @@ import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table"
-import { 
-  Tabs, 
-  TabsContent, 
-  TabsList, 
-  TabsTrigger 
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger
 } from "@/components/ui/tabs"
-import { 
-  FileText, 
-  MoreHorizontal, 
-  Mail, 
-  Download, 
-  CheckCircle2, 
+import {
+  FileText,
+  MoreHorizontal,
+  Mail,
+  Download,
+  CheckCircle2,
   AlertCircle,
   History,
   Clock,
   ExternalLink,
   Ban
 } from 'lucide-react'
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuLabel, 
-  DropdownMenuSeparator, 
-  DropdownMenuTrigger 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { CreateInvoiceDialog } from '@/components/invoices/create-invoice-dialog'
-import { markInvoiceAsPaid, voidInvoice } from './actions'
+import { markInvoiceAsPaid, voidInvoice, sendInvoiceNotification } from './actions'
 
 export default async function InvoicesPage() {
   const supabase = createClient()
@@ -59,15 +59,15 @@ export default async function InvoicesPage() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'paid': 
+      case 'paid':
         return <Badge className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200 shadow-none font-bold">Pago</Badge>
-      case 'sent': 
+      case 'sent':
         return <Badge className="bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200 shadow-none font-bold">Enviado</Badge>
-      case 'late': 
+      case 'late':
         return <Badge variant="destructive" className="bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-200 shadow-none font-bold animate-pulse">Atrasado</Badge>
-      case 'void': 
+      case 'void':
         return <Badge className="bg-slate-50 text-slate-500 hover:bg-slate-100 border-slate-200 shadow-none font-bold">Cancelada</Badge>
-      default: 
+      default:
         return <Badge variant="secondary" className="bg-slate-100 text-slate-600 border-slate-200 shadow-none font-bold">Rascunho</Badge>
     }
   }
@@ -79,6 +79,7 @@ export default async function InvoicesPage() {
           <TableHead className="w-[140px] px-6">Fatura #</TableHead>
           <TableHead>Cliente</TableHead>
           <TableHead>Valor</TableHead>
+          <TableHead>Método</TableHead>
           <TableHead>Vencimento</TableHead>
           <TableHead>Status</TableHead>
           <TableHead className="text-right px-6">Ações</TableHead>
@@ -99,6 +100,11 @@ export default async function InvoicesPage() {
               </TableCell>
               <TableCell className="font-black text-slate-900">
                 {formatCurrency(inv.amount)}
+              </TableCell>
+              <TableCell>
+                <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-widest border-slate-200 text-slate-500">
+                  {inv.payment_method || 'N/A'}
+                </Badge>
               </TableCell>
               <TableCell className="text-xs text-slate-600 font-medium">
                 {new Date(inv.due_date).toLocaleDateString('pt-BR')}
@@ -121,6 +127,13 @@ export default async function InvoicesPage() {
                     <DropdownMenuItem className="gap-2 cursor-pointer py-2.5">
                       <Download size={14} className="text-slate-400" /> Baixar PDF
                     </DropdownMenuItem>
+                    <form action={async () => { 'use server'; await sendInvoiceNotification(inv.id) }}>
+                      <DropdownMenuItem className="gap-2 cursor-pointer py-2.5 text-indigo-600 font-bold" asChild>
+                        <button type="submit" className="w-full text-left">
+                          <ExternalLink size={14} /> Solicitar Pagamento
+                        </button>
+                      </DropdownMenuItem>
+                    </form>
                     <DropdownMenuSeparator />
                     {inv.status !== 'paid' && (
                       <form action={async () => { 'use server'; await markInvoiceAsPaid(inv.id) }}>
@@ -199,7 +212,7 @@ export default async function InvoicesPage() {
             </p>
           </CardContent>
         </Card>
-        
+
         <Card className="border-none shadow-lg bg-white">
           <CardHeader className="pb-2">
             <CardTitle className="text-[11px] font-bold text-emerald-600 uppercase tracking-widest flex items-center gap-2">
@@ -247,7 +260,7 @@ export default async function InvoicesPage() {
                 Pagas
               </TabsTrigger>
             </TabsList>
-            
+
             <div className="hidden md:flex items-center gap-4">
               <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Ações Rápidas:</p>
               <Button variant="ghost" size="sm" className="text-[11px] font-black uppercase tracking-widest text-slate-500 hover:text-indigo-600 transition-colors gap-2">
@@ -255,7 +268,7 @@ export default async function InvoicesPage() {
               </Button>
             </div>
           </div>
-          
+
           <TabsContent value="receivable" className="m-0 focus-visible:ring-0">
             <InvoiceList filteredInvoices={receivable} />
           </TabsContent>

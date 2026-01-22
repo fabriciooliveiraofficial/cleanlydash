@@ -140,7 +140,8 @@
         "success_created": "Agendamento criado!",
         "success_created_count": "{{count}} agendamentos criados!",
         "error_sync": "Erro de Sincronização: Seu cadastro de empresa ainda não foi totalmente processado. Por favor, tente recarregar a página ou contate o suporte.",
-        "error_integrity": "Erro de integridade: "
+        "error_integrity": "Erro de integridade: ",
+        "payment_method_label": "Preferência de Pagamento"
     },
     "cleaner": {
         "hello": "Olá, {{name}}",

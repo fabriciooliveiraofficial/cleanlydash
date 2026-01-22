@@ -141,7 +141,8 @@
         "success_created": "Booking created!",
         "success_created_count": "{{count}} bookings created!",
         "error_sync": "Sync Error: Your company registration is not fully processed yet. Please reload or contact support.",
-        "error_integrity": "Integrity Error: "
+        "error_integrity": "Integrity Error: ",
+        "payment_method_label": "Payment Preference"
     },
     "cleaner": {
         "hello": "Hello, {{name}}",

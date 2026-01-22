@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef } from 'react';
 import { format, isSameDay, parseISO, isBefore, addHours } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { AlertCircle } from 'lucide-react';
+import { Badge } from '../ui/badge';
 
 interface Booking {
     id: string;
@@ -437,12 +438,12 @@ export const DayView: React.FC<DayViewProps> = ({
                                 onDragLeave={handleDragLeave}
                                 onDrop={(e) => handleDrop(e, hour)}
                                 className={`flex-1 relative group transition-colors ${past
-                                        ? 'bg-slate-50/50 cursor-not-allowed'
-                                        : resizingBooking
-                                            ? 'cursor-ns-resize'
-                                            : hasCoveringBooking
-                                                ? 'cursor-pointer'
-                                                : 'hover:bg-indigo-50/50 cursor-pointer'
+                                    ? 'bg-slate-50/50 cursor-not-allowed'
+                                    : resizingBooking
+                                        ? 'cursor-ns-resize'
+                                        : hasCoveringBooking
+                                            ? 'cursor-pointer'
+                                            : 'hover:bg-indigo-50/50 cursor-pointer'
                                     } ${isDragOverThis && !hasConflict ? 'bg-indigo-100 ring-2 ring-indigo-400 ring-inset' : ''
                                     } ${hasConflict ? 'bg-red-100 ring-2 ring-red-400 ring-inset' : ''}`}
                             >
@@ -507,9 +508,9 @@ export const DayView: React.FC<DayViewProps> = ({
                                                     <div className="text-sm font-bold">
                                                         {format(parseISO(booking.start_date), 'HH:mm')} - {format(parseISO(booking.end_date), 'HH:mm')}
                                                     </div>
-                                                    <div className="text-xs opacity-80">
+                                                    <Badge className="px-2 py-0 text-[10px] uppercase font-bold bg-white/20 border-white text-white" variant="outline">
                                                         {booking.status}
-                                                    </div>
+                                                    </Badge>
                                                 </div>
                                                 <div className="text-base font-semibold truncate">
                                                     {booking.summary || 'Agendamento'}

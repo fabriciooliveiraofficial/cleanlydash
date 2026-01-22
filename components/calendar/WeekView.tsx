@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef } from 'react';
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, isBefore, addHours, addMinutes } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { AlertCircle } from 'lucide-react';
+import { Badge } from '../ui/badge';
 
 interface Booking {
     id: string;
@@ -612,8 +613,13 @@ export const WeekView: React.FC<WeekViewProps> = ({
 
                                                 {/* Booking Content */}
                                                 <div className="px-2 py-1 h-full flex flex-col pointer-events-none select-none mt-1">
-                                                    <div className="text-[10px] font-bold truncate" style={{ color: bgColor }}>
-                                                        {format(parseLocalDate(booking.start_date), 'HH:mm')} - {format(parseLocalDate(booking.end_date), 'HH:mm')}
+                                                    <div className="flex items-center justify-between gap-1 overflow-hidden">
+                                                        <div className="text-[10px] font-bold truncate" style={{ color: bgColor }}>
+                                                            {format(parseLocalDate(booking.start_date), 'HH:mm')}
+                                                        </div>
+                                                        <Badge className="h-3 px-1 text-[7px] uppercase font-bold bg-white/50 border-current" variant="outline">
+                                                            {booking.status}
+                                                        </Badge>
                                                     </div>
                                                     <div className="text-xs font-semibold text-slate-800 truncate">
                                                         {booking.summary || 'Agendamento'}

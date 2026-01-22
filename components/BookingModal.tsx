@@ -4,7 +4,7 @@ import { createClient } from '../lib/supabase/client';
 import {
     X, ChevronRight, ChevronLeft, User, Calendar, Clock,
     DollarSign, Palette, FileText, UserPlus, Check, RefreshCw,
-    Mail, MessageSquare, Edit2, Trash2, Plus, Sparkles, Search, ListChecks
+    Mail, MessageSquare, Edit2, Trash2, Plus, Sparkles, Search, ListChecks, CreditCard, Users, ShieldAlert
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, addHours, addDays, addWeeks, addMonths, isBefore, parseISO } from 'date-fns';
@@ -46,7 +46,8 @@ interface Service {
 }
 
 interface StaffMember {
-    id: string;
+    id: string; // Linked user_id (auth.users)
+    team_member_id: string; // Actual team_members table UUID
     email: string;
     role: string;
     name: string;
@@ -69,7 +70,9 @@ interface RecurrenceInstance {
     cleaner_pay_rate: number;
     service_id: string;
     duration_minutes: number;
+    duration_minutes: number;
     addon_ids: string[]; // New: Per-instance addons
+    assignments: { member_id: string, pay_rate: number, name: string }[]; // New: Per-instance assignments
     isEditing?: boolean;
 }
 
@@ -125,6 +128,11 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     const [addons, setAddons] = useState<Addon[]>([]);
     const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
 
+    // Teams & Assignments
+    const [crews, setCrews] = useState<any[]>([]);
+    const [assignments, setAssignments] = useState<{ member_id: string, pay_rate: number, name: string }[]>([]);
+    const [selectedCrewId, setSelectedCrewId] = useState<string>('');
+
     // UI State for Filters
     const [selectedCategory, setSelectedCategory] = useState<string>('');
     const [selectedRecurrenceCategory, setSelectedRecurrenceCategory] = useState<string>('');
@@ -151,6 +159,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         // Notification options
         notify_client: 'email' as NotificationType,
         notify_staff: 'email' as NotificationType,
+        payment_method_preference: 'stripe',
         // Split Service
         use_split_recurrence: false,
         recurrence_service_id: '',
@@ -329,6 +338,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             fetchCategories();
             fetchServices();
             fetchStaff();
+            fetchCrews();
 
             const fetchAvailableInventory = async () => {
                 const { data } = await supabase.from('inventory_items').select('id, name, unit').order('name');
@@ -383,6 +393,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     recurrence_end_date: booking.recurrence_end_date ? format(new Date(booking.recurrence_end_date), 'yyyy-MM-dd') : '',
                     notify_client: booking.notify_client || 'email',
                     notify_staff: booking.notify_staff || 'email',
+                    payment_method_preference: booking.payment_method_preference || 'stripe',
                     // Split Service (if applicable)
                     use_split_recurrence: false,
                     recurrence_service_id: '',
@@ -419,7 +430,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                             cleaner_pay_rate: booking.cleaner_pay_rate || 0,
                             service_id: booking.service_id,
                             duration_minutes: booking.duration_minutes,
-                            addon_ids: addonsByBooking.get(booking.id) || []
+                            duration_minutes: booking.duration_minutes,
+                            addon_ids: addonsByBooking.get(booking.id) || [],
+                            assignments: [] // Populated below
                         }
                     ];
 
@@ -432,9 +445,33 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                             cleaner_pay_rate: c.cleaner_pay_rate || 0,
                             service_id: c.service_id,
                             duration_minutes: c.duration_minutes,
-                            addon_ids: addonsByBooking.get(c.id) || []
+                            service_id: c.service_id,
+                            duration_minutes: c.duration_minutes,
+                            addon_ids: addonsByBooking.get(c.id) || [],
+                            assignments: [] // Populated below
                         })));
                     }
+
+                    // Fetch assignments for all instances
+                    const { data: allAssignments } = await supabase
+                        .from('booking_assignments')
+                        .select('booking_id, member_id, pay_rate, team_members(name)')
+                        .in('booking_id', allIds);
+
+                    const assignmentsByBooking = new Map<string, any[]>();
+                    (allAssignments as any[])?.forEach(a => {
+                        const existing = assignmentsByBooking.get(a.booking_id) || [];
+                        assignmentsByBooking.set(a.booking_id, [...existing, {
+                            member_id: a.member_id,
+                            pay_rate: a.pay_rate,
+                            name: a.team_members?.name || 'Unknown'
+                        }]);
+                    });
+
+                    // Assign back to instances
+                    instances.forEach(inst => {
+                        inst.assignments = assignmentsByBooking.get(inst.id) || [];
+                    });
 
                     // For the top-level "Upsell" visual, we reflect the FIRST instance's addons
                     if (instances.length > 0) {
@@ -466,6 +503,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     recurrence_end_date: '',
                     notify_client: 'email' as NotificationType,
                     notify_staff: 'email' as NotificationType,
+                    payment_method_preference: 'stripe',
                     use_split_recurrence: false,
                     recurrence_service_id: '',
                     recurrence_price: 0,
@@ -495,6 +533,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     recurrence_end_date: '',
                     notify_client: 'email' as NotificationType,
                     notify_staff: 'email' as NotificationType,
+                    payment_method_preference: 'stripe',
                     use_split_recurrence: false,
                     recurrence_service_id: '',
                     recurrence_price: 0,
@@ -609,7 +648,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             const staffList = data
                 .filter((d: any) => d.user_id)
                 .map((d: any) => ({
-                    id: d.user_id,
+                    id: d.user_id, // For legacy assigned_to (auth.users)
+                    team_member_id: d.id, // For booking_assignments (team_members)
                     email: d.email || '',
                     role: d.role,
                     name: d.name,
@@ -684,7 +724,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 cleaner_pay_rate: formData.cleaner_pay_rate,
                 service_id: instanceServiceId,
                 duration_minutes: instanceDuration,
-                addon_ids: [...selectedAddons] // Default to currently selected top-level addons
+                service_id: instanceServiceId,
+                duration_minutes: instanceDuration,
+                addon_ids: [...selectedAddons], // Default to currently selected top-level addons
+                assignments: [...assignments] // Default to current main assignments
             });
             currentDate = getNextDate(currentDate, formData.recurrence_type);
         }
@@ -714,7 +757,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                         duration_minutes: source.duration_minutes,
                         time: source.time,
                         cleaner_pay_rate: source.cleaner_pay_rate,
-                        addon_ids: [...source.addon_ids]
+                        time: source.time,
+                        cleaner_pay_rate: source.cleaner_pay_rate,
+                        addon_ids: [...source.addon_ids],
+                        assignments: source.assignments.map(a => ({ ...a }))
                     };
                 }
                 return inst;
@@ -739,12 +785,109 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     };
 
     const handleStaffChange = (staffId: string) => {
+        // Individual selection logic
         const staffMember = staff.find(s => s.id === staffId);
+
+        // Single assignment mode (legacy compatibility or single user)
         setFormData(prev => ({
             ...prev,
             assigned_to: staffId,
             cleaner_pay_rate: staffMember?.pay_rate || prev.cleaner_pay_rate
         }));
+
+        // Also update assignment list for new multi-assignment logic
+        if (staffMember) {
+            setAssignments([{
+                member_id: staffMember.team_member_id, // Use team_member UUID
+                pay_rate: staffMember.pay_rate || 0,
+                name: staffMember.name
+            }]);
+            setSelectedCrewId(''); // Clear crew if manually selecting single person
+        }
+    };
+
+    const fetchCrews = async () => {
+        const { data } = await supabase.from('crews').select('*, crew_members(member_id)');
+        if (data) setCrews(data);
+    };
+
+    const handleCrewChange = (crewId: string) => {
+        setSelectedCrewId(crewId);
+        const crew = crews.find(c => c.id === crewId);
+        if (!crew) return;
+
+        // Auto-populate assignments from crew members
+        const newAssignments = crew.crew_members.map((cm: any) => {
+            // Find staff details to get default pay rate
+            // Note: staff array uses user_id as id. We need to map correctly.
+            // In fetchStaff, we mapped id: user_id. 
+            // In crew_members, member_id is uuid of team_members table.
+
+            // We need to match efficiently. 
+            // Let's rely on finding by name or we need to robustify the staff fetch to include team_member_id
+
+            // HOTFIX: To ensure matching, let's find the staff member whose underlying team_member ID matches.
+            // But staff state currently only has user_id as 'id'.
+            // For now, simpler approach: we need team_member_id in staff state.
+
+            // Let's try to match by user_id if we can resolve it, otherwise we might have issues.
+            // Improvement: Update fetchStaff to store team_member_id too.
+            // Assuming for now user_id is the primary key used in UI.
+
+            // We'll iterate staff to find the user_id that corresponds to this member_id?
+            // Actually, we don't have that map in state easily.
+
+            // Let's assume for this MVP step we can fetch the team members details again or optimize later.
+            // For immediate result:
+            return {
+                member_id: cm.member_id, // This is team_member_id
+                pay_rate: 0, // Default to 0 until we match
+                name: 'Loading...'
+            };
+        });
+
+        // We will need to resolve names and rates. 
+        // Ideally fetchCrews should include member details.
+        resolveCrewMembersDetails(newAssignments);
+    };
+
+    const resolveCrewMembersDetails = async (initialAssignments: any[]) => {
+        const memberIds = initialAssignments.map(a => a.member_id);
+        const { data } = await supabase
+            .from('team_members')
+            .select('id, name, pay_rate, user_id')
+            .in('id', memberIds);
+
+        if (data) {
+            const detailed = data.map((m: any) => ({
+                member_id: m.id, // Keep team_member_id as the key for assignments
+                pay_rate: m.pay_rate || 0,
+                name: m.name,
+                user_id: m.user_id
+            }));
+            setAssignments(detailed);
+
+            // Legacy compat: Set assigned_to to the first leader-like figure (first member)
+            if (detailed.length > 0) {
+                setFormData(prev => ({
+                    ...prev,
+                    assigned_to: detailed[0].user_id
+                }));
+            }
+        }
+    };
+
+    const updateAssignmentPay = (index: number, newRate: number) => {
+        const updated = [...assignments];
+        updated[index].pay_rate = newRate;
+        setAssignments(updated);
+    };
+
+    const removeAssignment = (index: number) => {
+        const updated = [...assignments];
+        updated.splice(index, 1);
+        setAssignments(updated);
+        setSelectedCrewId(''); // Custom set now
     };
 
     const handleCreateCustomer = async () => {
@@ -887,7 +1030,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             status: formData.status,
             notify_client: formData.notify_client,
             notify_staff: formData.notify_staff,
-            cleaner_pay_rate: formData.cleaner_pay_rate
+            cleaner_pay_rate: formData.cleaner_pay_rate,
+            payment_method_preference: formData.payment_method_preference
         };
 
         try {
@@ -984,6 +1128,31 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                             finalId = (newInst as any).id;
                         }
 
+                        // Sync Assignments for this Instance (Cascade)
+                        // Verify if we should update assignments.
+                        // For now, we apply the CURRENT modal assignments to ALL instances in the series (Cascade).
+                        if (assignments.length > 0) {
+                            // Clear existing
+                            await supabase.from('booking_assignments').delete().eq('booking_id', finalId);
+
+                            // Insert new
+                            const assignmentInserts = assignments.map(a => ({
+                                booking_id: finalId,
+                                member_id: a.member_id,
+                                pay_rate: a.pay_rate,
+                                status: 'pending'
+                            }));
+
+                            const { error: assignError } = await supabase
+                                .from('booking_assignments')
+                                .insert(assignmentInserts);
+
+                            if (assignError) throw assignError;
+                        } else if (!formData.assigned_to) {
+                            // If unassigned, clear assignments
+                            await supabase.from('booking_assignments').delete().eq('booking_id', finalId);
+                        }
+
                         // Sync Addons for this Instance
                         const { data: instAddons } = await supabase.from('booking_addons').select('addon_id').eq('booking_id', finalId);
                         const dbInstAddonIds = new Set((instAddons as any[])?.map(a => a.addon_id) || []);
@@ -1046,6 +1215,29 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 if (error) throw error;
                 if (parentBooking) createdBookingId = (parentBooking as any).id;
 
+                // 3.1 Insert Booking Assignments for PARENT (Multi-User)
+                if (assignments.length > 0) {
+                    const assignmentInserts = assignments.map(a => ({
+                        booking_id: (parentBooking as any).id,
+                        member_id: a.member_id,
+                        pay_rate: a.pay_rate,
+                        status: 'pending'
+                    }));
+
+                    const { error: assignError } = await supabase
+                        .from('booking_assignments')
+                        .insert(assignmentInserts);
+
+                    if (assignError) throw assignError;
+                } else if (formData.assigned_to) {
+                    // Should we insert for single user compatibility?
+                    // For strict conflict checking, yes we should.
+                    // But we need the member_id (UUID), not just user_id.
+                    // The assignments array is populated by handleStaffChange, so we should be good.
+                    // If assignments is empty but assigned_to is set, it might be legacy or direct state manipulation.
+                    // We'll trust assignments array for now.
+                }
+
                 // Insert Addons for Parent
                 if (selectedAddons.length > 0) {
                     const addonInserts = selectedAddons.map(aid => {
@@ -1087,6 +1279,42 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                             .insert(instData)
                             .select()
                             .single();
+
+                        // 3.1 Insert Booking Assignments (Multi-User)
+                        if (true) { // Always run this block, logic inside handles empty
+
+                            const assignmentInserts = assignments.map(a => ({
+                                booking_id: (childObj as any).id,
+                                member_id: a.member_id,
+                                pay_rate: a.pay_rate,
+                                status: 'pending'
+                            }));
+
+                            // We use maybeSingle or catch errors for overlaps
+                            const { error: assignError } = await supabase
+                                .from('booking_assignments')
+                                .insert(assignmentInserts);
+
+                            if (assignError) {
+                                // If overlap triggered, we must throw to rollback or at least stop
+                                throw assignError;
+                            }
+                        } else if (formData.assigned_to) {
+                            // Fallback: If no assignment array but assigned_to is set (Legacy or Single user via dropdown)
+                            // Logic: Find the member_id for this user_id
+                            const member = staff.find(s => s.id === formData.assigned_to);
+                            // We need actual team_member_id.
+                            // Fetch it if needed or rely on the fact that for single user 'assigned_to' works for display.
+                            // BUT we should really populate booking_assignments for consistency if we want conflict check.
+
+                            // Optional: For now, if assignments array is empty, we rely on legacy 'assigned_to' column only?
+                            // No, user wants conflict check. We MUST insert into booking_assignments.
+
+                            // Problem: We need team_member_id. 'staff' array probably needs it.
+                            // Let's defer this specific single-user improvement for the next quick step if needed,
+                            // but assignments array is populated by handleStaffChange now. So it should be fine.
+                        }
+
 
                         // Insert Addons for this specific child
                         if (inst.addon_ids.length > 0) {
@@ -1332,46 +1560,96 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                         {/* Section: Staff & Color (Moved) */}
                         <div className="space-y-4 animate-in fade-in slide-in-from-left-4 duration-500 delay-100">
                             <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t('booking_modal.assign_to_label')}</label>
-                                    <select
-                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-slate-700 transition-all"
-                                        value={formData.assigned_to}
-                                        onChange={e => handleStaffChange(e.target.value)}
-                                    >
-                                        <option value="">{t('booking_modal.waiting_assignment')}</option>
-                                        <optgroup label={t('booking_modal.available_group')}>
-                                            {availableStaff.map(s => (
-                                                <option key={s.id} value={s.id}>✅ {s.name} ({s.role})</option>
-                                            ))}
-                                        </optgroup>
-                                        {unavailableStaff.length > 0 && (
-                                            <optgroup label={t('booking_modal.unavailable_group')}>
-                                                {unavailableStaff.map(s => (
-                                                    <option key={s.id} value={s.id}>⚠️ {s.name} ({s.role})</option>
-                                                ))}
-                                            </optgroup>
+                                <div className="space-y-2 col-span-2">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t('booking_modal.assign_to_label')}</label>
+
+                                        {assignments.length > 0 && (
+                                            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
+                                                {assignments.length} Membro(s)
+                                            </span>
                                         )}
-                                    </select>
-                                    {!isStaffAvailable(formData.assigned_to) && formData.assigned_to && (
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <div className="relative flex-1">
+                                            <select
+                                                className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-slate-700 transition-all"
+                                                value={selectedCrewId}
+                                                onChange={e => {
+                                                    if (e.target.value) handleCrewChange(e.target.value);
+                                                    else {
+                                                        setSelectedCrewId('');
+                                                        setAssignments([]);
+                                                    }
+                                                }}
+                                            >
+                                                <option value="">Selecionar Equipe...</option>
+                                                {crews.map(c => (
+                                                    <option key={c.id} value={c.id}>👥 {c.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div className="relative flex-1">
+                                            <select
+                                                className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-slate-700 transition-all"
+                                                value={formData.assigned_to}
+                                                onChange={e => handleStaffChange(e.target.value)}
+                                                disabled={!!selectedCrewId} // Lock individual selector if crew selected
+                                            >
+                                                <option value="">(Ou) Individual...</option>
+                                                <optgroup label={t('booking_modal.available_group')}>
+                                                    {availableStaff.map(s => (
+                                                        <option key={s.id} value={s.id}>✅ {s.name} ({s.role})</option>
+                                                    ))}
+                                                </optgroup>
+                                                {unavailableStaff.length > 0 && (
+                                                    <optgroup label={t('booking_modal.unavailable_group')}>
+                                                        {unavailableStaff.map(s => (
+                                                            <option key={s.id} value={s.id}>⚠️ {s.name} ({s.role})</option>
+                                                        ))}
+                                                    </optgroup>
+                                                )}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    {/* Assignments List with Pay Rate Overrides */}
+                                    {assignments.length > 0 && (
+                                        <div className="mt-2 space-y-2 bg-slate-50/50 p-2 rounded-xl border border-slate-100">
+                                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Pagamentos Individuais (R$)</label>
+                                            {assignments.map((assign, idx) => (
+                                                <div key={idx} className="flex items-center gap-2 bg-white p-2 rounded-lg border border-slate-100 shadow-sm">
+                                                    <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold">
+                                                        {assign.name[0]}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-xs font-bold text-slate-700 truncate">{assign.name}</div>
+                                                    </div>
+                                                    <div className="flex items-center gap-1">
+                                                        <span className="text-xs text-slate-400">R$</span>
+                                                        <input
+                                                            type="number"
+                                                            className="w-16 px-1 py-0.5 text-right text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 rounded focus:ring-1 focus:ring-emerald-500 outline-none"
+                                                            value={assign.pay_rate}
+                                                            onChange={e => updateAssignmentPay(idx, parseFloat(e.target.value) || 0)}
+                                                        />
+                                                    </div>
+                                                    <button onClick={() => removeAssignment(idx)} className="text-slate-300 hover:text-rose-500">
+                                                        <X size={14} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {!isStaffAvailable(formData.assigned_to) && formData.assigned_to && !selectedCrewId && (
                                         <div className="flex items-center gap-2 mt-2 p-2 bg-amber-50 rounded-lg text-xs text-amber-700 border border-amber-200 animate-in fade-in">
                                             <div className="min-w-4"><Clock size={14} /></div>
                                             <span><strong>{t('booking_modal.warning_unavailable', { defaultValue: 'Warning:' })}</strong> {t('booking_modal.warning_unavailable_text', { defaultValue: 'This time might be outside the shift.' })}</span>
                                         </div>
                                     )}
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t('booking_modal.color_label')}</label>
-                                    <div className="flex gap-2 p-1.5 bg-slate-50 border border-slate-100 rounded-2xl">
-                                        {PRESET_COLORS.slice(0, 6).map(color => (
-                                            <button
-                                                key={color}
-                                                onClick={() => setFormData({ ...formData, color })}
-                                                className={`flex-1 h-8 rounded-xl transition-all ${formData.color === color ? 'ring-2 ring-offset-2 ring-slate-800 scale-95 shadow-lg' : 'opacity-60 hover:opacity-100'}`}
-                                                style={{ backgroundColor: color }}
-                                            />
-                                        ))}
-                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1545,6 +1823,32 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                             }`}
                                     >
                                         {st === 'pending' ? t('booking_modal.status_pending') : st === 'confirmed' ? t('booking_modal.status_confirmed') : st === 'completed' ? t('booking_modal.status_completed') : t('booking_modal.status_cancelled')}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Section: Payment Preference */}
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t('booking_modal.payment_method_label', { defaultValue: 'Preferência de Pagamento' })}</label>
+                            <div className="flex gap-2">
+                                {[
+                                    { id: 'stripe', label: 'Stripe/CC', icon: CreditCard },
+                                    { id: 'zelle', label: 'Zelle', icon: DollarSign },
+                                    { id: 'venmo', label: 'Venmo', icon: DollarSign },
+                                    { id: 'check', label: 'Check', icon: FileText },
+                                ].map(pm => (
+                                    <button
+                                        key={pm.id}
+                                        type="button"
+                                        onClick={() => setFormData({ ...formData, payment_method_preference: pm.id })}
+                                        className={`flex-1 flex flex-col items-center justify-center py-2.5 rounded-xl border transition-all ${formData.payment_method_preference === pm.id
+                                            ? 'bg-indigo-50 border-indigo-600 text-indigo-700 shadow-sm ring-1 ring-indigo-600'
+                                            : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-300 hover:text-indigo-600'
+                                            }`}
+                                    >
+                                        <pm.icon size={14} className="mb-1" />
+                                        <span className="text-[9px] font-black uppercase tracking-tighter">{pm.label}</span>
                                     </button>
                                 ))}
                             </div>
@@ -2016,15 +2320,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                                                         />
                                                                     </div>
                                                                     <div>
-                                                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">Pagto Profis. (R$)</label>
-                                                                        <input
-                                                                            type="number"
-                                                                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-xs font-bold text-emerald-600"
-                                                                            value={formData.cleaner_pay_rate}
-                                                                            onChange={e => setFormData({ ...formData, cleaner_pay_rate: parseFloat(e.target.value) || 0 })}
-                                                                        />
-                                                                    </div>
-                                                                    <div>
                                                                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">Desconto (R$)</label>
                                                                         <input
                                                                             type="number"
@@ -2457,13 +2752,37 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                                                             />
                                                                         </div>
                                                                         <div className="space-y-1.5">
-                                                                            <label className="text-[10px] font-black text-emerald-400 uppercase tracking-widest ml-1">Pagto (R$)</label>
-                                                                            <input
-                                                                                type="number"
-                                                                                className="w-full px-3 py-3 bg-white border border-indigo-100 rounded-2xl text-xs font-bold text-emerald-600 focus:ring-2 focus:ring-emerald-500 outline-none shadow-sm"
-                                                                                value={instance.cleaner_pay_rate}
-                                                                                onChange={e => updateInstance(instance.id, { cleaner_pay_rate: parseFloat(e.target.value) || 0 })}
-                                                                            />
+                                                                            {instance.assignments && instance.assignments.length > 0 ? (
+                                                                                <div className="space-y-2">
+                                                                                    <label className="text-[10px] font-black text-emerald-400 uppercase tracking-widest ml-1">Pagto (R$)</label>
+                                                                                    {instance.assignments.map((assign, aIdx) => (
+                                                                                        <div key={assign.member_id} className="flex items-center gap-2">
+                                                                                            <span className="text-[9px] font-bold text-slate-400 w-16 truncate" title={assign.name}>{assign.name}</span>
+                                                                                            <input
+                                                                                                type="number"
+                                                                                                className="w-full px-2 py-1.5 bg-white border border-indigo-100 rounded-lg text-xs font-bold text-emerald-600 focus:ring-2 focus:ring-emerald-500 outline-none shadow-sm"
+                                                                                                value={assign.pay_rate}
+                                                                                                onChange={e => {
+                                                                                                    const newRate = parseFloat(e.target.value) || 0;
+                                                                                                    const newAssignments = [...instance.assignments];
+                                                                                                    newAssignments[aIdx] = { ...newAssignments[aIdx], pay_rate: newRate };
+                                                                                                    updateInstance(instance.id, { assignments: newAssignments });
+                                                                                                }}
+                                                                                            />
+                                                                                        </div>
+                                                                                    ))}
+                                                                                </div>
+                                                                            ) : (
+                                                                                <>
+                                                                                    <label className="text-[10px] font-black text-emerald-400 uppercase tracking-widest ml-1">Pagto (R$)</label>
+                                                                                    <input
+                                                                                        type="number"
+                                                                                        className="w-full px-3 py-3 bg-white border border-indigo-100 rounded-2xl text-xs font-bold text-emerald-600 focus:ring-2 focus:ring-emerald-500 outline-none shadow-sm"
+                                                                                        value={instance.cleaner_pay_rate}
+                                                                                        onChange={e => updateInstance(instance.id, { cleaner_pay_rate: parseFloat(e.target.value) || 0 })}
+                                                                                    />
+                                                                                </>
+                                                                            )}
                                                                         </div>
                                                                         <div className="space-y-1.5">
                                                                             <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Dur (Min)</label>

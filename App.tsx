@@ -46,6 +46,7 @@ import { TelephonyManager } from './components/platform/telephony/TelephonyManag
 import { PlatformCallback } from './components/platform/finance/PlatformCallback.tsx';
 import { PaymentLinkManager } from './components/commerce/PaymentLinkManager.tsx';
 import { PaymentSuccessPage } from './components/commerce/PaymentSuccessPage.tsx';
+import { PublicInvoicePage } from './components/commerce/PublicInvoicePage.tsx';
 import { TenantSupport } from './components/support/TenantSupport.tsx';
 import { SubscriptionGate } from './components/subscription/SubscriptionGate'; // Import Gateway
 import { SessionGuard } from './components/system/SessionGuard.tsx';
@@ -139,6 +140,11 @@ const App: React.FC = () => {
   // Guest Payment Success Route
   if (window.location.pathname === '/payment-success') {
     return <PaymentSuccessPage />;
+  }
+
+  // Public Invoice Route
+  if (window.location.pathname.startsWith('/invoice/')) {
+    return <PublicInvoicePage />;
   }
 
   // System Diagnostics (Debugging Tool)

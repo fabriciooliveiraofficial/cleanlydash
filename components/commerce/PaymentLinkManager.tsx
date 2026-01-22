@@ -11,10 +11,13 @@ import {
     Copy,
     ExternalLink,
     Loader2,
-    DollarSign
+    DollarSign,
+    Mail
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
+import { ConnectStripeButton } from '../platform/finance/ConnectStripeButton';
+import { AlertCircle } from 'lucide-react';
 
 export const PaymentLinkManager: React.FC = () => {
     const [invoices, setInvoices] = useState<any[]>([]);
@@ -26,11 +29,34 @@ export const PaymentLinkManager: React.FC = () => {
         customer_email: '',
         customer_name: ''
     });
+    const [stripeAccount, setStripeAccount] = useState<{ stripe_account_id: string } | null>(null);
+    const [checkingStripe, setCheckingStripe] = useState(true);
     const supabase = createClient();
 
     useEffect(() => {
         fetchInvoices();
+        checkStripeConnection();
     }, []);
+
+    const checkStripeConnection = async () => {
+        setCheckingStripe(true);
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            const { data, error } = await supabase
+                .from('connected_accounts')
+                .select('stripe_account_id')
+                .eq('tenant_id', user.id)
+                .single();
+
+            if (data) setStripeAccount(data);
+        } catch (err) {
+            console.error("Error checking stripe:", err);
+        } finally {
+            setCheckingStripe(false);
+        }
+    };
 
     const fetchInvoices = async () => {
         setLoading(true);
@@ -54,31 +80,88 @@ export const PaymentLinkManager: React.FC = () => {
         e.preventDefault();
         setIsCreating(true);
         try {
-            const { data, error } = await supabase.functions.invoke('create-payment-request', {
-                body: {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                toast.error("Sessão expirada. Por favor, recarregue a página.");
+                setIsCreating(false);
+                return;
+            }
+
+            // Robust env var retrieval for different environments (Vite/Next)
+            const anonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+            const baseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://jjbokilvurxztqiwvxhy.supabase.co';
+
+            const response = await fetch(`${baseUrl}/functions/v1/create-payment-request`, {
+                method: 'POST',
+                headers: {
+                    // Send token in custom header to bypass Supabase Gateway's automatic 'Invalid JWT' check
+                    // This is verified manually in the Edge Function
+                    'X-Supabase-Auth': `Bearer ${session.access_token}`,
+                    'Content-Type': 'application/json',
+                    'apikey': anonKey
+                },
+                body: JSON.stringify({
                     amount: parseFloat(newInvoice.amount),
                     description: newInvoice.description,
                     customer_email: newInvoice.customer_email,
                     customer_name: newInvoice.customer_name
-                }
+                })
             });
 
-            if (error || data.error) throw new Error(error?.message || data.error);
+            const data = await response.json();
+
+            if (!response.ok || data.error) {
+                console.error("[create-payment-request] Error:", data);
+                throw new Error(data.details || data.error || "Erro ao gerar link de pagamento.");
+            }
 
             toast.success("Link de pagamento gerado!");
             setNewInvoice({ amount: '', description: '', customer_email: '', customer_name: '' });
             fetchInvoices();
 
-            // Optionally open the link or show it
-            if (data.url) {
-                // For now just copy to clipboard
+            // Auto-copy link to clipboard
+            if (data?.url) {
                 navigator.clipboard.writeText(data.url);
                 toast.info("Link copiado para a área de transferência.");
             }
         } catch (err: any) {
+            console.error("Error creating link:", err);
             toast.error(err.message || "Erro ao gerar link.");
         } finally {
             setIsCreating(false);
+        }
+    };
+
+    const handleSendEmail = async (invoiceId: string) => {
+        const toastId = toast.loading("Enviando e-mail...");
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) throw new Error("Sessão expirada");
+
+            // Robust env var retrieval for different environments (Vite/Next)
+            const anonKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+            const baseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://jjbokilvurxztqiwvxhy.supabase.co';
+
+            const response = await fetch(`${baseUrl}/functions/v1/send-payment-link`, {
+                method: 'POST',
+                headers: {
+                    'X-Supabase-Auth': `Bearer ${session.access_token}`,
+                    'Content-Type': 'application/json',
+                    'apikey': anonKey
+                },
+                body: JSON.stringify({ invoice_id: invoiceId })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || data.error) {
+                throw new Error(data.error || "Erro ao enviar e-mail.");
+            }
+
+            toast.success("E-mail enviado com sucesso!", { id: toastId });
+        } catch (err: any) {
+            console.error("Error sending email:", err);
+            toast.error(err.message || "Falha no envio.", { id: toastId });
         }
     };
 
@@ -98,20 +181,23 @@ export const PaymentLinkManager: React.FC = () => {
                     <DollarSign size={24} className="text-indigo-600" />
                     Gestão de Faturas
                 </h2>
-                <Button className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold">
+                <Button
+                    onClick={() => document.getElementById('new-charge-form')?.scrollIntoView({ behavior: 'smooth' })}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+                >
                     <Plus size={18} className="mr-2" /> Nova Cobrança
                 </Button>
             </div>
 
             <div className="grid lg:grid-cols-3 gap-8">
                 {/* Create Form */}
-                <div className="lg:col-span-1 bg-white p-6 rounded-[2rem] border border-slate-100 shadow-xl h-fit">
+                <div id="new-charge-form" className="lg:col-span-1 bg-white p-6 rounded-[2rem] border border-slate-100 shadow-xl h-fit">
                     <h3 className="font-black text-slate-800 mb-6 flex items-center gap-2">
                         <LinkIcon size={18} className="text-indigo-500" /> Gerar Link Rápido
                     </h3>
                     <form onSubmit={handleCreateLink} className="space-y-4">
                         <div>
-                            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">Valor ($)</label>
+                            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">Valor (R$)</label>
                             <input
                                 type="number" step="0.01" required
                                 value={newInvoice.amount}
@@ -140,10 +226,23 @@ export const PaymentLinkManager: React.FC = () => {
                                 className="w-full h-12 bg-slate-50 border-none rounded-xl px-4 font-bold text-slate-900 focus:ring-2 ring-indigo-500 transition-all"
                             />
                         </div>
+
+                        {!checkingStripe && !stripeAccount && (
+                            <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-3">
+                                <div className="flex gap-2 text-amber-700">
+                                    <AlertCircle size={18} className="shrink-0" />
+                                    <p className="text-xs font-bold leading-tight">
+                                        Seu Stripe não está conectado. Você não poderá gerar links de pagamento até configurar sua conta.
+                                    </p>
+                                </div>
+                                <ConnectStripeButton onConnect={checkStripeConnection} />
+                            </div>
+                        )}
+
                         <Button
                             type="submit"
-                            disabled={isCreating}
-                            className="w-full h-14 bg-slate-900 hover:bg-black text-white font-black rounded-2xl shadow-lg shadow-slate-200"
+                            disabled={isCreating || (!checkingStripe && !stripeAccount)}
+                            className="w-full h-14 bg-slate-900 hover:bg-black text-white font-black rounded-2xl shadow-lg shadow-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {isCreating ? <Loader2 className="animate-spin" /> : "Gerar Link de Pagamento"}
                         </Button>
@@ -190,7 +289,7 @@ export const PaymentLinkManager: React.FC = () => {
                                             <div className="text-xs text-slate-500 font-medium">{inv.customer_email || 'Sem e-mail'}</div>
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <span className="font-black text-slate-900">${inv.amount.toFixed(2)}</span>
+                                            <span className="font-black text-slate-900">R$ {inv.amount.toFixed(2)}</span>
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-tight">
@@ -202,10 +301,33 @@ export const PaymentLinkManager: React.FC = () => {
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button className="p-2 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-colors" title="Copiar Link">
+                                                <button
+                                                    onClick={() => inv.id && handleSendEmail(inv.id)}
+                                                    className="p-2 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-colors"
+                                                    title="Enviar por E-mail"
+                                                >
+                                                    <Mail size={16} />
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        if (inv.id) {
+                                                            const url = `${window.location.origin}/invoice/${inv.id}`;
+                                                            navigator.clipboard.writeText(url);
+                                                            toast.success("Link copiado!");
+                                                        }
+                                                    }}
+                                                    className="p-2 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-colors"
+                                                    title="Copiar Link"
+                                                >
                                                     <Copy size={16} />
                                                 </button>
-                                                <button className="p-2 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors" title="Ver Detalhes">
+                                                <button
+                                                    onClick={() => {
+                                                        window.open(`/invoice/${inv.id}`, '_blank');
+                                                    }}
+                                                    className="p-2 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors"
+                                                    title="Ver Detalhes"
+                                                >
                                                     <ExternalLink size={16} />
                                                 </button>
                                             </div>

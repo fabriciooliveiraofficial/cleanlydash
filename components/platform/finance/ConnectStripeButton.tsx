@@ -70,6 +70,45 @@ export const ConnectStripeButton: React.FC<ConnectStripeButtonProps> = ({ connec
         }
     };
 
+    const handleDisconnect = async () => {
+        if (!window.confirm("Você tem certeza que deseja desconectar sua conta Stripe? Isso interromperá o processamento de pagamentos automáticos.")) {
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) throw new Error("Sessão não encontrada.");
+
+            const response = await fetch('https://jjbokilvurxztqiwvxhy.supabase.co/functions/v1/stripe-connect-oauth', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'apikey': (import.meta as any).env.VITE_SUPABASE_ANON_KEY || (import.meta as any).env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ action: 'disconnect' })
+            });
+
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.details || data.error || "Erro ao desconectar");
+            }
+
+            toast.success("Stripe desconectado com sucesso.");
+            if (onConnect) onConnect(); // Trigger refresh in parent
+
+            // Force local refresh if needed
+            window.location.reload();
+
+        } catch (err: any) {
+            console.error("Stripe Disconnect Error:", err);
+            toast.error(err.message || "Erro ao desconectar Stripe.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     // Safety check: Reset loading if user comes back without completing redirect (aborted flow)
     React.useEffect(() => {
         const handleFocus = () => setLoading(false);
@@ -79,10 +118,21 @@ export const ConnectStripeButton: React.FC<ConnectStripeButtonProps> = ({ connec
 
     if (connectedAccountId) {
         return (
-            <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-4 py-2 rounded-lg border border-emerald-100">
-                <CheckCircle size={18} />
-                <span className="font-bold text-sm">Conta Conectada</span>
-                <span className="text-xs font-mono opacity-50">({connectedAccountId.slice(0, 8)}...)</span>
+            <div className="space-y-3">
+                <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-4 py-2 rounded-lg border border-emerald-100">
+                    <CheckCircle size={18} />
+                    <span className="font-bold text-sm">Conta Conectada</span>
+                    <span className="text-xs font-mono opacity-50">({connectedAccountId.slice(0, 8)}...)</span>
+                </div>
+                <Button
+                    onClick={handleDisconnect}
+                    disabled={loading}
+                    variant="outline"
+                    className="w-full text-rose-600 border-rose-100 hover:bg-rose-50 hover:text-rose-700 font-bold"
+                >
+                    {loading ? <Loader2 className="animate-spin mr-2" /> : null}
+                    Desconectar Conta
+                </Button>
             </div>
         );
     }

@@ -4,13 +4,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.21.0";
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
 };
 
 serve(async (req) => {
     console.log(`[stripe-connect-oauth] INCOMING REQUEST: ${req.method} ${req.url}`);
 
     if (req.method === 'OPTIONS') {
-        return new Response('ok', { headers: corsHeaders });
+        return new Response(null, { status: 204, headers: corsHeaders });
     }
 
     try {
@@ -217,6 +218,41 @@ serve(async (req) => {
                 stripe_user_id: connectedAccountId,
                 account_name: accountDetails.business_profile?.name || accountDetails.settings?.dashboard?.display_name
             }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
+        // ACTION: DISCONNECT
+        if (action === 'disconnect') {
+            // 1. Check if Owner
+            const { data: ownerProfile } = await adminClient.from('tenant_profiles').select('id').eq('id', user.id).single();
+            let tenantId = ownerProfile?.id;
+
+            if (!tenantId) {
+                const { data: member } = await adminClient.from('team_members').select('tenant_id').eq('user_id', user.id).eq('role', 'owner').single();
+                tenantId = member?.tenant_id;
+            }
+
+            if (!tenantId) throw new Error("Apenas o proprietário (Owner) pode desconectar o Stripe.");
+
+            console.log('[stripe-connect-oauth] Disconnecting Stripe for tenant:', tenantId);
+
+            // 2. Clear connected_accounts
+            await adminClient.from('connected_accounts').delete().eq('tenant_id', tenantId);
+
+            // 3. Reset tenant_integrations
+            const { error: resetError } = await adminClient.from('tenant_integrations').upsert({
+                tenant_id: tenantId,
+                stripe_account_id: null,
+                stripe_status: 'disconnected',
+                stripe_details: {},
+                stripe_connected_at: null,
+                updated_at: new Date().toISOString()
+            });
+
+            if (resetError) throw new Error("Falha ao resetar integração: " + resetError.message);
+
+            return new Response(JSON.stringify({ success: true, message: "Stripe desconectado com sucesso." }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
         }

@@ -11,7 +11,7 @@ import { addDays } from 'date-fns'
  */
 export async function createInvoiceFromBooking(bookingId: string, customDueDate?: string) {
   const supabase = createClient()
-  
+
   const { data: booking, error: bError } = await supabase
     .from('bookings')
     .select('*, customers(id, name)')
@@ -30,8 +30,8 @@ export async function createInvoiceFromBooking(bookingId: string, customDueDate?
 
   const dueDate = customDueDate || addDays(new Date(), 7).toISOString().split('T')[0]
 
-  const { data: invoice, error: iError } = await supabase
-    .from('invoices')
+  const { data: invoice, error: iError } = await (supabase
+    .from('invoices') as any)
     .insert({
       tenant_id: booking.tenant_id,
       customer_id: booking.customer_id,
@@ -72,11 +72,11 @@ export async function markInvoiceAsPaid(invoiceId: string) {
 
   if (updateError) return { error: "Erro ao atualizar fatura: " + updateError.message }
 
-  const { error: walletError } = await supabase
-    .from('wallet_ledger')
+  const { error: walletError } = await (supabase
+    .from('wallet_ledger') as any)
     .insert({
       tenant_id: invoice.tenant_id,
-      amount: Math.abs(invoice.amount), 
+      amount: Math.abs(invoice.amount),
       description: `Pagamento Recebido: Fatura #${invoiceId.slice(0, 8).toUpperCase()} - ${invoice.customers?.name}`,
       service_type: 'invoice_payment'
     })
@@ -96,21 +96,21 @@ export async function markInvoiceAsPaid(invoiceId: string) {
  */
 export async function voidInvoice(invoiceId: string) {
   const supabase = createClient()
-  
+
   const { error } = await supabase
     .from('invoices')
     .update({ status: 'void' })
     .eq('id', invoiceId)
 
   if (error) return { error: error.message }
-  
+
   revalidatePath('/dashboard/invoices')
   return { success: true }
 }
 
 export async function createManualInvoice(data: { customer_id: string, amount: number, due_date: string }) {
   const supabase = createClient()
-  
+
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Não autorizado" }
 
@@ -134,4 +134,43 @@ export async function createManualInvoice(data: { customer_id: string, amount: n
   if (error) return { error: error.message }
   revalidatePath('/dashboard/invoices')
   return { success: true }
+}
+
+/**
+ * Envia notificação da fatura por SMS e Email.
+ */
+export async function sendInvoiceNotification(invoiceId: string) {
+  const supabase = createClient()
+
+  const { data: invoice, error: iError } = await (supabase
+    .from('invoices') as any)
+    .select('*, customers(*), tenant_profiles(*)')
+    .eq('id', invoiceId)
+    .single()
+
+  if (iError || !invoice) return { error: "Fatura não encontrada." }
+
+  const publicUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://cleanlydash.com'}/invoice/${invoice.id}`
+  const message = `Olá ${invoice.customers?.name}, sua fatura de ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(invoice.amount)} está disponível: ${publicUrl}`
+
+  try {
+    // 1. Send SMS
+    if (invoice.customers?.phone) {
+      await supabase.functions.invoke('send_sms', {
+        body: { to: invoice.customers.phone, message }
+      })
+    }
+
+    // 2. Update status to 'sent'
+    await (supabase
+      .from('invoices') as any)
+      .update({ status: 'sent', sent_at: new Date().toISOString() })
+      .eq('id', invoiceId)
+
+    revalidatePath('/dashboard/invoices')
+    return { success: true }
+  } catch (err: any) {
+    console.error("Error sending invoice notification:", err)
+    return { error: "Erro ao enviar notificação: " + err.message }
+  }
 }

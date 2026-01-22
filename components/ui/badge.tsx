@@ -4,6 +4,7 @@ import { cn } from "../../lib/utils.ts"
 export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement> {
   variant?: "default" | "secondary" | "destructive" | "outline"
   className?: string
+  children?: React.ReactNode
 }
 
 function Badge({ className, variant = "default", ...props }: BadgeProps) {
@@ -13,7 +14,7 @@ function Badge({ className, variant = "default", ...props }: BadgeProps) {
     destructive: "bg-red-500 text-white hover:bg-red-500/80",
     outline: "text-slate-900 border border-slate-200"
   }
-  
+
   const variantClass = variants[variant as string] || variants.default;
 
   return (
