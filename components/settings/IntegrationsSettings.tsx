@@ -79,6 +79,14 @@ export const IntegrationsSettings: React.FC = () => {
 
     useEffect(() => {
         fetchIntegration();
+
+        // Refresh on focus - great for returning from OAuth tab
+        const handleFocus = () => {
+            console.log('[DEBUG] Window focused, refreshing integration status...');
+            fetchIntegration();
+        };
+        window.addEventListener('focus', handleFocus);
+        return () => window.removeEventListener('focus', handleFocus);
     }, []);
 
     const fetchIntegration = async () => {
@@ -143,19 +151,33 @@ export const IntegrationsSettings: React.FC = () => {
                     </p>
 
                     {isStripeConnected && (
-                        <div className="mb-6 pt-4 border-t border-slate-50 grid grid-cols-2 gap-2 text-xs">
-                            <div className="p-2 bg-slate-50 rounded">
-                                <span className="text-slate-400 block mb-1">Charges</span>
-                                <span className={`font-bold ${integration.stripe_details?.charges_enabled ? 'text-green-600' : 'text-amber-600'}`}>
-                                    {integration.stripe_details?.charges_enabled ? 'Enabled' : 'Pending'}
-                                </span>
+                        <div className="mb-6 pt-4 border-t border-slate-50 space-y-4">
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div className="p-2 bg-slate-50 rounded">
+                                    <span className="text-slate-400 block mb-1 uppercase tracking-wider font-semibold">Charges</span>
+                                    <span className={`font-bold ${integration.stripe_details?.charges_enabled ? 'text-green-600' : 'text-amber-600'}`}>
+                                        {integration.stripe_details?.charges_enabled ? 'Enabled' : 'Pending'}
+                                    </span>
+                                </div>
+                                <div className="p-2 bg-slate-50 rounded">
+                                    <span className="text-slate-400 block mb-1 uppercase tracking-wider font-semibold">Payouts</span>
+                                    <span className={`font-bold ${integration.stripe_details?.payouts_enabled ? 'text-green-600' : 'text-amber-600'}`}>
+                                        {integration.stripe_details?.payouts_enabled ? 'Enabled' : 'Pending'}
+                                    </span>
+                                </div>
                             </div>
-                            <div className="p-2 bg-slate-50 rounded">
-                                <span className="text-slate-400 block mb-1">Payouts</span>
-                                <span className={`font-bold ${integration.stripe_details?.payouts_enabled ? 'text-green-600' : 'text-amber-600'}`}>
-                                    {integration.stripe_details?.payouts_enabled ? 'Enabled' : 'Pending'}
-                                </span>
-                            </div>
+
+                            {(integration.stripe_details?.business_name || integration.stripe_details?.email) && (
+                                <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100/50">
+                                    <div className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest mb-1">Identificação da Conta</div>
+                                    <p className="text-sm font-bold text-indigo-900 truncate">
+                                        {integration.stripe_details?.business_name || 'Conta Stripe'}
+                                    </p>
+                                    <p className="text-xs text-indigo-600 truncate">
+                                        {integration.stripe_details?.email}
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     )}
 

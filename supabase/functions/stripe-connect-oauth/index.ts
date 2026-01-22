@@ -153,12 +153,18 @@ serve(async (req) => {
             }
 
             const connectedAccountId = stripeData.stripe_user_id;
-            const accessToken = stripeData.access_token;
-            const refreshToken = stripeData.refresh_token;
+
+            // NEW: Fetch Account Details for a better UX (email, business name)
+            const accountResponse = await fetch(`https://api.stripe.com/v1/accounts/${connectedAccountId}`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${secretKey}`
+                }
+            });
+            const accountDetails = await accountResponse.json();
 
             // Save to Database
-            // We use adminClient to bypass RLS if needed, or normal client if RLS permits.
-            // We need to determine TENANT_ID.
+            // 1. Determine TENANT_ID
             // Option A: Pass it in. Option B: Look it up.
             // Let's look it up via team_members or if owner.
 
@@ -174,25 +180,43 @@ serve(async (req) => {
 
             if (!tenantId) throw new Error("User must be an Owner to connect Stripe.");
 
-            const { error: dbError } = await adminClient.from('connected_accounts').upsert({
+            // 3. Update connected_accounts
+            await adminClient.from('connected_accounts').upsert({
                 tenant_id: tenantId,
                 stripe_account_id: connectedAccountId,
                 stripe_account_type: 'standard',
-                details_submitted: true, // Assuming standard flow completes this often
-                charges_enabled: true,
-                payouts_enabled: true
-                // We usually DO NOT store access_token for Standard accounts if not acting on their behalf constantly?
-                // Actually, for Standard accounts, we might just need the ID.
-                // But let's follow schema. We didn't put access_token column in schema?
-                // Checking `20240113_stripe_schema.sql`...
-                // "connected_accounts: Stores stripe_account_id, access_token..." Wait, I didn't add access_token column in SQL?
-                // Let's check the Schema.
-            })
+                details_submitted: accountDetails.details_submitted,
+                charges_enabled: accountDetails.charges_enabled,
+                payouts_enabled: accountDetails.payouts_enabled
+            });
 
-            // If schema is missing columns, we might error.
-            // Assuming we just store ID for now as that is the critical part.
+            // 4. Update tenant_integrations (This is what the UI reads!)
+            const { error: syncError } = await adminClient.from('tenant_integrations').upsert({
+                tenant_id: tenantId,
+                stripe_account_id: connectedAccountId,
+                stripe_status: accountDetails.charges_enabled ? 'active' : 'pending',
+                stripe_details: {
+                    email: accountDetails.email || accountDetails.support_email,
+                    business_name: accountDetails.business_profile?.name || accountDetails.settings?.dashboard?.display_name,
+                    charges_enabled: accountDetails.charges_enabled,
+                    payouts_enabled: accountDetails.payouts_enabled,
+                    country: accountDetails.country,
+                    default_currency: accountDetails.default_currency
+                },
+                stripe_connected_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            });
 
-            return new Response(JSON.stringify({ success: true, stripe_user_id: connectedAccountId }), {
+            if (syncError) {
+                console.error('[stripe-connect-oauth] Sync Error:', syncError);
+                throw new Error("Failed to sync integration data: " + syncError.message);
+            }
+
+            return new Response(JSON.stringify({
+                success: true,
+                stripe_user_id: connectedAccountId,
+                account_name: accountDetails.business_profile?.name || accountDetails.settings?.dashboard?.display_name
+            }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
         }
