@@ -27,41 +27,22 @@ export const ConnectStripeButton: React.FC<ConnectStripeButtonProps> = ({ connec
                 return;
             }
 
-            // Use direct fetch to bypass supabase-js potential issues
-            const functionUrl = 'https://jjbokilvurxztqiwvxhy.supabase.co/functions/v1/stripe-connect-oauth';
-            console.log('[DEBUG] Calling:', functionUrl);
-            console.log('[DEBUG] Token being sent:', session.access_token.substring(0, 80) + '...');
-
-            // Use anon key for gateway auth, pass user_id in body for user validation
-            const anonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqYm9raWx2dXJ4enRxaXd2eGh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc3OTYxMjYsImV4cCI6MjA4MzM3MjEyNn0.6XrV6S665pYDibo4RA52ddb-JCTk7jyikwgxs2lpTRs';
-
-            const response = await fetch(functionUrl, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${anonKey}`,
-                    'Content-Type': 'application/json',
-                    'apikey': anonKey
-                },
-                body: JSON.stringify({
+            // Use the standard invoke method which handles auth automatically
+            const { data, error: functionError } = await supabase.functions.invoke('stripe-connect-oauth', {
+                body: {
                     action: 'get_authorize_url',
-                    redirect_uri: window.location.origin + '/platform/callback',
-                    user_id: session.user.id  // Pass user ID for server-side validation
-                })
+                    redirect_uri: window.location.origin + '/platform/callback'
+                }
             });
 
-            const responseText = await response.text();
-            console.log('[DEBUG] Response Status:', response.status);
-            console.log('[DEBUG] Response Body:', responseText);
-
-            if (!response.ok) {
-                throw new Error(`Function error: ${response.status} - ${responseText}`);
+            if (functionError) {
+                throw new Error(functionError.message);
             }
 
-            const data = JSON.parse(responseText);
             if (data?.url) {
                 window.location.href = data.url;
             } else {
-                throw new Error("No URL returned");
+                throw new Error(data?.error || "No URL returned");
             }
 
         } catch (err) {

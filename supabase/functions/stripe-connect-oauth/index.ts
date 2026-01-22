@@ -12,40 +12,50 @@ serve(async (req) => {
     }
 
     try {
-        // Parse request body first to get user_id
+        const authHeader = req.headers.get('Authorization');
+        if (!authHeader) {
+            return new Response(JSON.stringify({ error: 'Missing Authorization header' }), {
+                status: 401,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
+        // Create clients
+        const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+        const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+
+        // Verification client (User's context)
+        const supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
+            global: { headers: { Authorization: authHeader } }
+        });
+
+        // Admin client (Bypass RLS for internal lookup/upsert)
+        const adminClient = createClient(supabaseUrl, supabaseServiceKey);
+
+        // Get and Verify User
+        const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
+
+        if (userError || !user) {
+            console.warn('[stripe-connect-oauth] Auth Failure:', userError?.message || 'No user found');
+            return new Response(JSON.stringify({
+                error: 'Unauthorized',
+                details: 'Invalid session or user not found'
+            }), {
+                status: 401,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
+        console.log('[stripe-connect-oauth] Authenticated User:', user.email);
+
+        // Parse body
         const body = await req.json();
-        const { action, code, redirect_uri, user_id } = body;
+        const { action, code, redirect_uri, state } = body;
 
-        console.log('[stripe-connect-oauth] Received action:', action, 'user_id:', user_id);
+        console.log('[stripe-connect-oauth] Received action:', action);
 
-        // Create admin client to bypass RLS
-        const adminClient = createClient(
-            Deno.env.get('SUPABASE_URL') ?? '',
-            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-        );
-
-        // Validate user_id exists and is a valid user
-        if (!user_id) {
-            return new Response(JSON.stringify({ error: 'Unauthorized', details: 'user_id is required' }), {
-                status: 401,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
-        }
-
-        // Verify user exists in auth.users using admin client
-        const { data: userData, error: userError } = await adminClient.auth.admin.getUserById(user_id);
-        console.log('[stripe-connect-oauth] User verification:', userData?.user?.id || 'NOT FOUND', userError?.message || 'OK');
-
-        if (userError || !userData?.user) {
-            return new Response(JSON.stringify({ error: 'Unauthorized', details: 'Invalid user_id' }), {
-                status: 401,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
-        }
-
-        const user = userData.user;
-
-        // Fetch Config - PRIORITY: Environment Variables -> DB Fallback
+        // Fetch settings - reuse user context if possible, otherwise admin
         const getSetting = async (key: string) => {
             const envVal = Deno.env.get(key);
             if (envVal) return envVal;
@@ -80,6 +90,15 @@ serve(async (req) => {
         // ACTION: EXCHANGE_CODE (Callback)
         if (action === 'exchange_token') {
             if (!code) throw new Error("No code provided");
+
+            // VALIDATION: Compare state with user.id to prevent CSRF
+            if (state !== user.id) {
+                console.warn('[stripe-connect-oauth] State mismatch! State:', state, 'User:', user.id);
+                return new Response(JSON.stringify({ error: 'Invalid state parameter' }), {
+                    status: 403,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                });
+            }
 
             // Call Stripe API
             const response = await fetch('https://connect.stripe.com/oauth/token', {

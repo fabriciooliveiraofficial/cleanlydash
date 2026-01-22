@@ -28,28 +28,19 @@ export const PlatformCallback: React.FC = () => {
             }
 
             try {
-                // We use the 'state' param as the user_id (as set in ConnectStripeButton.tsx)
-                // This allows us to complete the linking even if the session cookie was lost during redirect.
-                // The Edge Function verifies this user_id exists in the DB.
-                const userIdFromState = state;
-
-                if (!userIdFromState) {
-                    throw new Error("Estado inválido (user_id ausente). Tente novamente.");
-                }
-
                 // Call the Edge Function to exchange the token
-                // IMPORTANT: We must pass 'user_id' in the body because the Edge Function reads it from there
-                // and ignores the Authorization header (allowing it to work with Anon key + user_id body).
+                // supabase.functions.invoke automatically adds the Authorization header with the user's JWT
                 const { data, error: functionError } = await supabase.functions.invoke('stripe-connect-oauth', {
                     body: {
                         action: 'exchange_token',
                         code,
-                        user_id: userIdFromState
+                        state // This is used by the function to verify CSRF/User match
                     }
                 });
 
                 if (functionError || data?.error) {
-                    throw new Error(functionError?.message || data?.error || "Unknown function error");
+                    const detail = data?.details ? ` (${data.details})` : '';
+                    throw new Error((functionError?.message || data?.error || "Unknown function error") + detail);
                 }
 
                 setStatus('success');
