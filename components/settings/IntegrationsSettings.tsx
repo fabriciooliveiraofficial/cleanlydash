@@ -86,11 +86,15 @@ export const IntegrationsSettings: React.FC = () => {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
 
-            const { data } = await supabase
+            const { data, error } = await supabase
                 .from('tenant_integrations')
                 .select('*')
                 .eq('tenant_id', user.id)
-                .single();
+                .maybeSingle();
+
+            if (error) {
+                console.error("[DEBUG] Fetch Integration Error:", error);
+            }
 
             if (data) setIntegration(data);
         } catch (err) {

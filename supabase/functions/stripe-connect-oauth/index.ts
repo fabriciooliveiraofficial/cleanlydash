@@ -61,11 +61,12 @@ serve(async (req) => {
         // Admin client (Bypass RLS for internal lookup/upsert)
         const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
-        // Get and Verify User
-        const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
+        // Get and Verify User - Passing token directly is more robust in Edge Functions
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user }, error: userError } = await adminClient.auth.getUser(token);
 
         if (userError || !user) {
-            console.warn('[stripe-connect-oauth] Auth Failure:', userError?.message || 'No user found');
+            console.warn('[stripe-connect-oauth] Auth Failure with token:', userError?.message || 'No user found');
             return new Response(JSON.stringify({
                 error: 'Unauthorized',
                 details: userError?.message || 'Session invalid or expired'
