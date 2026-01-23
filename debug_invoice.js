@@ -3,7 +3,7 @@ const supabaseUrl = 'https://jjbokilvurxztqiwvxhy.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqYm9raWx2dXJ4enRxaXd2eGh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc3OTYxMjYsImV4cCI6MjA4MzM3MjEyNn0.6XrV6S665pYDibo4RA52ddb-JCTk7jyikwgxs2lpTRs';
 
 async function fetchInvoice() {
-    const invoiceId = 'f76e4e29-7a9c-4bb3-8bd2-2d547ba69048';
+    const invoiceId = '4e3cf2a8-7999-42f6-abf6-3a45726ab372';
     console.log(`Fetching invoice ${invoiceId}...`);
 
     try {
