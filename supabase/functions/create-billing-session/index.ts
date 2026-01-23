@@ -14,16 +14,26 @@ serve(async (req) => {
         return new Response('ok', { headers: corsHeaders });
     }
 
+    const authHeader = req.headers.get('Authorization');
+    console.log(`Auth Header detected: ${authHeader ? 'Yes (' + authHeader.length + ' chars)' : 'MISSING'}`);
+
     try {
         const supabaseClient = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
             Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-            { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+            { global: { headers: { Authorization: authHeader ?? '' } } }
         );
 
         // 1. Authenticate User
         const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
-        if (authError || !user) throw new Error("Unauthorized");
+
+        if (authError) {
+            console.error("Auth Error details:", authError);
+        }
+        if (!user) {
+            console.error("No user found in getUser()");
+            throw new Error("Unauthorized: User not found or invalid token");
+        }
 
         const supabaseAdmin = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
