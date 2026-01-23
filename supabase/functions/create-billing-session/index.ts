@@ -18,6 +18,8 @@ serve(async (req) => {
     console.log("Request Headers Keys:", [...req.headers.keys()]);
 
     const authHeader = req.headers.get('Authorization');
+    const token = authHeader?.replace('Bearer ', '');
+
     console.log(`Auth Header detected: ${authHeader ? 'Yes (' + authHeader.length + ' chars)' : 'MISSING'}`);
 
     try {
@@ -35,10 +37,12 @@ serve(async (req) => {
         );
 
         // 1. Authenticate User
-        const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+        // Explicitly pass token to getUser to avoid AuthSessionMissingError
+        const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
 
         if (authError) {
             console.error("Auth Error details:", authError);
+            console.error("Token used (last 10 chars):", token?.slice(-10));
         }
         if (!user) {
             console.error("No user found in getUser()");
@@ -118,7 +122,10 @@ serve(async (req) => {
             }
 
             console.log(`Creating Stripe checkout for plan: ${plan.name} (${plan.currency})`);
-            const session = await stripe.checkout.sessions.create({
+
+            const isEmbedded = (req as any).embedded === true || true; // Force embedded for now based on user request, or read from body
+
+            const sessionParams: any = {
                 customer: customerId,
                 payment_method_types: ['card'],
                 mode: 'subscription',
@@ -139,8 +146,17 @@ serve(async (req) => {
                     plan_id: plan_id,
                     type: 'subscription_update'
                 },
-                success_url: `${callbackUrl}?success=true`,
-                cancel_url: `${callbackUrl}?canceled=true`,
+                ui_mode: 'embedded',
+                return_url: `${callbackUrl}?session_id={CHECKOUT_SESSION_ID}`,
+            };
+
+            const session = await stripe.checkout.sessions.create(sessionParams);
+
+            return new Response(JSON.stringify({
+                clientSecret: session.client_secret,
+                url: session.url // Fallback
+            }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
 
             return new Response(JSON.stringify({ url: session.url }), {

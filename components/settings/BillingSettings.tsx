@@ -1,96 +1,73 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CreditCard, Zap, Check, ChevronRight, Shield, RefreshCw, LayoutTemplate } from 'lucide-react'; // Changed LayoutDashboard to LayoutTemplate
+import { Zap, Check, ChevronRight, LayoutTemplate, X } from 'lucide-react';
 import { Button } from '../ui/button';
 import { createClient } from '../../lib/supabase/client';
 import { toast } from 'sonner';
 
+// New Components
+import { PaymentMethodsManager } from './PaymentMethodsManager';
+import { SubscriptionManager } from './SubscriptionManager';
+import { InvoiceHistory } from './InvoiceHistory';
+import { CustomCheckoutForm } from './CustomCheckoutForm';
+
+interface Plan {
+    id: string;
+    name: string;
+    type: string;
+    price_monthly_usd: number;
+    currency: string;
+    features: string[];
+}
+
 export const BillingSettings: React.FC = () => {
     const { t } = useTranslation();
     const supabase = createClient();
-    const [availablePlans, setAvailablePlans] = useState<any[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [subscription, setSubscription] = useState<any>(null);
-    const [aiCredits, setAiCredits] = useState(0);
+    const [availablePlans, setAvailablePlans] = useState<Plan[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+    const [showCheckout, setShowCheckout] = useState(false);
 
     useEffect(() => {
-        fetchSubscriptionData();
         fetchPlans();
     }, []);
 
     const fetchPlans = async () => {
+        setLoading(true);
         const { data } = await supabase
             .from('plans')
             .select('*')
             .order('price_monthly_usd', { ascending: true });
 
         if (data) setAvailablePlans(data);
+        setLoading(false);
     };
 
-    const fetchSubscriptionData = async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        const { data: sub } = await supabase
-            .from('tenant_subscriptions')
-            .select('*')
-            .eq('tenant_id', user.id)
-            .maybeSingle();
-
-        if (sub) {
-            const subscriptionData = sub as any;
-            setSubscription(subscriptionData);
-            setAiCredits(subscriptionData.ai_credits || 0);
-        }
+    const handleSelectPlan = (plan: Plan) => {
+        setSelectedPlan(plan);
+        setShowCheckout(true);
     };
 
-    const handleAction = async (action: 'portal' | 'subscription_update' | 'token_purchase', params: any = {}) => {
-        setLoading(true);
-        const toastId = toast.loading("Redirecionando para o checkout...");
-        try {
-            const { data: { session } } = await supabase.auth.getSession();
-            const token = session?.access_token;
-
-            if (!token) {
-                throw new Error("Usuário não autenticado. Faça login novamente.");
-            }
-
-            const { data, error } = await supabase.functions.invoke('create-billing-session', {
-                body: { action, ...params, return_url: window.location.href },
-                headers: {
-                    Authorization: `Bearer ${token}`
-                }
-            });
-
-            if (error) {
-                toast.error("Erro: " + error.message, { id: toastId });
-                throw error;
-            }
-            if (data?.url) {
-                window.location.href = data.url;
-            } else {
-                toast.error("Erro ao iniciar sessão de pagamento.", { id: toastId });
-            }
-        } catch (err: any) {
-            console.error(err);
-            toast.error("Erro: " + err.message, { id: toastId });
-        } finally {
-            setLoading(false);
-        }
+    const handleCheckoutSuccess = () => {
+        setShowCheckout(false);
+        setSelectedPlan(null);
+        toast.success('Assinatura realizada com sucesso!');
+        // Refresh subscription data
+        window.location.reload();
     };
 
-    const renderPlanCard = (plan: any) => (
+    const handleCheckoutCancel = () => {
+        setShowCheckout(false);
+        setSelectedPlan(null);
+    };
+
+    const renderPlanCard = (plan: Plan) => (
         <div key={plan.id} className="bg-white p-6 rounded-3xl border border-slate-200 hover:border-indigo-300 hover:shadow-lg transition-all group relative">
-            {plan.id === subscription?.plan_id && (
-                <div className="absolute -top-3 left-6 px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold uppercase rounded-full border border-emerald-200">
-                    Plano Atual
-                </div>
-            )}
             <div className="flex justify-between items-start mb-4">
                 <div>
                     <h4 className="text-lg font-bold text-slate-900">{plan.name}</h4>
                     <div className="text-2xl font-black text-indigo-600 mt-1">
-                        $ {plan.price_monthly_usd} <span className="text-sm text-slate-400 font-medium">/mo</span>
+                        ${plan.price_monthly_usd} <span className="text-sm text-slate-400 font-medium">/mês</span>
                     </div>
                 </div>
                 <div className="h-10 w-10 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
@@ -99,7 +76,7 @@ export const BillingSettings: React.FC = () => {
             </div>
 
             <ul className="space-y-3 mb-6">
-                {(typeof plan.features === 'string' ? JSON.parse(plan.features) : plan.features)?.map((feat: string, i: number) => (
+                {(typeof plan.features === 'string' ? JSON.parse(plan.features) : plan.features)?.slice(0, 4).map((feat: string, i: number) => (
                     <li key={i} className="flex items-center gap-2 text-sm text-slate-600">
                         <Check size={16} className="text-emerald-500 shrink-0" /> {feat}
                     </li>
@@ -107,114 +84,92 @@ export const BillingSettings: React.FC = () => {
             </ul>
 
             <Button
-                onClick={() => handleAction('subscription_update', { plan_id: plan.id })}
-                disabled={loading || subscription?.plan_id === plan.id}
-                className={`w-full ${subscription?.plan_id === plan.id ? 'bg-emerald-50 text-emerald-700 cursor-default hover:bg-emerald-50' : ''}`}
+                onClick={() => handleSelectPlan(plan)}
+                disabled={loading}
+                className="w-full bg-indigo-600 hover:bg-indigo-700"
             >
-                {subscription?.plan_id === plan.id ? 'Ativo' : 'Escolher Plano'}
+                Escolher Plano
+                <ChevronRight size={16} className="ml-1" />
             </Button>
         </div>
     );
 
     return (
-        <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+        <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+            {/* Checkout Modal */}
+            {showCheckout && selectedPlan && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                            <h3 className="text-lg font-bold text-slate-800">Finalizar Compra</h3>
+                            <Button variant="ghost" size="icon" onClick={handleCheckoutCancel} className="rounded-full">
+                                <X size={20} />
+                            </Button>
+                        </div>
+                        <div className="p-6">
+                            <CustomCheckoutForm
+                                plan={selectedPlan}
+                                onSuccess={handleCheckoutSuccess}
+                                onCancel={handleCheckoutCancel}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Header */}
             <div>
                 <h2 className="text-xl font-bold text-slate-900">{t('settings.billing.title', 'Faturamento & Planos')}</h2>
                 <p className="text-sm text-slate-500">{t('settings.billing.subtitle', 'Gerencie sua assinatura, métodos de pagamento e créditos de IA.')}</p>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-6">
-                {/* Current Plan Card */}
-                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
-                    <div className="flex items-center gap-4 mb-6">
-                        <div className="h-12 w-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center">
-                            <Shield size={24} />
-                        </div>
-                        <div>
-                            <div className="text-xs font-bold text-indigo-600 uppercase tracking-widest">Plano Atual</div>
-                            <h3 className="text-xl font-black text-slate-900">
-                                {subscription?.plan_id
-                                    ? (availablePlans.find(p => p.id === subscription.plan_id)?.name || subscription.plan_id.replace(/_/g, ' ').toUpperCase())
-                                    : 'FREE / TRIAL'}
-                            </h3>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 mb-6">
-                        <span className="text-sm font-medium text-slate-600">Status</span>
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${subscription?.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
-                            {subscription?.status || 'Active'}
-                        </span>
-                    </div>
-
-                    <Button
-                        onClick={() => handleAction('portal')}
-                        disabled={loading}
-                        className="w-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-indigo-200"
-                    >
-                        <CreditCard size={16} className="mr-2" /> Gerenciar Assinatura & Cartões
-                    </Button>
-                </div>
-
-                {/* AI Credits Card */}
-                <div className="bg-gradient-to-br from-slate-900 to-indigo-950 p-6 rounded-3xl shadow-xl text-white relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-4 opacity-10">
-                        <Zap size={120} />
-                    </div>
-                    <div className="relative z-10">
-                        <div className="flex items-center gap-4 mb-6">
-                            <div className="h-12 w-12 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/20">
-                                <Zap size={24} className="text-yellow-400" fill="currentColor" />
-                            </div>
-                            <div>
-                                <div className="text-xs font-bold text-yellow-400 uppercase tracking-widest">Saldo de IA</div>
-                                <h3 className="text-3xl font-black">{aiCredits.toLocaleString()} <span className="text-sm opacity-60 font-medium">Tokens</span></h3>
-                            </div>
-                        </div>
-                        <p className="text-sm text-slate-300 mb-6">
-                            Tokens são utilizados para automações inteligentes, geração de descrições e respostas automáticas.
-                        </p>
-                        <Button
-                            onClick={() => handleAction('token_purchase')}
-                            disabled={loading}
-                            className="w-full bg-yellow-400 hover:bg-yellow-300 text-black border-none font-bold"
-                        >
-                            Comprar 100k Tokens ($50)
-                            <ChevronRight size={16} className="ml-1 opacity-60" />
-                        </Button>
-                    </div>
-                </div>
+            {/* Subscription & Payment Methods Grid */}
+            <div className="grid lg:grid-cols-2 gap-6">
+                <SubscriptionManager onUpgrade={() => {
+                    // Scroll to plans section
+                    document.getElementById('plans-section')?.scrollIntoView({ behavior: 'smooth' });
+                }} />
+                <PaymentMethodsManager />
             </div>
 
-            {/* Combos */}
-            <div>
-                <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-                    <Zap className="text-amber-500" /> Combos (Sistema + Voz)
-                </h3>
-                <div className="grid md:grid-cols-3 gap-6">
-                    {availablePlans.filter(p => p.type === 'combo').map(renderPlanCard)}
-                </div>
-            </div>
+            {/* Invoice History */}
+            <InvoiceHistory />
 
-            {/* System Only */}
-            <div>
+            {/* Plans Section */}
+            <div id="plans-section">
                 <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-                    <LayoutTemplate className="text-indigo-500" /> Sistema
+                    <Zap className="text-amber-500" /> Planos Disponíveis
                 </h3>
-                <div className="grid md:grid-cols-2 gap-6">
-                    {availablePlans.filter(p => p.type === 'system').map(renderPlanCard)}
-                </div>
-            </div>
 
-            {/* Telephony Only */}
-            <div>
-                <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-                    <div className="p-1 bg-sky-100 rounded text-sky-600"><Check size={16} /></div> Planos de Voz
-                </h3>
-                <div className="grid md:grid-cols-3 gap-6">
-                    {availablePlans.filter(p => p.type === 'telephony').map(renderPlanCard)}
-                </div>
+                {/* Combos */}
+                {availablePlans.filter(p => p.type === 'combo').length > 0 && (
+                    <div className="mb-8">
+                        <h4 className="text-sm font-bold text-slate-600 uppercase tracking-wide mb-4">Combos (Sistema + Voz)</h4>
+                        <div className="grid md:grid-cols-3 gap-6">
+                            {availablePlans.filter(p => p.type === 'combo').map(renderPlanCard)}
+                        </div>
+                    </div>
+                )}
+
+                {/* System Only */}
+                {availablePlans.filter(p => p.type === 'system').length > 0 && (
+                    <div className="mb-8">
+                        <h4 className="text-sm font-bold text-slate-600 uppercase tracking-wide mb-4">Sistema</h4>
+                        <div className="grid md:grid-cols-2 gap-6">
+                            {availablePlans.filter(p => p.type === 'system').map(renderPlanCard)}
+                        </div>
+                    </div>
+                )}
+
+                {/* Telephony Only */}
+                {availablePlans.filter(p => p.type === 'telephony').length > 0 && (
+                    <div className="mb-8">
+                        <h4 className="text-sm font-bold text-slate-600 uppercase tracking-wide mb-4">Planos de Voz</h4>
+                        <div className="grid md:grid-cols-3 gap-6">
+                            {availablePlans.filter(p => p.type === 'telephony').map(renderPlanCard)}
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
