@@ -14,6 +14,9 @@ serve(async (req) => {
         return new Response('ok', { headers: corsHeaders });
     }
 
+    // Log all header keys for debugging
+    console.log("Request Headers Keys:", [...req.headers.keys()]);
+
     const authHeader = req.headers.get('Authorization');
     console.log(`Auth Header detected: ${authHeader ? 'Yes (' + authHeader.length + ' chars)' : 'MISSING'}`);
 
@@ -21,7 +24,14 @@ serve(async (req) => {
         const supabaseClient = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
             Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-            { global: { headers: { Authorization: authHeader ?? '' } } }
+            {
+                global: { headers: { Authorization: authHeader ?? '' } },
+                auth: {
+                    persistSession: false,
+                    autoRefreshToken: false,
+                    detectSessionInUrl: false
+                }
+            }
         );
 
         // 1. Authenticate User
