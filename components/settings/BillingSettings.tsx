@@ -48,8 +48,18 @@ export const BillingSettings: React.FC = () => {
         setLoading(true);
         const toastId = toast.loading("Redirecionando para o checkout...");
         try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+
+            if (!token) {
+                throw new Error("Usuário não autenticado. Faça login novamente.");
+            }
+
             const { data, error } = await supabase.functions.invoke('create-billing-session', {
-                body: { action, ...params, return_url: window.location.href }
+                body: { action, ...params, return_url: window.location.href },
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
             });
 
             if (error) {
