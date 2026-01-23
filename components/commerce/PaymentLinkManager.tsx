@@ -12,7 +12,9 @@ import {
     ExternalLink,
     Loader2,
     DollarSign,
-    Mail
+    Mail,
+    Trash2,
+    Ban
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -27,8 +29,12 @@ export const PaymentLinkManager: React.FC = () => {
         amount: '',
         description: '',
         customer_email: '',
-        customer_name: ''
+        customer_name: '',
+        service_id: ''
     });
+    const [services, setServices] = useState<any[]>([]);
+    const [serviceSearch, setServiceSearch] = useState('');
+    const [isServiceOpen, setIsServiceOpen] = useState(false);
     const [stripeAccount, setStripeAccount] = useState<{ stripe_account_id: string } | null>(null);
     const [checkingStripe, setCheckingStripe] = useState(true);
     const supabase = createClient();
@@ -36,7 +42,20 @@ export const PaymentLinkManager: React.FC = () => {
     useEffect(() => {
         fetchInvoices();
         checkStripeConnection();
+        fetchServices();
     }, []);
+
+    const fetchServices = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('services')
+                .select('id, name, price_default, description')
+                .order('name');
+            if (data) setServices(data);
+        } catch (err) {
+            console.error("Error fetching services:", err);
+        }
+    };
 
     const checkStripeConnection = async () => {
         setCheckingStripe(true);
@@ -104,7 +123,8 @@ export const PaymentLinkManager: React.FC = () => {
                     amount: parseFloat(newInvoice.amount),
                     description: newInvoice.description,
                     customer_email: newInvoice.customer_email,
-                    customer_name: newInvoice.customer_name
+                    customer_name: newInvoice.customer_name,
+                    service_id: newInvoice.service_id || null
                 })
             });
 
@@ -116,7 +136,8 @@ export const PaymentLinkManager: React.FC = () => {
             }
 
             toast.success("Link de pagamento gerado!");
-            setNewInvoice({ amount: '', description: '', customer_email: '', customer_name: '' });
+            setNewInvoice({ amount: '', description: '', customer_email: '', customer_name: '', service_id: '' });
+            setServiceSearch('');
             fetchInvoices();
 
             // Auto-copy link to clipboard
@@ -165,6 +186,36 @@ export const PaymentLinkManager: React.FC = () => {
         }
     };
 
+    const handleVoidInvoice = async (invoiceId: string) => {
+        if (!confirm("Deseja realmente cancelar esta fatura?")) return;
+        try {
+            const { error } = await (supabase
+                .from('tenant_invoices') as any)
+                .update({ status: 'void' })
+                .eq('id', invoiceId);
+            if (error) throw error;
+            toast.success("Fatura cancelada.");
+            fetchInvoices();
+        } catch (err: any) {
+            toast.error("Erro ao cancelar: " + err.message);
+        }
+    };
+
+    const handleDeleteInvoice = async (invoiceId: string) => {
+        if (!confirm("Deseja realmente EXCLUIR esta fatura permanentemente?")) return;
+        try {
+            const { error } = await (supabase
+                .from('tenant_invoices') as any)
+                .delete()
+                .eq('id', invoiceId);
+            if (error) throw error;
+            toast.success("Fatura excluída.");
+            fetchInvoices();
+        } catch (err: any) {
+            toast.error("Erro ao excluir: " + err.message);
+        }
+    };
+
     const getStatusIcon = (status: string) => {
         switch (status) {
             case 'paid': return <CheckCircle2 className="text-emerald-500" size={16} />;
@@ -196,12 +247,74 @@ export const PaymentLinkManager: React.FC = () => {
                         <LinkIcon size={18} className="text-indigo-500" /> Gerar Link Rápido
                     </h3>
                     <form onSubmit={handleCreateLink} className="space-y-4">
+                        <div className="relative">
+                            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">Serviço (Opcional)</label>
+                            <div className="relative">
+                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    type="text"
+                                    placeholder="Buscar serviço..."
+                                    className="w-full h-12 bg-slate-50 border-none rounded-xl pl-10 pr-4 font-bold text-slate-900 focus:ring-2 ring-indigo-500 transition-all text-sm"
+                                    value={serviceSearch}
+                                    onChange={e => {
+                                        setServiceSearch(e.target.value);
+                                        setIsServiceOpen(true);
+                                    }}
+                                    onFocus={() => setIsServiceOpen(true)}
+                                />
+                                {isServiceOpen && (
+                                    <div className="absolute z-10 w-full mt-1 bg-white border border-slate-100 rounded-xl shadow-2xl max-h-60 overflow-y-auto">
+                                        {services
+                                            .filter(s => s.name.toLowerCase().includes(serviceSearch.toLowerCase()))
+                                            .map(service => (
+                                                <button
+                                                    key={service.id}
+                                                    type="button"
+                                                    className="w-full px-4 py-3 text-left hover:bg-slate-50 flex justify-between items-center group transition-colors border-b border-slate-50 last:border-0"
+                                                    onClick={() => {
+                                                        setNewInvoice({
+                                                            ...newInvoice,
+                                                            service_id: service.id,
+                                                            amount: service.price_default?.toString() || '',
+                                                            description: service.name
+                                                        });
+                                                        setServiceSearch(service.name);
+                                                        setIsServiceOpen(false);
+                                                    }}
+                                                >
+                                                    <div>
+                                                        <div className="font-bold text-slate-900 text-sm">{service.name}</div>
+                                                        <div className="text-[10px] text-slate-400 font-black uppercase">R$ {service.price_default}</div>
+                                                    </div>
+                                                    <Plus size={14} className="text-slate-300 group-hover:text-indigo-600 transition-colors" />
+                                                </button>
+                                            ))}
+                                        {services.filter(s => s.name.toLowerCase().includes(serviceSearch.toLowerCase())).length === 0 && (
+                                            <div className="p-4 text-center text-xs text-slate-400 italic">Nenhum serviço encontrado</div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                            {newInvoice.service_id && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setNewInvoice({ ...newInvoice, service_id: '', amount: '', description: '' });
+                                        setServiceSearch('');
+                                    }}
+                                    className="mt-2 text-[10px] font-black text-indigo-600 uppercase hover:underline"
+                                >
+                                    Limpar Seleção
+                                </button>
+                            )}
+                        </div>
+
                         <div>
                             <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">Valor (R$)</label>
                             <input
                                 type="number" step="0.01" required
                                 value={newInvoice.amount}
-                                onChange={e => setNewInvoice({ ...newInvoice, amount: e.target.value })}
+                                onChange={e => setNewInvoice({ ...newInvoice, amount: e.target.value, service_id: '' })}
                                 placeholder="0.00"
                                 className="w-full h-12 bg-slate-50 border-none rounded-xl px-4 font-bold text-slate-900 focus:ring-2 ring-indigo-500 transition-all"
                             />
@@ -211,7 +324,7 @@ export const PaymentLinkManager: React.FC = () => {
                             <input
                                 type="text" required
                                 value={newInvoice.description}
-                                onChange={e => setNewInvoice({ ...newInvoice, description: e.target.value })}
+                                onChange={e => setNewInvoice({ ...newInvoice, description: e.target.value, service_id: '' })}
                                 placeholder="Ex: Diárias extras / Taxa de Limpeza"
                                 className="w-full h-12 bg-slate-50 border-none rounded-xl px-4 font-bold text-slate-900 focus:ring-2 ring-indigo-500 transition-all"
                             />
@@ -300,7 +413,7 @@ export const PaymentLinkManager: React.FC = () => {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <div className="flex items-center gap-1 transition-opacity">
                                                 <button
                                                     onClick={() => inv.id && handleSendEmail(inv.id)}
                                                     className="p-2 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-colors"
@@ -329,6 +442,20 @@ export const PaymentLinkManager: React.FC = () => {
                                                     title="Ver Detalhes"
                                                 >
                                                     <ExternalLink size={16} />
+                                                </button>
+                                                <button
+                                                    onClick={() => inv.id && handleVoidInvoice(inv.id)}
+                                                    className="p-2 hover:bg-amber-50 text-amber-600 rounded-lg transition-colors"
+                                                    title="Cancelar Fatura"
+                                                >
+                                                    <Ban size={16} />
+                                                </button>
+                                                <button
+                                                    onClick={() => inv.id && handleDeleteInvoice(inv.id)}
+                                                    className="p-2 hover:bg-rose-50 text-rose-600 rounded-lg transition-colors"
+                                                    title="Excluir Fatura"
+                                                >
+                                                    <Trash2 size={16} />
                                                 </button>
                                             </div>
                                         </td>

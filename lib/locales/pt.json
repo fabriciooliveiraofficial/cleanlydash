@@ -32,8 +32,13 @@
         "off": "Desligado"
     },
     "settings": {
+        "title": "Configurações",
         "language": "Idioma",
-        "select_language": "Selecionar Idioma"
+        "select_language": "Selecionar Idioma",
+        "billing": {
+            "title": "Faturamento & Planos",
+            "subtitle": "Gerencie sua assinatura, métodos de pagamento e créditos de IA."
+        }
     },
     "crm": {
         "title": "Clientes CRM",

@@ -122,9 +122,27 @@ serve(async (req) => {
         });
 
         // 3. Parse Request
-        const { amount, currency = 'brl', description, customer_email, customer_name } = await req.json();
+        const { amount, currency = 'brl', description, customer_email, customer_name, service_id } = await req.json();
 
         if (!amount || amount <= 0) throw new Error("Invalid amount.");
+
+        // Fetch Checklist Snapshot if service_id is provided
+        let checklistSnapshot = [];
+        if (service_id) {
+            const { data: tasks } = await adminClient
+                .from('service_def_tasks')
+                .select('tasks(title, description)')
+                .eq('service_id', service_id)
+                .order('order', { ascending: true });
+
+            if (tasks) {
+                checklistSnapshot = tasks.map((t: any) => ({
+                    title: t.tasks.title,
+                    description: t.tasks.description,
+                    completed: true // Manual links show work as "done" or for inspection
+                }));
+            }
+        }
 
         // 4. Create Stripe Checkout Session (acting as the tenant)
         // We use the `Stripe-Account` header to create it on their account
@@ -160,6 +178,8 @@ serve(async (req) => {
             customer_email: customer_email,
             customer_name: customer_name,
             description: description,
+            service_id: service_id || null,
+            checklist_snapshot: checklistSnapshot
         }).select().single();
 
         if (dbError) throw dbError;

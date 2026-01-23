@@ -8,13 +8,24 @@ import { toast } from 'sonner';
 export const BillingSettings: React.FC = () => {
     const { t } = useTranslation();
     const supabase = createClient();
+    const [availablePlans, setAvailablePlans] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [subscription, setSubscription] = useState<any>(null);
     const [aiCredits, setAiCredits] = useState(0);
 
     useEffect(() => {
         fetchSubscriptionData();
+        fetchPlans();
     }, []);
+
+    const fetchPlans = async () => {
+        const { data } = await supabase
+            .from('plans')
+            .select('*')
+            .order('price_monthly_usd', { ascending: true });
+
+        if (data) setAvailablePlans(data);
+    };
 
     const fetchSubscriptionData = async () => {
         const { data: { user } } = await supabase.auth.getUser();
@@ -35,42 +46,68 @@ export const BillingSettings: React.FC = () => {
 
     const handleAction = async (action: 'portal' | 'subscription_update' | 'token_purchase', params: any = {}) => {
         setLoading(true);
+        const toastId = toast.loading("Redirecionando para o checkout...");
         try {
             const { data, error } = await supabase.functions.invoke('create-billing-session', {
                 body: { action, ...params, return_url: window.location.href }
             });
 
-            if (error) throw error;
+            if (error) {
+                toast.error("Erro: " + error.message, { id: toastId });
+                throw error;
+            }
             if (data?.url) {
                 window.location.href = data.url;
             } else {
-                toast.error("Erro ao iniciar sessão de pagamento.");
+                toast.error("Erro ao iniciar sessão de pagamento.", { id: toastId });
             }
         } catch (err: any) {
             console.error(err);
-            toast.error("Erro: " + err.message);
+            toast.error("Erro: " + err.message, { id: toastId });
         } finally {
             setLoading(false);
         }
     };
 
-    const plans = [
-        {
-            id: 'plan_pro', // Replace with your actual Stripe Price ID or Plan ID
-            name: 'Pro',
-            price: 299,
-            features: ['Gestão Completa', 'Multi-Crew', 'App do Cleaner', 'Pagamentos Online']
-        },
-        {
-            id: 'plan_enterprise',
-            name: 'Enterprise',
-            price: 599,
-            features: ['Tudo do Pro', 'IA Avançada', 'Suporte Dedicado', 'API Acesso']
-        }
-    ];
+    const renderPlanCard = (plan: any) => (
+        <div key={plan.id} className="bg-white p-6 rounded-3xl border border-slate-200 hover:border-indigo-300 hover:shadow-lg transition-all group relative">
+            {plan.id === subscription?.plan_id && (
+                <div className="absolute -top-3 left-6 px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold uppercase rounded-full border border-emerald-200">
+                    Plano Atual
+                </div>
+            )}
+            <div className="flex justify-between items-start mb-4">
+                <div>
+                    <h4 className="text-lg font-bold text-slate-900">{plan.name}</h4>
+                    <div className="text-2xl font-black text-indigo-600 mt-1">
+                        $ {plan.price_monthly_usd} <span className="text-sm text-slate-400 font-medium">/mo</span>
+                    </div>
+                </div>
+                <div className="h-10 w-10 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                    <LayoutTemplate size={20} />
+                </div>
+            </div>
+
+            <ul className="space-y-3 mb-6">
+                {(typeof plan.features === 'string' ? JSON.parse(plan.features) : plan.features)?.map((feat: string, i: number) => (
+                    <li key={i} className="flex items-center gap-2 text-sm text-slate-600">
+                        <Check size={16} className="text-emerald-500 shrink-0" /> {feat}
+                    </li>
+                ))}
+            </ul>
+
+            <Button
+                onClick={() => handleAction('subscription_update', { plan_id: plan.id })}
+                disabled={loading || subscription?.plan_id === plan.id}
+                className={`w-full ${subscription?.plan_id === plan.id ? 'bg-emerald-50 text-emerald-700 cursor-default hover:bg-emerald-50' : ''}`}
+            >
+                {subscription?.plan_id === plan.id ? 'Ativo' : 'Escolher Plano'}
+            </Button>
+        </div>
+    );
 
     return (
-        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
             {/* Header */}
             <div>
                 <h2 className="text-xl font-bold text-slate-900">{t('settings.billing.title', 'Faturamento & Planos')}</h2>
@@ -86,7 +123,11 @@ export const BillingSettings: React.FC = () => {
                         </div>
                         <div>
                             <div className="text-xs font-bold text-indigo-600 uppercase tracking-widest">Plano Atual</div>
-                            <h3 className="text-xl font-black text-slate-900">{subscription?.plan_id ? subscription.plan_id.replace('plan_', '').toUpperCase() : 'FREE / TRIAL'}</h3>
+                            <h3 className="text-xl font-black text-slate-900">
+                                {subscription?.plan_id
+                                    ? (availablePlans.find(p => p.id === subscription.plan_id)?.name || subscription.plan_id.replace(/_/g, ' ').toUpperCase())
+                                    : 'FREE / TRIAL'}
+                            </h3>
                         </div>
                     </div>
 
@@ -108,11 +149,9 @@ export const BillingSettings: React.FC = () => {
 
                 {/* AI Credits Card */}
                 <div className="bg-gradient-to-br from-slate-900 to-indigo-950 p-6 rounded-3xl shadow-xl text-white relative overflow-hidden">
-                    {/* Background Pattern */}
                     <div className="absolute top-0 right-0 p-4 opacity-10">
                         <Zap size={120} />
                     </div>
-
                     <div className="relative z-10">
                         <div className="flex items-center gap-4 mb-6">
                             <div className="h-12 w-12 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/20">
@@ -123,11 +162,9 @@ export const BillingSettings: React.FC = () => {
                                 <h3 className="text-3xl font-black">{aiCredits.toLocaleString()} <span className="text-sm opacity-60 font-medium">Tokens</span></h3>
                             </div>
                         </div>
-
                         <p className="text-sm text-slate-300 mb-6">
                             Tokens são utilizados para automações inteligentes, geração de descrições e respostas automáticas.
                         </p>
-
                         <Button
                             onClick={() => handleAction('token_purchase')}
                             disabled={loading}
@@ -140,41 +177,33 @@ export const BillingSettings: React.FC = () => {
                 </div>
             </div>
 
-            {/* Available Plans */}
-            <div className="pt-8 border-t border-slate-200">
-                <h3 className="text-lg font-bold text-slate-900 mb-6">Planos Disponíveis</h3>
+            {/* Combos */}
+            <div>
+                <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+                    <Zap className="text-amber-500" /> Combos (Sistema + Voz)
+                </h3>
+                <div className="grid md:grid-cols-3 gap-6">
+                    {availablePlans.filter(p => p.type === 'combo').map(renderPlanCard)}
+                </div>
+            </div>
+
+            {/* System Only */}
+            <div>
+                <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+                    <LayoutTemplate className="text-indigo-500" /> Sistema
+                </h3>
                 <div className="grid md:grid-cols-2 gap-6">
-                    {plans.map(plan => (
-                        <div key={plan.id} className="bg-white p-6 rounded-3xl border border-slate-200 hover:border-indigo-300 hover:shadow-lg transition-all group">
-                            <div className="flex justify-between items-start mb-4">
-                                <div>
-                                    <h4 className="text-lg font-bold text-slate-900">{plan.name}</h4>
-                                    <div className="text-2xl font-black text-indigo-600 mt-1">
-                                        R$ {plan.price} <span className="text-sm text-slate-400 font-medium">/mês</span>
-                                    </div>
-                                </div>
-                                <div className="h-10 w-10 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                                    <LayoutTemplate size={20} />
-                                </div>
-                            </div>
+                    {availablePlans.filter(p => p.type === 'system').map(renderPlanCard)}
+                </div>
+            </div>
 
-                            <ul className="space-y-3 mb-6">
-                                {plan.features.map(feat => (
-                                    <li key={feat} className="flex items-center gap-2 text-sm text-slate-600">
-                                        <Check size={16} className="text-emerald-500" /> {feat}
-                                    </li>
-                                ))}
-                            </ul>
-
-                            <Button
-                                onClick={() => handleAction('subscription_update', { plan_id: plan.id })}
-                                disabled={loading || subscription?.plan_id === plan.id}
-                                className={`w-full ${subscription?.plan_id === plan.id ? 'bg-emerald-100 text-emerald-700 cursor-default hover:bg-emerald-100' : ''}`}
-                            >
-                                {subscription?.plan_id === plan.id ? 'Plano Atual' : 'Fazer Upgrade'}
-                            </Button>
-                        </div>
-                    ))}
+            {/* Telephony Only */}
+            <div>
+                <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+                    <div className="p-1 bg-sky-100 rounded text-sky-600"><Check size={16} /></div> Planos de Voz
+                </h3>
+                <div className="grid md:grid-cols-3 gap-6">
+                    {availablePlans.filter(p => p.type === 'telephony').map(renderPlanCard)}
                 </div>
             </div>
         </div>

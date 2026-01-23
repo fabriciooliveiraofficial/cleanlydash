@@ -127,7 +127,7 @@ const App: React.FC = () => {
   // Check for Tenant Onboarding Route: /:slug or /:slug/join
   const pathParts = typeof window !== 'undefined' ? window.location.pathname.split('/').filter(p => p !== '') : [];
   // Reserved routes that are NOT tenants
-  const reservedRoutes = ['auth', 'dashboard', 'settings', 'team', 'bookings', 'debug'];
+  const reservedRoutes = ['auth', 'dashboard', 'settings', 'team', 'bookings', 'debug', 'payment-success', 'invoice', 'callback', 'platform', 'admin'];
 
   const isTenantJoinRoute = pathParts.length === 2 && pathParts[1] === 'join';
   const isTenantRootRoute = pathParts.length === 1 && !reservedRoutes.includes(pathParts[0]);

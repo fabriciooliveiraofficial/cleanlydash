@@ -34,7 +34,11 @@
     "settings": {
         "title": "Settings",
         "language": "Language",
-        "select_language": "Select Language"
+        "select_language": "Select Language",
+        "billing": {
+            "title": "Billing & Plans",
+            "subtitle": "Manage your subscription, payment methods, and AI credits."
+        }
     },
     "crm": {
         "title": "CRM Clients",

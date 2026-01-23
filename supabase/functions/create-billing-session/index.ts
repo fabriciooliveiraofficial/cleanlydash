@@ -84,17 +84,27 @@ serve(async (req) => {
         if (action === 'subscription_update') {
             if (!plan_id) throw new Error("Missing plan_id");
 
+            console.log(`Fetch details for plan: ${plan_id}`);
             // Fetch plan details
-            const { data: plan } = await supabaseAdmin.from('plans').select('*').eq('id', plan_id).single();
-            if (!plan) throw new Error("Invalid Plan");
+            const { data: plan, error: planError } = await supabaseAdmin.from('plans').select('*').eq('id', plan_id).maybeSingle();
 
+            if (planError) {
+                console.error("Database error fetching plan:", planError);
+                throw new Error("Erro ao buscar plano no banco de dados.");
+            }
+            if (!plan) {
+                console.error(`Plan not found: ${plan_id}`);
+                throw new Error(`Plano '${plan_id}' não encontrado. Certifique-se de aplicar as migrações SQL.`);
+            }
+
+            console.log(`Creating Stripe checkout for plan: ${plan.name} (${plan.currency})`);
             const session = await stripe.checkout.sessions.create({
                 customer: customerId,
                 payment_method_types: ['card'],
                 mode: 'subscription',
                 line_items: [{
                     price_data: {
-                        currency: 'usd',
+                        currency: plan.currency?.toLowerCase() || 'usd',
                         product_data: {
                             name: plan.name,
                             description: `Upgrade to ${plan.name}`,
@@ -155,8 +165,11 @@ serve(async (req) => {
         throw new Error("Invalid Action");
 
     } catch (error) {
-        console.error(error);
-        return new Response(JSON.stringify({ error: error.message }), {
+        console.error("Critical Error in create-billing-session:", error);
+        return new Response(JSON.stringify({
+            error: error.message,
+            stack: error.stack
+        }), {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });

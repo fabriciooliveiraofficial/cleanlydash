@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CreditCard, DollarSign, FileText, CheckCircle2, MapPin, Calendar, Receipt, ChevronRight, Copy, Check } from 'lucide-react';
+import { CreditCard, DollarSign, FileText, CheckCircle2, MapPin, Calendar, Receipt, ChevronRight, Copy, Check, Clock } from 'lucide-react';
 import { createClient } from '../../lib/supabase/client';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
@@ -31,32 +31,34 @@ export const PublicInvoicePage: React.FC = () => {
                     .maybeSingle();
 
                 if (bookingInvoice) {
-                    setInvoice(bookingInvoice);
-                    if (bookingInvoice.tenant_id) fetchTenant(bookingInvoice.tenant_id);
+                    const data = bookingInvoice as any;
+                    setInvoice(data);
+                    if (data.tenant_id) fetchTenant(data.tenant_id);
                     return;
                 }
 
                 // 2. Try fetching from 'tenant_invoices' (Manual/Ad-hoc)
                 const { data: manualInvoice, error: manualError } = await supabase
                     .from('tenant_invoices')
-                    .select('*')
+                    .select('*, services(*)')
                     .eq('id', id)
                     .maybeSingle();
 
                 if (manualInvoice) {
+                    const data = manualInvoice as any;
                     setInvoice({
-                        ...manualInvoice,
+                        ...data,
                         isManual: true,
                         // Map fields to match UI expectations where possible
                         customers: {
-                            name: manualInvoice.customer_name || 'Cliente',
-                            email: manualInvoice.customer_email || ''
+                            name: data.customer_name || 'Cliente',
+                            email: data.customer_email || ''
                         },
                         bookings: {
-                            services: { name: manualInvoice.description }
+                            services: data.services || { name: data.description }
                         }
                     });
-                    if (manualInvoice.tenant_id) fetchTenant(manualInvoice.tenant_id);
+                    if (data.tenant_id) fetchTenant(data.tenant_id);
                     return;
                 }
 
@@ -193,6 +195,12 @@ export const PublicInvoicePage: React.FC = () => {
                                             <div className="font-black text-slate-800 text-lg">{invoice.bookings?.services?.name || 'Serviço Profissional'}</div>
                                             <div className="text-xs text-slate-500 font-bold flex items-center gap-1.5 mt-1">
                                                 <MapPin size={12} /> {invoice.bookings?.customers?.address || 'Property Location'}
+                                                {invoice.bookings?.services?.duration_minutes && (
+                                                    <>
+                                                        <span className="mx-1 opacity-30">•</span>
+                                                        <Clock size={12} className="text-slate-400" /> {invoice.bookings.services.duration_minutes} min
+                                                    </>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -203,24 +211,63 @@ export const PublicInvoicePage: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Proof/Checklist Summary (Mocked UI) */}
-                            <div className="space-y-4">
-                                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                    <CheckCircle2 size={14} /> Resumo da Execução
-                                </h3>
-                                <div className="grid grid-cols-2 gap-3">
-                                    {[
-                                        'Ambientes Limpos', 'Fotos de Checklist', 'Inventário Verificado', 'Seguro Ativo'
-                                    ].map(item => (
-                                        <div key={item} className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-2xl">
-                                            <div className="h-6 w-6 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
-                                                <Check size={14} strokeWidth={3} />
-                                            </div>
-                                            <span className="text-xs font-bold text-slate-600">{item}</span>
-                                        </div>
-                                    ))}
+                            {/* Service Description */}
+                            {invoice.bookings?.services?.description && (
+                                <div className="space-y-4">
+                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                        <FileText size={14} /> Descrição do Serviço
+                                    </h3>
+                                    <div className="bg-slate-50 p-6 rounded-3xl text-sm text-slate-600 leading-relaxed border border-slate-100">
+                                        {invoice.bookings.services.description}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
+
+                            {/* Proof/Checklist Summary */}
+                            {(invoice.checklist_snapshot?.length > 0) && (
+                                <div className="space-y-4">
+                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                        <CheckCircle2 size={14} /> Checklist de Qualidade
+                                    </h3>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {invoice.checklist_snapshot.map((item: any, idx: number) => (
+                                            <div key={idx} className="flex items-center gap-3 p-4 bg-white border border-slate-100 rounded-2xl shadow-sm transition-all hover:border-indigo-100">
+                                                <div className="h-8 w-8 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center shrink-0">
+                                                    <Check size={18} strokeWidth={3} />
+                                                </div>
+                                                <div className="flex flex-col min-w-0">
+                                                    <span className="text-sm font-bold text-slate-700 truncate">{item.title}</span>
+                                                    {item.description && <span className="text-[10px] text-slate-400 italic leading-tight truncate">{item.description}</span>}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Fallback Checklist for Old Invoices or Simple Links */}
+                            {!invoice.checklist_snapshot?.length && !invoice.isManual && (
+                                <div className="space-y-4">
+                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                        <CheckCircle2 size={14} /> Resumo da Execução
+                                    </h3>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {[
+                                            { title: 'Ambientes Limpos' },
+                                            { title: 'Fotos de Checklist' },
+                                            { title: 'Inventário Verificado' },
+                                            { title: 'Seguro Ativo' }
+                                        ].map((item: any, idx: number) => (
+                                            <div key={idx} className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-2xl">
+                                                <div className="h-6 w-6 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
+                                                    <Check size={14} strokeWidth={3} />
+                                                </div>
+                                                <span className="text-xs font-bold text-slate-600">{item.title}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

@@ -31,8 +31,13 @@
         "off": "Apagado"
     },
     "settings": {
+        "title": "Configuración",
         "language": "Idioma",
-        "select_language": "Seleccionar Idioma"
+        "select_language": "Seleccionar Idioma",
+        "billing": {
+            "title": "Facturación y Planes",
+            "subtitle": "Administre su suscripción, métodos de pagamento y créditos de IA."
+        }
     },
     "crm": {
         "title": "Clientes CRM",
