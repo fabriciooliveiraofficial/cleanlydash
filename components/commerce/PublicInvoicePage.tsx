@@ -23,34 +23,61 @@ export const PublicInvoicePage: React.FC = () => {
             }
 
             try {
-                const { data, error } = await supabase
+                // 1. Try fetching from 'invoices' (Booking-based)
+                const { data: bookingInvoice, error: bookingError } = await supabase
                     .from('invoices')
                     .select('*, customers(*), bookings(*, services(*))')
                     .eq('id', id)
-                    .single();
+                    .maybeSingle();
 
-                const invoiceData = data as any;
-
-                if (error) throw error;
-                if (invoiceData) {
-                    setInvoice(invoiceData);
-
-                    // Fetch Tenant Info
-                    if (invoiceData.tenant_id) {
-                        const { data: tenantData } = await supabase
-                            .from('tenant_profiles')
-                            .select('*')
-                            .eq('id', invoiceData.tenant_id)
-                            .single();
-                        if (tenantData) setTenant(tenantData);
-                    }
+                if (bookingInvoice) {
+                    setInvoice(bookingInvoice);
+                    if (bookingInvoice.tenant_id) fetchTenant(bookingInvoice.tenant_id);
+                    return;
                 }
+
+                // 2. Try fetching from 'tenant_invoices' (Manual/Ad-hoc)
+                const { data: manualInvoice, error: manualError } = await supabase
+                    .from('tenant_invoices')
+                    .select('*')
+                    .eq('id', id)
+                    .maybeSingle();
+
+                if (manualInvoice) {
+                    setInvoice({
+                        ...manualInvoice,
+                        isManual: true,
+                        // Map fields to match UI expectations where possible
+                        customers: {
+                            name: manualInvoice.customer_name || 'Cliente',
+                            email: manualInvoice.customer_email || ''
+                        },
+                        bookings: {
+                            services: { name: manualInvoice.description }
+                        }
+                    });
+                    if (manualInvoice.tenant_id) fetchTenant(manualInvoice.tenant_id);
+                    return;
+                }
+
+                // If neither found
+                throw new Error("Invoice not found in either table");
+
             } catch (err) {
                 console.error("Error fetching invoice:", err);
                 toast.error("Fatura não encontrada.");
             } finally {
                 setLoading(false);
             }
+        };
+
+        const fetchTenant = async (tenantId: string) => {
+            const { data: tenantData } = await supabase
+                .from('tenant_profiles')
+                .select('*')
+                .eq('id', tenantId)
+                .single();
+            if (tenantData) setTenant(tenantData);
         };
 
         fetchInvoice();
