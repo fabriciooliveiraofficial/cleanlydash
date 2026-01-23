@@ -174,3 +174,11 @@ export async function sendInvoiceNotification(invoiceId: string) {
     return { error: "Erro ao enviar notificação: " + err.message }
   }
 }
+
+export async function deleteInvoice(invoiceId: string) {
+  const supabase = createClient()
+  const { error } = await supabase.from('invoices').delete().eq('id', invoiceId)
+  if (error) return { error: "Erro ao deletar fatura: " + error.message }
+  revalidatePath('/dashboard/invoices')
+  return { success: true }
+}

@@ -2,6 +2,9 @@
     "imports": {
         "std/": "https://deno.land/std@0.168.0/",
         "http/": "https://deno.land/std@0.168.0/http/",
-        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.21.0"
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.39.0",
+        "stripe": "https://esm.sh/stripe@12.5.0?target=deno",
+        "smtp": "https://deno.land/x/smtp@v0.7.0/mod.ts",
+        "web-push": "https://esm.sh/web-push@3.6.6"
     }
 }

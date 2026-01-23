@@ -27,7 +27,8 @@ import {
   History,
   Clock,
   ExternalLink,
-  Ban
+  Ban,
+  Trash2
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -38,7 +39,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { CreateInvoiceDialog } from '@/components/invoices/create-invoice-dialog'
-import { markInvoiceAsPaid, voidInvoice, sendInvoiceNotification } from './actions'
+import { markInvoiceAsPaid, voidInvoice, sendInvoiceNotification, deleteInvoice } from './actions'
 
 export default async function InvoicesPage() {
   const supabase = createClient()
@@ -46,7 +47,7 @@ export default async function InvoicesPage() {
   const { data: invoices } = await supabase
     .from('invoices')
     .select('*, customers(name, email)')
-    .order('created_at', { ascending: false })
+    .order('created_at', { ascending: false }) as any
 
   const { data: customers } = await supabase
     .from('customers')
@@ -148,6 +149,14 @@ export default async function InvoicesPage() {
                       <DropdownMenuItem className="gap-2 text-rose-600 font-medium cursor-pointer py-2.5" asChild>
                         <button type="submit" className="w-full text-left">
                           <Ban size={14} /> Cancelar Fatura
+                        </button>
+                      </DropdownMenuItem>
+                    </form>
+                    <DropdownMenuSeparator />
+                    <form action={async () => { 'use server'; await deleteInvoice(inv.id) }}>
+                      <DropdownMenuItem className="gap-2 text-rose-700 font-black cursor-pointer py-2.5 bg-rose-50 hover:bg-rose-100" asChild>
+                        <button type="submit" className="w-full text-left flex items-center gap-2">
+                          <Trash2 size={14} /> Deletar
                         </button>
                       </DropdownMenuItem>
                     </form>
