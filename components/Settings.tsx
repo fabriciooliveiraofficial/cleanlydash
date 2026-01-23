@@ -10,9 +10,10 @@ import { usePermission, PERMISSIONS } from '../hooks/use-permission';
 import { NotificationSettings } from './settings/NotificationSettings';
 import { SecuritySettings } from './settings/SecuritySettings';
 import { IntegrationsSettings } from './settings/IntegrationsSettings';
+import { BillingSettings } from './settings/BillingSettings';
 
 
-type SettingsTab = 'profile' | 'smtp' | 'telnyx' | 'roles' | 'notifications' | 'integrations' | 'security';
+type SettingsTab = 'profile' | 'billing' | 'smtp' | 'telnyx' | 'roles' | 'notifications' | 'integrations' | 'security';
 
 export const Settings: React.FC = () => {
     const { t } = useTranslation();
@@ -21,6 +22,7 @@ export const Settings: React.FC = () => {
 
     const tabs = [
         { id: 'profile', label: 'Profile', icon: User },
+        { id: 'billing', label: 'Billing & Usage', icon: CreditCard },
         { id: 'smtp', label: 'Email Server', icon: Mail },
         { id: 'telnyx', label: 'SMS / Voz', icon: MessageSquare }, // New Tab
         { id: 'roles', label: 'Roles & Permissions', icon: Shield },
@@ -33,6 +35,7 @@ export const Settings: React.FC = () => {
     // Filter tabs based on permissions
     const visibleTabs = tabs.filter(tab => {
         if (tab.id === 'roles') return can(PERMISSIONS.SETTINGS_MANAGE);
+        if (tab.id === 'billing') return can(PERMISSIONS.SETTINGS_MANAGE);
         if (tab.id === 'smtp') return can(PERMISSIONS.SETTINGS_MANAGE);
         if (tab.id === 'telnyx') return can(PERMISSIONS.SETTINGS_MANAGE);
         return true;
@@ -40,6 +43,7 @@ export const Settings: React.FC = () => {
 
     const renderContent = () => {
         switch (activeTab) {
+            case 'billing': return <BillingSettings />;
             case 'smtp': return <SmtpSettings />;
             case 'telnyx': return <TelnyxSettings />;
             case 'roles': return <RolesAndPermissions />;
