@@ -1,4 +1,4 @@
-# 🚀 AIRGOVERNESS - ARQUITETURA & ROADMAP MESTRE (SYSTEM BLUEPRINT)
+# 🚀 CLEANLYDASH - ARQUITETURA & ROADMAP MESTRE (SYSTEM BLUEPRINT)
 
 > **Documento Vivo:** Referência absoluta para arquitetura, regras de negócio e plano de execução.
 > **Última Atualização:** 07/01/2025

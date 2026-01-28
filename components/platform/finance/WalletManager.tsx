@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { createClient } from '../../../lib/supabase/client';
+import { createPlatformClient } from '../../../lib/supabase/platform-client';
 import { toast } from 'sonner';
 import { Search, PlusCircle, DollarSign, User, Wallet } from 'lucide-react';
 import { Button } from '../../ui/button';
@@ -11,7 +11,7 @@ export const WalletManager: React.FC = () => {
     const [amount, setAmount] = useState('10.00');
     const [description, setDescription] = useState('Crédito de Teste (Admin)');
 
-    const supabase = createClient();
+    const supabase = createPlatformClient();
 
     const handleSearch = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -47,7 +47,7 @@ export const WalletManager: React.FC = () => {
                 .from('wallets')
                 .select('id, user_id, balance')
                 .eq('user_id', emailSearch) // Treating input as ID
-                .single();
+                .maybeSingle();
 
             if (error) throw error;
             setTargetUser(data);
@@ -75,7 +75,7 @@ export const WalletManager: React.FC = () => {
 
             toast.success(`Adicionado $${amount} com sucesso!`);
             // Refresh
-            const { data: newData } = await supabase.from('wallets').select('balance').eq('id', targetUser.id).single();
+            const { data: newData } = await supabase.from('wallets').select('balance').eq('id', targetUser.id).maybeSingle();
             if (newData) setTargetUser({ ...targetUser, balance: newData.balance });
 
         } catch (err: any) {

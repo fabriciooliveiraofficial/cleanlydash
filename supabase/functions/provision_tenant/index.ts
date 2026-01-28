@@ -13,11 +13,8 @@ serve(async (req) => {
 
     try {
         const authHeader = req.headers.get('Authorization');
-        if (!authHeader) {
-            throw new Error('Missing Authorization Header');
-        }
+        if (!authHeader) throw new Error('Missing Authorization Header');
 
-        // 1. Create Client with Anon Key (Same as send_invite)
         const supabaseClient = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
             Deno.env.get('SUPABASE_ANON_KEY') ?? '',
@@ -25,35 +22,66 @@ serve(async (req) => {
         )
 
         const token = authHeader.replace('Bearer ', '');
-
-        // 2. Get User (using explicit token like send_invite)
-        const {
-            data: { user },
-            error: userError
-        } = await supabaseClient.auth.getUser(token)
+        const { data: { user }, error: userError } = await supabaseClient.auth.getUser(token)
 
         if (userError || !user) {
             throw new Error('Unauthorized: ' + (userError?.message || 'No user'));
         }
 
-        // 3. Create Admin Client for DB Operations (Service Role)
         const supabaseAdmin = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         )
 
-        // 4. Parse Request Body
-        let sandbox = false;
-        let reset = false;
-        try {
-            const body = await req.json();
-            sandbox = body.sandbox;
-            reset = body.reset;
-        } catch {
-            // No body or error parsing
+        const body = await req.json();
+        const { action, api_key, sip_id, sandbox, reset, is_platform_key } = body;
+
+        // Verify Admin for Platform Actions
+        const { data: roleData } = await supabaseAdmin
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', user.id)
+            .single();
+
+        const isAdmin = roleData?.role === 'super_admin' || roleData?.role === 'admin';
+
+        // 1. Action: Save Key (Bypass RLS)
+        if (action === 'save_key') {
+            if (!api_key) throw new Error('API Key is required');
+
+            if (is_platform_key) {
+                if (!isAdmin) throw new Error('Apenas administradores podem salvar a Chave Global da Plataforma.');
+
+                console.log(`Saving Platform Global Key (Cleanlydash Provider Mode)`);
+                const { error: pError } = await supabaseAdmin
+                    .from('platform_settings')
+                    .upsert({ key: 'TELNYX_API_KEY', value: api_key.trim() });
+
+                if (sip_id) {
+                    await supabaseAdmin.from('platform_settings').upsert({ key: 'TELNYX_SIP_CREDENTIAL_ID', value: sip_id.trim() });
+                }
+
+                if (pError) throw pError;
+            } else {
+                console.log(`Saving User Specific Key for user ${user.id}`);
+                const { error: upsertError } = await supabaseAdmin
+                    .from('telnyx_settings')
+                    .upsert({
+                        user_id: user.id,
+                        api_key: api_key.trim(),
+                        is_active: true
+                    }, { onConflict: 'user_id' });
+
+                if (upsertError) throw upsertError;
+            }
+
+            return new Response(JSON.stringify({ success: true, message: "Chave salva com sucesso" }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 200,
+            });
         }
 
-        // 5. Handle RESET request
+        // 2. Action: Reset
         if (reset) {
             console.log(`Resetting Telnyx settings for user ${user.id}`);
             const { error: deleteError } = await supabaseAdmin
@@ -69,48 +97,23 @@ serve(async (req) => {
             });
         }
 
-        // 6. Check KYC Status (REQUIRED before provisioning)
-        const { data: kycData } = await supabaseAdmin
-            .from('kyc_verifications')
-            .select('status')
-            .eq('user_id', user.id)
-            .single()
-
-        if (!kycData || kycData.status !== 'approved') {
-            throw new Error('KYC verification required. Please complete identity verification first.');
+        // 3. Action: Provision (Existing logic)
+        const masterKey = Deno.env.get('TELNYX_MASTER_KEY') || Deno.env.get('TELNYX_API_KEY');
+        // If not in env, check platform_settings
+        let effectiveMasterKey = masterKey;
+        if (!effectiveMasterKey) {
+            const { data: pKey } = await supabaseAdmin.from('platform_settings').select('value').eq('key', 'TELNYX_API_KEY').maybeSingle();
+            effectiveMasterKey = pKey?.value;
         }
 
-        // 7. Check if already provisioned
-        const { data: existing } = await supabaseAdmin
-            .from('telnyx_settings')
-            .select('managed_account_id')
-            .eq('user_id', user.id)
-            .single()
-
-        if (existing?.managed_account_id) {
-            return new Response(JSON.stringify({ message: "Account already provisioned", managed_account_id: existing.managed_account_id }), {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                status: 200,
-            })
-        }
-
-        // 6. Call Telnyx API (or Simulate)
-        const masterKey = Deno.env.get('TELNYX_MASTER_KEY');
         let managedAccountId = `managed_${crypto.randomUUID().split('-')[0]}`;
         let managedApiKey = `KEY${crypto.randomUUID().replace(/-/g, '').toUpperCase()}`;
 
-        if (sandbox) {
-            console.log("Provising in SANDBOX Mode");
-            managedAccountId = `managed_TEST_${crypto.randomUUID().split('-')[0]}`;
-            // We could use a static one for easier debugging, but random is fine for unique constraint
-        } else if (masterKey) {
-            console.log("Calling Telnyx API (Production)...");
-            // Real API call would go here. For now we keep the simulation behavior but logged as Prod.
-        } else {
-            console.log("Simulating Telnyx Provisioning (Dev Mode)...");
+        if (effectiveMasterKey && !sandbox) {
+            console.log("Calling Telnyx API (Production Simulation)...");
+            // In a real reseller flow, we'd use the platform key to create a Managed Account inside Telnyx here.
         }
 
-        // 6. Store Keys in DB
         const { error: upsertError } = await supabaseAdmin
             .from('telnyx_settings')
             .upsert({

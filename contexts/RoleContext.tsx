@@ -97,11 +97,27 @@ export function RoleProvider({ children }: { children: ReactNode }) {
                 if (tenantProfileResult.status === 'fulfilled' && (tenantProfileResult.value as any).data) {
                     const profile = (tenantProfileResult.value as any).data;
                     console.log('RoleProvider: Resolved as Tenant Owner');
+
+                    let finalTenantId = authUser.id;
+                    let finalRoleName = 'Owner';
+
+                    // Portal Mode Override
+                    const portalConfigRaw = sessionStorage.getItem('portal_mode_config');
+                    if (portalConfigRaw) {
+                        try {
+                            const config = JSON.parse(portalConfigRaw);
+                            if (config.targetTenantId) {
+                                finalTenantId = config.targetTenantId;
+                                finalRoleName = `Portal: ${config.targetTenantName}`;
+                            }
+                        } catch (e) { }
+                    }
+
                     setRole('super_admin');
                     setAppAccess('dashboard');
                     setName((profile as any).name);
-                    setTenantId(authUser.id);
-                    setCustomRoleName('Owner');
+                    setTenantId(finalTenantId);
+                    setCustomRoleName(finalRoleName);
                     setLoading(false);
                     initialLoadComplete.current = true;
                     return;
@@ -114,7 +130,9 @@ export function RoleProvider({ children }: { children: ReactNode }) {
                     const dbRole = (member as any).role as AppRole;
                     const dbAppAccess = (member as any).custom_roles?.app_access || (dbRole === 'cleaner' ? 'cleaner_app' : 'dashboard');
 
-                    setRole(dbAppAccess === 'cleaner_app' ? 'cleaner' : 'staff');
+                    // Set role based on app_access
+                    // TenantApp will handle the view logic based on app_access
+                    setRole(dbAppAccess === 'cleaner_app' ? 'cleaner' : dbRole);
                     setAppAccess(dbAppAccess as any);
                     setName((member as any).name);
                     setTenantId((member as any).tenant_id);
@@ -124,16 +142,44 @@ export function RoleProvider({ children }: { children: ReactNode }) {
                     return;
                 }
 
-                // 3. User Roles Fallback
+                // 3. User Roles Fallback (e.g. for Platform Admins logging into Tenant)
                 if (userRoleResult.status === 'fulfilled' && (userRoleResult.value as any).data) {
                     const userRole = (userRoleResult.value as any).data;
-                    console.log('RoleProvider: Resolved from User Roles');
+                    console.log('RoleProvider: User Role identified:', (userRole as any).role);
+
                     const dbRole = (userRole as any).role as AppRole;
+
+                    let finalTenantId = (dbRole === 'super_admin' || dbRole === 'property_owner') ? authUser.id : null;
+                    let finalRoleName = customRoleName;
+
+                    // Portal Mode Override for Platform Admins
+                    const portalConfigRaw = sessionStorage.getItem('portal_mode_config');
+                    if (portalConfigRaw && dbRole === 'super_admin') {
+                        try {
+                            const config = JSON.parse(portalConfigRaw);
+                            if (config.targetTenantId) {
+                                finalTenantId = config.targetTenantId;
+                                finalRoleName = `Portal: ${config.targetTenantName}`;
+                            }
+                        } catch (e) { }
+                    }
+
+                    if (dbRole === 'super_admin' && tenantProfileResult.status === 'fulfilled' && !(tenantProfileResult.value as any).data) {
+                        // If they are a Platform Admin in Portal Mode, allow the Tenant Dashboard
+                        if (!portalConfigRaw) {
+                            console.warn('RoleProvider: Platform Admin blocked from Tenant Dashboard');
+                            setRole('guest');
+                            setAppAccess(null);
+                            setLoading(false);
+                            initialLoadComplete.current = true;
+                            return;
+                        }
+                    }
+
                     setRole(dbRole);
                     setAppAccess(dbRole === 'cleaner' ? 'cleaner_app' : 'dashboard');
-                    if (dbRole === 'super_admin' || dbRole === 'property_owner') {
-                        setTenantId(authUser.id);
-                    }
+                    setTenantId(finalTenantId);
+                    setCustomRoleName(finalRoleName);
                     setLoading(false);
                     initialLoadComplete.current = true;
                     return;

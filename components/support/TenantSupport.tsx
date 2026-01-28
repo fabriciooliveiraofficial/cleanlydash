@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '../../lib/supabase/client';
 import { Button } from '../ui/button';
+import { useRole } from '../../hooks/use-role';
 import { toast } from 'sonner';
 
 interface Ticket {
@@ -39,7 +40,7 @@ export const TenantSupport: React.FC = () => {
 
     // New Ticket Form
     const [newTicket, setNewTicket] = useState({ subject: '', category: 'general', priority: 'medium', description: '' });
-
+    const { user, tenant_id: roleTenantId, loading: roleLoading } = useRole();
     const supabase = createClient();
 
     useEffect(() => {
@@ -53,30 +54,19 @@ export const TenantSupport: React.FC = () => {
     }, [selectedTicket]);
 
     const fetchTickets = async () => {
+        if (roleLoading) return;
+        if (!roleTenantId) return;
+
         setLoading(true);
         try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) {
-                setLoading(false);
-                return;
-            }
-
-            // Fetch tenant ID
-            const { data: member } = await supabase.from('team_members').select('tenant_id').eq('user_id', user.id).maybeSingle();
-            if (!member || !(member as any).tenant_id) {
-                setLoading(false);
-                return;
-            }
-
-            const tenantId = (member as any).tenant_id;
-
             const { data, error } = await supabase
                 .from('support_tickets')
                 .select('*')
-                .eq('tenant_id', tenantId)
+                .eq('tenant_id', roleTenantId)
                 .order('created_at', { ascending: false });
 
             if (error) {
+                console.error("fetchTickets error:", error);
                 toast.error("Error loading tickets");
             } else {
                 setTickets(data as any || []);
@@ -102,15 +92,16 @@ export const TenantSupport: React.FC = () => {
 
     const handleCreateTicket = async (e: React.FormEvent) => {
         e.preventDefault();
-        try {
-            const { data: { user } } = await supabase.auth.getUser();
-            const { data: member } = await supabase.from('team_members').select('tenant_id').eq('user_id', user!.id).maybeSingle();
+        if (!roleTenantId || !user) {
+            toast.error("Contexto de empresa não identificado. Tente atualizar a página.");
+            return;
+        }
 
-            if (!member) throw new Error("Tenant not found");
+        try {
 
             // 1. Create Ticket
             const { data: ticket, error } = await (supabase as any).from('support_tickets').insert({
-                tenant_id: (member as any).tenant_id,
+                tenant_id: roleTenantId,
                 subject: newTicket.subject,
                 category: newTicket.category,
                 priority: newTicket.priority,

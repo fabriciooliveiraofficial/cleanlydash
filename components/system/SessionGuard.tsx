@@ -5,7 +5,7 @@ import { Button } from '../ui/button';
 import { LogOut, Timer, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 
-const IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 Minutes
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 Minutes
 const WARNING_THRESHOLD_MS = 60 * 1000; // Warning at 9 minutes (60s remaining)
 
 export const SessionGuard: React.FC = () => {
@@ -129,7 +129,7 @@ export const SessionGuard: React.FC = () => {
 
                 <div className="text-center space-y-4 py-2">
                     <p className="text-slate-600 font-medium">
-                        Você está inativo há quase 10 minutos. Para sua segurança, sua sessão será encerrada automaticamente.
+                        Você está inativo há quase 30 minutos. Para sua segurança, sua sessão será encerrada automaticamente.
                     </p>
                     <div className="text-3xl font-black text-red-600 tabular-nums">
                         00:{timeLeft.toString().padStart(2, '0')}

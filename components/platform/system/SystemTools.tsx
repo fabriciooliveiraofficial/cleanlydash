@@ -13,7 +13,7 @@ import {
     XCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { createClient } from '../../../lib/supabase/client';
+import { createPlatformClient } from '../../../lib/supabase/platform-client';
 
 export const SystemTools: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'sql' | 'flags' | 'settings' | 'webhooks'>('flags');
@@ -24,7 +24,7 @@ export const SystemTools: React.FC = () => {
     const [alertState, setAlertState] = useState<{ type: 'success' | 'error'; message: string; details?: any } | null>(null);
 
     const handleRunQuery = async () => {
-        const supabase = createClient();
+        const supabase = createPlatformClient();
         const start = performance.now();
         try {
             const { data, error } = await (supabase as any).rpc('exec_sql', { query: sqlQuery });
@@ -88,8 +88,8 @@ export const SystemTools: React.FC = () => {
                             <button
                                 onClick={handleAcknowledge}
                                 className={`w-full py-3 rounded-xl font-bold text-white transition-transform active:scale-95 ${alertState.type === 'success'
-                                        ? 'bg-green-600 hover:bg-green-700 shadow-lg shadow-green-200'
-                                        : 'bg-red-600 hover:bg-red-700 shadow-lg shadow-red-200'
+                                    ? 'bg-green-600 hover:bg-green-700 shadow-lg shadow-green-200'
+                                    : 'bg-red-600 hover:bg-red-700 shadow-lg shadow-red-200'
                                     }`}
                             >
                                 {alertState.type === 'success' ? 'Acknowledge & Clear' : 'Dismiss Error'}
@@ -218,18 +218,55 @@ export const SystemTools: React.FC = () => {
                         <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
                             <Lock size={18} className="text-slate-500" /> Admin Security Profile
                         </h3>
-                        <form onSubmit={handleChangePassword} className="space-y-4">
+                        <form onSubmit={async (e) => {
+                            e.preventDefault();
+                            const current = (document.getElementById('pwd-current') as HTMLInputElement).value;
+                            const newPwd = (document.getElementById('pwd-new') as HTMLInputElement).value;
+                            const confirmPwd = (document.getElementById('pwd-confirm') as HTMLInputElement).value;
+
+                            if (!newPwd || !confirmPwd) return toast.error("Please fill in the new password fields.");
+                            if (newPwd !== confirmPwd) return toast.error("New passwords do not match.");
+                            if (newPwd.length < 6) return toast.error("Password must be at least 6 characters.");
+
+                            const toastId = toast.loading("Updating credentials...");
+
+                            try {
+                                const supabase = createPlatformClient();
+                                const { data: { user } } = await supabase.auth.getUser();
+
+                                if (!user || !user.email) throw new Error("No active session.");
+
+                                // Optional: Verify current password if provided (Re-auth)
+                                if (current) {
+                                    const { error: signInError } = await supabase.auth.signInWithPassword({
+                                        email: user.email,
+                                        password: current
+                                    });
+                                    if (signInError) throw new Error("Current password is incorrect.");
+                                }
+
+                                const { error: updateError } = await supabase.auth.updateUser({ password: newPwd });
+                                if (updateError) throw updateError;
+
+                                toast.success("Password updated successfully!", { id: toastId });
+                                (document.getElementById('pwd-current') as HTMLInputElement).value = '';
+                                (document.getElementById('pwd-new') as HTMLInputElement).value = '';
+                                (document.getElementById('pwd-confirm') as HTMLInputElement).value = '';
+                            } catch (err: any) {
+                                toast.error(err.message, { id: toastId });
+                            }
+                        }} className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Current Password</label>
-                                <input type="password" className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" />
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Current Password (Verify)</label>
+                                <input id="pwd-current" type="password" placeholder="Optional - for security" className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
-                                <input type="password" className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" />
+                                <input id="pwd-new" type="password" required className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">Confirm New Password</label>
-                                <input type="password" className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" />
+                                <input id="pwd-confirm" type="password" required className="w-full px-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500" />
                             </div>
                             <div className="pt-4">
                                 <button type="submit" className="flex items-center gap-2 bg-slate-900 text-white px-6 py-2.5 rounded-lg hover:bg-slate-800 transition-colors">

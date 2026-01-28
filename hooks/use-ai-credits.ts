@@ -24,13 +24,18 @@ export const useAICredits = () => {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
 
-            const { data } = await supabase
+            const { data, error: walletError } = await supabase
                 .from('wallets')
                 .select('balance')
                 .eq('user_id', user.id)
-                .single();
+                .maybeSingle();
 
-            const balance = data?.balance || 0;
+            if (walletError) {
+                console.error('[Wallet Debug] Error fetching wallet:', walletError);
+                console.error('[Wallet Debug] User ID used:', user.id);
+            }
+
+            const balance = (data as any)?.balance || 0;
             setWallet({
                 balance,
                 loading: false,

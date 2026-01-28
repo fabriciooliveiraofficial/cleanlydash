@@ -129,7 +129,7 @@ export const PayrollDashboard: React.FC = () => {
                 .eq('tenant_id', user.id)
                 .gte('period_start', format(start, 'yyyy-MM-dd'))
                 .lte('period_end', format(end, 'yyyy-MM-dd'))
-                .single();
+                .maybeSingle();
 
             if (periodData) {
                 setCurrentPeriod(periodData as PayrollPeriod);

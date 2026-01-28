@@ -4,6 +4,7 @@ import { cn } from "../../lib/utils.ts"
 export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement> {
   variant?: "default" | "secondary" | "destructive" | "outline"
   className?: string
+  style?: React.CSSProperties
   children?: React.ReactNode
 }
 

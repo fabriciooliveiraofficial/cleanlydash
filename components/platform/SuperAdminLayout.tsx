@@ -13,7 +13,7 @@ import {
     Megaphone
 } from 'lucide-react';
 
-import { createClient } from '../../lib/supabase/client';
+import { createPlatformClient } from '../../lib/supabase/platform-client';
 
 interface SuperAdminLayoutProps {
     children: React.ReactNode;
@@ -23,11 +23,51 @@ interface SuperAdminLayoutProps {
 }
 
 export const SuperAdminLayout: React.FC<SuperAdminLayoutProps> = ({ children, activeModule, onNavigate }) => {
-    const supabase = createClient();
+    const supabase = createPlatformClient(); // ISOLATED CLIENT
+
+    const [isLoggingOut, setIsLoggingOut] = React.useState(false); // Add state for visual feedback
+
+    React.useEffect(() => {
+        console.log("SuperAdminLayout v4.1 (Logout Fix) Loaded");
+    }, []);
 
     const handleLogout = async () => {
-        await supabase.auth.signOut();
-        window.location.href = '/platform/login';
+        setIsLoggingOut(true);
+        console.log("Logout v7: Total Key Annihilation");
+
+        if (typeof window !== 'undefined') {
+            // 1. Supabase SignOut (Fire and forget, but isolated)
+            supabase.auth.signOut().catch(() => { });
+
+            // 2. Clear SPECIFIC LocalStorage keys as well as all
+            const keysToClear = [
+                'sb-tenant-auth-token',
+                'sb-platform-auth-token',
+                'sb-cleaner-auth-token',
+                'sb-jjbokilvurxztqiwvxhy-auth-token' // Legacy/Default
+            ];
+
+            keysToClear.forEach(key => window.localStorage.removeItem(key));
+            window.localStorage.clear(); // Nuclear fallback
+            window.sessionStorage.clear();
+
+            // 3. Clear SPECIFIC Cookies with full path/domain visibility
+            const cookieNames = [
+                'sb-tenant-auth-token',
+                'sb-platform-auth-token',
+                'sb-cleaner-auth-token',
+                'sb-jjbokilvurxztqiwvxhy-auth-token'
+            ];
+
+            cookieNames.forEach(name => {
+                document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+                document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/platform;`;
+                document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/cleaner;`;
+            });
+
+            // 4. Force Redirect
+            window.location.href = '/platform/login?logged_out=' + Date.now();
+        }
     };
 
     const NavItem = ({ module, icon: Icon, label }: { module: any, icon: any, label: string }) => (
@@ -63,7 +103,7 @@ export const SuperAdminLayout: React.FC<SuperAdminLayoutProps> = ({ children, ac
                     <NavItem module="logs" icon={Activity} label="Audit Logs" />
                     <div className="my-2 border-t border-slate-800 mx-4"></div>
                     <NavItem module="support" icon={MessageSquare} label="Support Inbox" />
-                    <NavItem module="telephony" icon={Phone} label="Call Inspector" />
+                    <NavItem module="telephony" icon={Phone} label="Telephony Manager" />
                     <NavItem module="broadcast" icon={Megaphone} label="Broadcast Center" />
 
                 </nav>
@@ -80,10 +120,11 @@ export const SuperAdminLayout: React.FC<SuperAdminLayoutProps> = ({ children, ac
                     </div>
                     <button
                         onClick={handleLogout}
-                        className="w-full flex items-center gap-2 text-slate-400 hover:text-red-400 text-sm px-2 transition-colors"
+                        disabled={isLoggingOut}
+                        className="w-full flex items-center gap-2 text-slate-400 hover:text-red-400 text-sm px-2 transition-colors disabled:opacity-50"
                     >
                         <LogOut size={16} />
-                        Secure Logout
+                        {isLoggingOut ? 'Saindo...' : 'Secure Logout'}
                     </button>
                 </div>
             </aside>

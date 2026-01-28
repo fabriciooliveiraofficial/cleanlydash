@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, isBefore, addHours, addMinutes } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Clock, ClipboardList } from 'lucide-react';
 import { Badge } from '../ui/badge';
 
 interface Booking {
@@ -185,7 +185,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
         const rect = e.currentTarget.getBoundingClientRect();
         const offsetY = e.clientY - rect.top;
         const rawMinutes = (offsetY / HOUR_HEIGHT) * 60;
-        const snappedMinutes = Math.round(rawMinutes / 10) * 10;
+        const snappedMinutes = Math.round(rawMinutes / 1); // 1-min precision
 
         if (draggedBooking) {
             const originalStart = parseLocalDate(draggedBooking.start_date);
@@ -204,6 +204,14 @@ export const WeekView: React.FC<WeekViewProps> = ({
         }
 
         setDragOverCell({ day, hour, minute: snappedMinutes });
+
+        // Auto-scroll
+        if (gridRef.current) {
+            const container = gridRef.current;
+            const threshold = 100;
+            if (e.clientY < container.getBoundingClientRect().top + threshold) container.scrollTop -= 10;
+            if (e.clientY > container.getBoundingClientRect().bottom - threshold) container.scrollTop += 10;
+        }
     };
 
     const handleDragLeave = () => {
@@ -223,7 +231,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
             const rect = e.currentTarget.getBoundingClientRect();
             const offsetY = e.clientY - rect.top;
             const rawMinutes = (offsetY / HOUR_HEIGHT) * 60;
-            const snappedMinutes = Math.round(rawMinutes / 10) * 10;
+            const snappedMinutes = Math.round(rawMinutes / 1); // 1-min precision
 
             const newStart = new Date(day);
             newStart.setHours(hour, snappedMinutes, 0, 0);
@@ -533,17 +541,42 @@ export const WeekView: React.FC<WeekViewProps> = ({
                                         </div>
                                     )}
 
-                                    {/* Drop indicator */}
-                                    {isDragOverThis && !hasConflict && (
-                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
-                                            <span className="text-xs text-indigo-600 font-bold">Soltar aqui</span>
+                                    {/* Drop indicator & Ghost Preview */}
+                                    {isDragOverThis && !hasConflict && draggedBooking && (
+                                        <div
+                                            className="absolute left-0.5 right-0.5 rounded-md pointer-events-none z-[100] border-2 border-indigo-400 bg-indigo-500/10 shadow-xl overflow-hidden flex flex-col p-1.5"
+                                            style={{
+                                                top: `${(dragOverCell.minute || 0) / 60 * HOUR_HEIGHT}px`,
+                                                height: `${(parseLocalDate(draggedBooking.end_date).getTime() - parseLocalDate(draggedBooking.start_date).getTime()) / (1000 * 60 * 60) * HOUR_HEIGHT}px`
+                                            }}
+                                        >
+                                            <div className="flex items-center gap-1 mb-1">
+                                                <Badge className="h-3 px-1 text-[8px] bg-indigo-600 text-white border-0">
+                                                    PREVISÃO
+                                                </Badge>
+                                                <div className="bg-slate-900/90 text-[8px] text-white px-1 rounded flex items-center gap-0.5">
+                                                    <Clock size={8} />
+                                                    {hour}:{dragOverCell.minute?.toString().padStart(2, '0')}
+                                                </div>
+                                            </div>
+                                            <span className="text-[10px] font-bold text-indigo-900 border-b border-indigo-200 truncate leading-none pb-1">
+                                                {draggedBooking.summary}
+                                            </span>
                                         </div>
+                                    )}
+
+                                    {/* Simple Highlight for hover Cell (without booking) */}
+                                    {isDragOverThis && !draggedBooking && (
+                                        <div className="absolute inset-0 bg-indigo-100/50 ring-2 ring-indigo-400 ring-inset z-30" />
                                     )}
 
                                     {/* Conflict indicator */}
                                     {hasConflict && (
-                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
-                                            <span className="text-xs text-red-600 font-bold">⚠️ Conflito</span>
+                                        <div className="absolute inset-0 bg-rose-100 ring-2 ring-rose-500 ring-inset flex items-center justify-center pointer-events-none z-30 animate-pulse">
+                                            <div className="bg-rose-600 text-white text-[10px] font-black px-2 py-1 rounded shadow-lg flex items-center gap-1">
+                                                <AlertCircle size={12} />
+                                                CONFLITO
+                                            </div>
                                         </div>
                                     )}
 
@@ -617,7 +650,24 @@ export const WeekView: React.FC<WeekViewProps> = ({
                                                         <div className="text-[10px] font-bold truncate" style={{ color: bgColor }}>
                                                             {format(parseLocalDate(booking.start_date), 'HH:mm')}
                                                         </div>
-                                                        <Badge className="h-3 px-1 text-[7px] uppercase font-bold bg-white/50 border-current" variant="outline">
+                                                        <Badge
+                                                            className="h-3 px-1 text-[7px] uppercase font-bold bg-white/50"
+                                                            style={{
+                                                                borderColor:
+                                                                    booking.status === 'confirmed' ? '#3b82f6' :
+                                                                        booking.status === 'pending' ? '#f59e0b' :
+                                                                            booking.status === 'completed' ? '#22c55e' :
+                                                                                booking.status === 'cancelled' ? '#f97316' :
+                                                                                    bgColor,
+                                                                color:
+                                                                    booking.status === 'confirmed' ? '#1e40af' :
+                                                                        booking.status === 'pending' ? '#92400e' :
+                                                                            booking.status === 'completed' ? '#166534' :
+                                                                                booking.status === 'cancelled' ? '#9a3412' :
+                                                                                    bgColor
+                                                            }}
+                                                            variant="outline"
+                                                        >
                                                             {booking.status}
                                                         </Badge>
                                                     </div>

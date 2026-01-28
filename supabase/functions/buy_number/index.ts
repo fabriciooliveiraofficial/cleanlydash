@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0"
 
@@ -11,102 +12,172 @@ serve(async (req) => {
         return new Response('ok', { headers: corsHeaders })
     }
 
+    let diag: any = { stage: "start" };
+
     try {
         const authHeader = req.headers.get('Authorization');
         if (!authHeader) {
-            throw new Error('Missing Authorization Header');
+            diag.error = "Missing Authorization Header";
+            throw new Error(diag.error);
         }
 
-        // 1. Create Client with Anon Key (Same as send_invite)
+        diag.auth_header_start = authHeader.substring(0, 15) + "...";
+        const token = authHeader.replace('Bearer ', '');
+        diag.token_len = token.length;
+        diag.token_hint = token.substring(0, 10) + "..." + token.substring(token.length - 10);
+
         const supabaseClient = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
             Deno.env.get('SUPABASE_ANON_KEY') ?? '',
             { global: { headers: { Authorization: authHeader } } }
         )
 
-        const token = authHeader.replace('Bearer ', '');
-
-        // 2. Get User
-        const {
-            data: { user },
-            error: userError
-        } = await supabaseClient.auth.getUser(token)
-
+        const { data: { user }, error: userError } = await supabaseClient.auth.getUser(token)
         if (userError || !user) {
-            throw new Error('Unauthorized: ' + (userError?.message || 'No user'));
+            diag.auth_error = userError?.message || "User not found";
+            diag.auth_status = userError?.status || 401;
+            console.error("Auth failed:", diag.auth_error);
+            return new Response(JSON.stringify({
+                error: "Unauthorized: " + diag.auth_error,
+                debug: diag
+            }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 401
+            });
         }
 
-        // 3. Create Admin Client for DB Operations
+        diag.user_id = user.id;
+
+        const { phone_number, sandbox } = await req.json();
+
         const supabaseAdmin = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         )
 
-        // 4. Check if tenant has a Managed Account
-        const { data: settings } = await supabaseAdmin
-            .from('telnyx_settings')
-            .select('managed_account_id')
-            .eq('user_id', user.id)
-            .single();
+        // Resolve Key (Priority: Database Platform Settings -> System Env -> User Settings)
+        let telnyxApiKey: string | undefined = undefined;
 
-        if (!settings?.managed_account_id) {
-            throw new Error("You must provision a Managed Account before buying a number.");
+        // 1. FIRST: Try Platform Settings (Admin-configured key in DB)
+        const { data: platformKeyData, error: platformKeyError } = await supabaseAdmin
+            .from('platform_settings')
+            .select('value, created_at')
+            .eq('key', 'TELNYX_API_KEY')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        diag.platform_query_error = platformKeyError?.message;
+        diag.platform_key_found = !!platformKeyData?.value;
+
+        if (platformKeyData?.value && platformKeyData.value.length > 20) {
+            telnyxApiKey = platformKeyData.value.trim();
+            diag.resolved_from = "platform_settings_db";
         }
 
-        // 5. Parse Request Body
-        const { phone_number, sandbox } = await req.json();
-
-        // 6. Buy Number Logic
-        // In Sandbox mode or currently simulated real mode, we respect the chosen number or fallback to random
-        let purchasedNumber = phone_number || `+55119${Math.floor(Math.random() * 100000000)}`;
-
-        if (sandbox) {
-            console.log(`[SANDBOX] Simulating purchase of ${purchasedNumber} for account ${settings.managed_account_id}`);
-            // No Telnyx API Call
-        } else {
-            // TODO: Implement Real Telnyx Order API here
-            // For now, we simulate success for "Real" too as per current state, 
-            // BUT we should warn or implement if critical. 
-            // As per instructions "implement sandbox integration", we focus on that.
-            console.log(`[REAL] Buying ${purchasedNumber} (Simulation Placeholder)`);
+        // 2. FALLBACK: Try Environment Variables
+        if (!telnyxApiKey || telnyxApiKey.length < 20) {
+            const envKey = Deno.env.get('TELNYX_MASTER_KEY') || Deno.env.get('TELNYX_API_KEY');
+            if (envKey && envKey.length > 20) {
+                telnyxApiKey = envKey;
+                diag.resolved_from = "environment_variable";
+            }
         }
 
-        // 7. Update Settings
-        const { error: updateError } = await supabaseAdmin
-            .from('telnyx_settings')
-            .update({
-                phone_number: purchasedNumber,
-                updated_at: new Date().toISOString(),
-                // Enable Recording by default for Transcription
-                recording_config: {
-                    inbound: true,
-                    outbound: true,
-                    format: 'mp3',
-                    channels: 'dual'
+        // 2. Fallback to User Settings (Legacy/BYO)
+        if (!telnyxApiKey || telnyxApiKey.length < 20) {
+            const { data: settings } = await supabaseAdmin.from('telnyx_settings').select('*');
+            const myRow = settings?.find(s => s.user_id === user.id);
+            const fallbackRow = settings?.find(s => s.api_key || s.managed_api_key);
+            const targetRow = myRow || fallbackRow;
+
+            if (targetRow) {
+                if (targetRow.api_key && targetRow.api_key.length > 20) {
+                    telnyxApiKey = targetRow.api_key.trim();
+                    diag.resolved_from = "row_api_key";
+                } else if (targetRow.managed_api_key && targetRow.managed_api_key.length > 20) {
+                    telnyxApiKey = targetRow.managed_api_key.trim();
+                    diag.resolved_from = "row_managed_key";
                 }
-            })
-            .eq('user_id', user.id);
-
-        if (updateError) throw updateError;
-
-        return new Response(
-            JSON.stringify({
-                success: true,
-                phone_number: purchasedNumber,
-                message: "Number purchased successfully"
-            }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 200,
+            }
         }
-        )
+
+        if (telnyxApiKey) {
+            diag.key_fingerprint = telnyxApiKey.substring(0, 5) + "...";
+        }
+
+        if (sandbox || !telnyxApiKey || telnyxApiKey.length < 20) {
+            return new Response(JSON.stringify({ success: true, message: "Purchase simulated (Sandbox/No Key)", debug: diag }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        // Step 1: Reserve the number first
+        diag.step = "reserving";
+        const reserveResponse = await fetch(`https://api.telnyx.com/v2/number_reservations`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${telnyxApiKey}`
+            },
+            body: JSON.stringify({
+                phone_numbers: [{ phone_number: phone_number }]
+            })
+        });
+
+        const reserveData = await reserveResponse.json();
+        diag.reservation_response_status = reserveResponse.status;
+        let reservationId = reserveData?.data?.id;
+
+        // If reservation fails, log it
+        if (!reserveResponse.ok) {
+            const errorMsg = reserveData?.errors?.[0]?.detail || 'Reservation failed';
+            diag.reservation_failed = errorMsg;
+            diag.step = "direct_order_fallback";
+
+            // If 403 (Account Level Issue), abort immediately
+            if (reserveResponse.status === 403) {
+                return new Response(JSON.stringify({
+                    error: "Telnyx Account Error: " + errorMsg,
+                    debug: diag,
+                    telnyx_error: reserveData
+                }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 403 });
+            }
+        } else {
+            diag.reservation_id = reservationId;
+        }
+
+        // Step 2: Create Number Order
+        diag.step = "ordering";
+        const orderBody: any = {
+            phone_numbers: [{ phone_number: phone_number }]
+        };
+
+        if (reservationId) {
+            orderBody.phone_number_reservation_id = reservationId;
+        }
+
+        const response = await fetch(`https://api.telnyx.com/v2/number_orders`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${telnyxApiKey}`
+            },
+            body: JSON.stringify(orderBody)
+        });
+
+        const resultData = await response.json();
+        diag.order_response_status = response.status;
+
+        if (!response.ok) {
+            return new Response(JSON.stringify({
+                error: resultData?.errors?.[0]?.detail || 'Purchase failed',
+                debug: diag,
+                telnyx_error: resultData
+            }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+        }
+
+        return new Response(JSON.stringify({ success: true, data: resultData, debug: diag }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     } catch (error: any) {
-        return new Response(
-            JSON.stringify({ error: error.message }),
-            {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                status: 400,
-            }
-        )
+        return new Response(JSON.stringify({ error: error.message, debug: diag }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
     }
 })

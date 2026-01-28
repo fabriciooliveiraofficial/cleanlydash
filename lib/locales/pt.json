@@ -180,23 +180,23 @@
             "syncing": "Sincronizando com a Central...",
             "completed_success": "Serviço concluído com sucesso!",
             "completed_error": "Falha ao atualizar status."
-        },
-        "map": {
-            "title": "Mapa de Imóveis",
-            "subtitle_count": "{{count}} imóveis no mapa",
-            "subtitle_missing": "{{count}} sem coordenadas",
-            "all_done": "Todos os clientes já possuem coordenadas!",
-            "geocoding": "Geocodificando {{current}}/{{total}}...",
-            "geocode_button": "Geocodificar Endereços ({{count}})",
-            "converting": "Convertendo endereços em coordenadas via OpenStreetMap...",
-            "delay_note": "Este processo pode demorar ~1 segundo por endereço devido aos limites da API gratuita.",
-            "no_coords_title": "Nenhum imóvel com coordenadas",
-            "no_coords_desc": "Clique no botão acima para geocodificar os endereços automaticamente.",
-            "waiting": "{{count}} endereço(s) aguardando geocodificação",
-            "success_msg": "{{count}} endereço(s) geocodificado(s) com sucesso!",
-            "fail_msg": "{{count}} endereço(s) não puderam ser geocodificados",
-            "error_loading": "Erro ao carregar clientes"
         }
+    },
+    "map": {
+        "title": "Mapa de Imóveis",
+        "subtitle_count": "{{count}} imóveis no mapa",
+        "subtitle_missing": "{{count}} sem coordenadas",
+        "all_done": "Todos os clientes já possuem coordenadas!",
+        "geocoding": "Geocodificando {{current}}/{{total}}...",
+        "geocode_button": "Geocodificar Endereços ({{count}})",
+        "converting": "Convertendo endereços em coordenadas via OpenStreetMap...",
+        "delay_note": "Este processo pode demorar ~1 segundo por endereço devido aos limites da API gratuita.",
+        "no_coords_title": "Nenhum imóvel com coordenadas",
+        "no_coords_desc": "Clique no botão acima para geocodificar os endereços automaticamente.",
+        "waiting": "{{count}} endereço(s) aguardando geocodificação",
+        "success_msg": "{{count}} endereço(s) geocodificado(s) com sucesso!",
+        "fail_msg": "{{count}} endereço(s) não puderam ser geocodificados",
+        "error_loading": "Erro ao carregar clientes"
     },
     "auth": {
         "title_login": "Gestão profissional para seus turnovers.",

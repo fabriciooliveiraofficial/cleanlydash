@@ -180,23 +180,23 @@
             "syncing": "Syncing with HQ...",
             "completed_success": "Job Completed Successfully!",
             "completed_error": "Failed to update status."
-        },
-        "map": {
-            "title": "Property Map",
-            "subtitle_count": "{{count}} properties on map",
-            "subtitle_missing": "{{count}} without coordinates",
-            "all_done": "All customers already have coordinates!",
-            "geocoding": "Geocoding {{current}}/{{total}}...",
-            "geocode_button": "Geocode Addresses ({{count}})",
-            "converting": "Converting addresses to coordinates via OpenStreetMap...",
-            "delay_note": "This process may take ~1 second per address due to free API limits.",
-            "no_coords_title": "No properties with coordinates",
-            "no_coords_desc": "Click the button above to geocode addresses automatically.",
-            "waiting": "{{count}} address(es) waiting for geocoding",
-            "success_msg": "{{count}} address(es) geocoded successfully!",
-            "fail_msg": "{{count}} address(es) could not be geocoded",
-            "error_loading": "Error loading customers"
         }
+    },
+    "map": {
+        "title": "Property Map",
+        "subtitle_count": "{{count}} properties on map",
+        "subtitle_missing": "{{count}} without coordinates",
+        "all_done": "All customers already have coordinates!",
+        "geocoding": "Geocoding {{current}}/{{total}}...",
+        "geocode_button": "Geocode Addresses ({{count}})",
+        "converting": "Converting addresses to coordinates via OpenStreetMap...",
+        "delay_note": "This process may take ~1 second per address due to free API limits.",
+        "no_coords_title": "No properties with coordinates",
+        "no_coords_desc": "Click the button above to geocode addresses automatically.",
+        "waiting": "{{count}} address(es) waiting for geocoding",
+        "success_msg": "{{count}} address(es) geocoded successfully!",
+        "fail_msg": "{{count}} address(es) could not be geocoded",
+        "error_loading": "Error loading customers"
     },
     "auth": {
         "title_login": "Professional Management for your turnovers.",

@@ -54,10 +54,18 @@ export const SubscriptionManager: React.FC<SubscriptionManagerProps> = ({ onUpgr
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            if (error) throw error;
-            setSubscription(data?.subscription);
-        } catch (err: any) {
-            console.error('Error fetching subscription:', err);
+            if (error) {
+                console.error('Error fetching subscription:', error);
+                if (error && typeof error === 'object' && 'context' in error) {
+                    try {
+                        const responseBody = await (error as any).context.json();
+                        console.error('Stripe Function Error Detail:', responseBody);
+                    } catch (e) {
+                        console.error('Could not parse Stripe Error body');
+                    }
+                }
+                throw error;
+            }
         } finally {
             setLoading(false);
         }

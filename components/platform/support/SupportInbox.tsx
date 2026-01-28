@@ -9,7 +9,7 @@ import {
     Search,
     Filter
 } from 'lucide-react';
-import { createClient } from '../../../lib/supabase/client';
+import { createPlatformClient } from '../../../lib/supabase/platform-client';
 import { toast } from 'sonner';
 
 interface TicketType {
@@ -33,7 +33,7 @@ export const SupportInbox: React.FC = () => {
     const [replyText, setReplyText] = useState('');
     const [filterStatus, setFilterStatus] = useState<string>('all');
 
-    const supabase = createClient();
+    const supabase = createPlatformClient();
 
     useEffect(() => {
         fetchTickets();

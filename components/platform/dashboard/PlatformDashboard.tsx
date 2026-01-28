@@ -10,7 +10,7 @@ import {
     Zap,
     Loader2
 } from 'lucide-react';
-import { createClient } from '../../../lib/supabase/client';
+import { createPlatformClient } from '../../../lib/supabase/platform-client';
 import { ActiveTenantsMonitor } from '../system/ActiveTenantsMonitor';
 
 // Price Map from SQL (20240111_pricing_schema.sql)
@@ -34,7 +34,7 @@ export const PlatformDashboard: React.FC = () => {
         activeSessions: 0,
         loading: true
     });
-    const supabase = createClient();
+    const supabase = createPlatformClient(); // ISOLATED CLIENT
 
     useEffect(() => {
         fetchRealData();

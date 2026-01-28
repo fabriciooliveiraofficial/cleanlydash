@@ -4,7 +4,6 @@ import { useForm } from 'react-hook-form';
 import { X, Search, Phone, Loader2, CheckCircle, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClient } from '../../lib/supabase/client';
-import { useAICredits } from '../../hooks/use-ai-credits';
 
 interface NumberSelectionModalProps {
     isOpen: boolean;
@@ -34,7 +33,7 @@ interface AvailableNumber {
     };
 }
 
-export const NumberSelectionModal: React.FC<NumberSelectionModalProps> = ({
+const NumberSelectionModal: React.FC<NumberSelectionModalProps> = ({
     isOpen,
     onClose,
     onSuccess,
@@ -49,7 +48,6 @@ export const NumberSelectionModal: React.FC<NumberSelectionModalProps> = ({
     });
 
     const supabase = createClient();
-    const { checkFunds } = useAICredits();
 
     const onSearch = async (data: SearchFormData) => {
         setLoading(true);
@@ -61,7 +59,13 @@ export const NumberSelectionModal: React.FC<NumberSelectionModalProps> = ({
 
             if (error) throw error;
 
-            // Telnyx API returns { data: [...] }
+            // LOG DIAGNOSTICS
+            if (numbers?.debug) {
+                console.log("=== SEARCH DIAGNOSTICS ===");
+                console.log(numbers.debug);
+                if (numbers.message) console.log("Message:", numbers.message);
+            }
+
             setResults(numbers?.data || []);
 
             if (numbers?.data?.length === 0) {
@@ -69,7 +73,18 @@ export const NumberSelectionModal: React.FC<NumberSelectionModalProps> = ({
             }
         } catch (err: any) {
             console.error('Search failed:', err);
-            toast.error('Erro ao buscar números: ' + err.message);
+
+            let errorMessage = err.message;
+            if (err.context && typeof err.context.json === 'function') {
+                try {
+                    const errorBody = await err.context.json();
+                    errorMessage = errorBody.error || errorBody.message || JSON.stringify(errorBody);
+                    if (errorBody.debug) console.log("Search Debug Info (Error Path):", errorBody.debug);
+                    if (errorBody.telnyx_error) console.log("Telnyx Raw Error:", errorBody.telnyx_error);
+                } catch (e) { /* ignore */ }
+            }
+
+            toast.error('Erro ao buscar números: ' + errorMessage);
         } finally {
             setLoading(false);
         }
@@ -83,21 +98,12 @@ export const NumberSelectionModal: React.FC<NumberSelectionModalProps> = ({
     const handleConfirmPurchase = async () => {
         if (!selectedNumber) return;
 
-        // 1. Check Credits (Simulated in Sandbox?)
-        // In this model, we might want to skip credit check in sandbox or just warn.
-        if (!isSandbox && !checkFunds(1.00, 'Compra de Número')) return;
-
         setLoading(true);
         try {
-            // 2. Call buy_number edge function
-            // We need to pass is_sandbox flag if we implement it, or let the backend handle logic
-            // Ideally, we pass a flag to tell the backend this is a sandbox request if the Global Toggle is on.
-            // But for now, we assume the backend (buy_number) is aware or we pass a param.
-
             const { data, error } = await supabase.functions.invoke('buy_number', {
                 body: {
                     phone_number: selectedNumber.phone_number,
-                    sandbox: isSandbox // IMPORTANT: Pass sandbox flag
+                    sandbox: isSandbox
                 }
             });
 
@@ -105,17 +111,26 @@ export const NumberSelectionModal: React.FC<NumberSelectionModalProps> = ({
 
             toast.success(isSandbox ? 'Número adquirido (Modo Sandbox)' : 'Número comprado com sucesso!');
 
-            if (!isSandbox) {
-                // Deduct credits if real
-                // Actually the edge function might handle this, but if we do it here:
-                // await deductCredits(1.00, `Compra de Número ${selectedNumber.phone_number}`);
-            }
-
             onSuccess(selectedNumber.phone_number);
             onClose();
         } catch (err: any) {
             console.error('Purchase failed:', err);
-            toast.error('Erro ao comprar número: ' + err.message);
+            let errorMessage = err.message;
+            if (err.context && typeof err.context.json === 'function') {
+                try {
+                    const errorBody = await err.context.json();
+                    errorMessage = errorBody.error || errorBody.message || JSON.stringify(errorBody);
+                    console.log("=== PURCHASE FAILURE DETAILS ===");
+                    console.log("Error Message:", errorMessage);
+                    if (errorBody.debug) {
+                        console.log("Debug Info (JSON):", JSON.stringify(errorBody.debug, null, 2));
+                    }
+                    if (errorBody.telnyx_error) {
+                        console.log("Telnyx Raw Response (JSON):", JSON.stringify(errorBody.telnyx_error, null, 2));
+                    }
+                } catch (e) { /* ignore */ }
+            }
+            toast.error('Partiu! Erro ao comprar: ' + errorMessage);
         } finally {
             setLoading(false);
         }
@@ -126,7 +141,6 @@ export const NumberSelectionModal: React.FC<NumberSelectionModalProps> = ({
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div className="w-full max-w-2xl bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-
                 {/* Header */}
                 <div className={`p-6 border-b flex justify-between items-center ${isSandbox ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-100'}`}>
                     <div>
@@ -185,15 +199,15 @@ export const NumberSelectionModal: React.FC<NumberSelectionModalProps> = ({
                                     </div>
                                 )}
                                 <div className="grid gap-3">
-                                    {results.map((num) => (
-                                        <div key={num.phone_number} className="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-lg hover:border-indigo-300 hover:shadow-sm transition-all group">
+                                    {results.map((num, idx) => (
+                                        <div key={`${num.phone_number}-${idx}`} className="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-lg hover:border-indigo-300 hover:shadow-sm transition-all group">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center font-bold">
                                                     {num.national_destination_code}
                                                 </div>
                                                 <div>
                                                     <p className="text-lg font-mono font-medium text-slate-900">{num.phone_number}</p>
-                                                    <p className="text-xs text-slate-500">{num.region_information.region_name}, {num.region_information.region_code}</p>
+                                                    <p className="text-xs text-slate-500">{num.region_information?.region_name}, {num.region_information?.region_code}</p>
                                                 </div>
                                             </div>
                                             <div className="text-right flex items-center gap-4">
@@ -214,7 +228,6 @@ export const NumberSelectionModal: React.FC<NumberSelectionModalProps> = ({
                             </div>
                         </div>
                     ) : (
-                        // Confirm Step
                         <div className="flex flex-col items-center justify-center py-8 space-y-6">
                             <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-2">
                                 <CheckCircle className="w-8 h-8" />
@@ -225,15 +238,10 @@ export const NumberSelectionModal: React.FC<NumberSelectionModalProps> = ({
                                     Você está prestes a adquirir o número <strong className="text-slate-900">{selectedNumber?.phone_number}</strong>.
                                 </p>
                             </div>
-
                             <div className="bg-slate-50 p-6 rounded-lg border border-slate-200 w-full max-w-sm space-y-4">
                                 <div className="flex justify-between items-center text-sm">
                                     <span className="text-slate-500">Número</span>
                                     <span className="font-mono font-medium text-slate-900">{selectedNumber?.phone_number}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-sm">
-                                    <span className="text-slate-500">Localização</span>
-                                    <span className="font-medium text-slate-900">{selectedNumber?.region_information.region_name}</span>
                                 </div>
                                 <div className="border-t border-slate-200 my-2"></div>
                                 <div className="flex justify-between items-center">
@@ -243,20 +251,10 @@ export const NumberSelectionModal: React.FC<NumberSelectionModalProps> = ({
                                     </span>
                                 </div>
                             </div>
-
                             <div className="flex gap-4 w-full max-w-sm">
-                                <button
-                                    onClick={() => setStep('search')}
-                                    className="flex-1 h-12 bg-white text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 font-medium transition-colors"
-                                >
-                                    Voltar
-                                </button>
-                                <button
-                                    onClick={handleConfirmPurchase}
-                                    disabled={loading}
-                                    className="flex-1 h-12 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold shadow-lg shadow-indigo-200 transition-all flex items-center justify-center gap-2 disabled:opacity-70"
-                                >
-                                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (isSandbox ? 'Simular Compra' : 'Confirmar Compra')}
+                                <button onClick={() => setStep('search')} className="flex-1 h-12 bg-white text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 font-medium transition-colors">Voltar</button>
+                                <button onClick={handleConfirmPurchase} disabled={loading} className="flex-1 h-12 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold shadow-lg transition-all flex items-center justify-center gap-2">
+                                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Confirmar Compra'}
                                 </button>
                             </div>
                         </div>
@@ -266,3 +264,5 @@ export const NumberSelectionModal: React.FC<NumberSelectionModalProps> = ({
         </div>
     );
 };
+
+export { NumberSelectionModal };

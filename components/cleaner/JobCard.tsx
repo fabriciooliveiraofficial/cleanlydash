@@ -67,7 +67,7 @@ export const JobCard: React.FC<JobCardProps> = ({ booking, onSelect, onShowDetai
                         </span>
                     </div>
                     <span className={`text-xs font-bold px-2 py-1 rounded-full ${isPaid ? 'bg-emerald-200 text-emerald-800' : 'bg-amber-200 text-amber-800'}`}>
-                        {isPaid ? '✓ PAGO' : 'PENDENTE'}
+                        {isPaid ? 'PAGAMENTO: ✓ PAGO' : 'PAGAMENTO: PENDENTE'}
                     </span>
                 </div>
             )}

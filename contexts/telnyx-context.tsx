@@ -2,7 +2,8 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { TelnyxRTC } from '@telnyx/webrtc'
-import { getTelnyxToken } from '@/app/(dashboard)/telephony/actions.ts'
+import { createClient } from '@/lib/supabase/client'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type CallState = 'idle' | 'connecting' | 'ringing' | 'active' | 'on-hold' | 'error'
 
@@ -19,7 +20,9 @@ interface TelnyxContextType {
 
 const TelnyxContext = createContext<TelnyxContextType | null>(null)
 
-export function TelnyxProvider({ children }: { children: React.ReactNode }) {
+export function TelnyxProvider({ children, supabaseClient }: { children: React.ReactNode, supabaseClient?: SupabaseClient<any, any, any> }) {
+    const defaultClient = createClient()
+    const supabase = supabaseClient || defaultClient
     const [client, setClient] = useState<any>(null)
     const [call, setCall] = useState<any>(null)
     const [callState, setCallState] = useState<CallState>('idle')
@@ -30,28 +33,32 @@ export function TelnyxProvider({ children }: { children: React.ReactNode }) {
     // Inicializar Cliente Telnyx
     useEffect(() => {
         async function initTelnyx() {
-            // In a real app, you might want to only connect when the user clicks "Go Online" or logs in
-            // For now, we connect on mount for simplicity
-            // BYPASS FOR VITE (Client-Side Only)
-            // 'getTelnyxToken' uses Next.js Server Actions which are incompatible with Vite.
-            // For production, this requires a dedicated backend/Edge Function.
-            console.warn('Telephony: Backend required for real calls. Mocking connection.');
-            setCallState('idle');
-            return;
+            setCallState('idle')
 
-            /* 
-            const { token, error } = await getTelnyxToken()
-            if (error || !token) {
-                console.error('Failed to get Telnyx token:', error)
-                setCallState('error')
+            const { data: { session } } = await supabase.auth.getSession()
+            if (!session) {
+                console.log('Telnyx: No session')
                 return
             }
-            ... (rest of code logic would go here if we had a token)
-            */
 
-            /*
+            const { data, error } = await supabase.functions.invoke('telnyx-token')
+
+            if (error || !data?.token) {
+                console.error('Failed to get Telnyx token:', error);
+                // Attempt to log more detail if it's an HTTP error with a response
+                if (error && typeof error === 'object' && 'context' in error) {
+                    try {
+                        const responseBody = await (error as any).context.json();
+                        console.error('Telnyx Function Error Detail:', responseBody);
+                    } catch (e) {
+                        console.error('Could not parse Telnyx Error body');
+                    }
+                }
+                return
+            }
+
             const rtcClient = new TelnyxRTC({
-                login_token: token
+                login_token: data.token
             })
 
             rtcClient.on('telnyx.ready', () => {
@@ -65,8 +72,8 @@ export function TelnyxProvider({ children }: { children: React.ReactNode }) {
             })
 
             rtcClient.on('telnyx.notification', (notification: any) => {
+                const { call: updatedCall } = notification
                 if (notification.type === 'callUpdate') {
-                    const { call: updatedCall } = notification
                     setCall(updatedCall)
 
                     switch (updatedCall.state) {
@@ -92,7 +99,6 @@ export function TelnyxProvider({ children }: { children: React.ReactNode }) {
             } catch (err) {
                 console.error("Connection failed", err)
             }
-            */
         }
 
         initTelnyx()

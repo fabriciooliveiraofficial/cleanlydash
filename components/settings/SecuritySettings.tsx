@@ -165,7 +165,13 @@ export const SecuritySettings: React.FC = () => {
 
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 md:p-8 min-h-[400px]">
                 {activeTab === 'password' && (
-                    <div className="max-w-md space-y-4">
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            handleUpdatePassword();
+                        }}
+                        className="max-w-md space-y-4"
+                    >
                         <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-lg text-amber-800 text-sm mb-4">
                             <Lock size={20} className="shrink-0" />
                             <p>For your security, you will be logged out of other devices after changing your password.</p>
@@ -174,6 +180,8 @@ export const SecuritySettings: React.FC = () => {
                             <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
                             <input
                                 type="password"
+                                name="new-password"
+                                autoComplete="new-password"
                                 className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                                 value={passwordData.newPassword}
                                 onChange={e => setPasswordData(s => ({ ...s, newPassword: e.target.value }))}
@@ -183,19 +191,21 @@ export const SecuritySettings: React.FC = () => {
                             <label className="block text-sm font-medium text-slate-700 mb-1">Confirm New Password</label>
                             <input
                                 type="password"
+                                name="confirm-password"
+                                autoComplete="new-password"
                                 className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
                                 value={passwordData.confirmPassword}
                                 onChange={e => setPasswordData(s => ({ ...s, confirmPassword: e.target.value }))}
                             />
                         </div>
                         <button
-                            onClick={handleUpdatePassword}
+                            type="submit"
                             disabled={passLoading}
                             className="mt-2 bg-indigo-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-indigo-700 transition-colors w-full disabled:opacity-50"
                         >
                             {passLoading ? 'Updating...' : 'Update Password'}
                         </button>
-                    </div>
+                    </form>
                 )}
 
                 {activeTab === 'mfa' && (

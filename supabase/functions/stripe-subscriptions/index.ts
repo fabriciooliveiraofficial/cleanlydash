@@ -1,6 +1,6 @@
-import { serve } from "http/server.ts";
-import { createClient } from "@supabase/supabase-js";
-import Stripe from "stripe";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import Stripe from "https://esm.sh/stripe@14.25.0?target=deno&no-check";
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -23,36 +23,46 @@ serve(async (req) => {
         });
     }
 
+    const diag: any = {
+        has_stripe_key: !!Deno.env.get('STRIPE_SECRET_KEY'),
+        stripe_key_len: Deno.env.get('STRIPE_SECRET_KEY')?.length,
+    };
+
     try {
-        const supabaseClient = createClient(
-            Deno.env.get('SUPABASE_URL') ?? '',
-            Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-            {
-                global: { headers: { Authorization: authHeader ?? '' } },
-                auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
-            }
-        );
+        const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+        const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+
+        const supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
+            global: { headers: { Authorization: authHeader ?? '' } },
+            auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+        });
 
         const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
         if (authError || !user) {
-            return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            return new Response(JSON.stringify({ error: 'Unauthorized', details: authError?.message }), {
                 status: 401,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
         }
 
         const supabaseAdmin = createClient(
-            Deno.env.get('SUPABASE_URL') ?? '',
+            supabaseUrl,
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         );
 
-        const { data: profile } = await supabaseAdmin
+        const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
+        if (!stripeKey) throw new Error("STRIPE_SECRET_KEY is not set in environment variables");
+
+        const { data: profile, error: profileError } = await supabaseAdmin
             .from('tenant_profiles')
             .select('stripe_customer_id')
             .eq('id', user.id)
-            .single();
+            .maybeSingle();
 
-        const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', {
+        diag.profile_found = !!profile;
+        diag.profile_error = profileError?.message;
+
+        const stripe = new Stripe(stripeKey, {
             apiVersion: '2022-11-15',
             httpClient: Stripe.createFetchHttpClient(),
         });
@@ -287,11 +297,12 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error in stripe-subscriptions:", error);
         return new Response(JSON.stringify({
             error: error.message,
-            stack: error.stack
+            stack: error.stack,
+            diag
         }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }

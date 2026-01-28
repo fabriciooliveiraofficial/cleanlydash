@@ -13,7 +13,15 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       VitePWA({
+        strategies: 'injectManifest',
+        srcDir: 'src',
+        filename: 'sw.ts',
         registerType: 'autoUpdate',
+        devOptions: {
+          enabled: true,
+          type: 'module',
+          navigateFallback: 'index.html'
+        },
         includeAssets: ['favicon.png', 'icons/*.png'],
         manifest: {
           name: 'Cleanlydash - Gestão Operacional Airbnb',
@@ -55,6 +63,9 @@ export default defineConfig(({ mode }) => {
       'process.env.NEXT_PUBLIC_SUPABASE_URL': JSON.stringify(env.NEXT_PUBLIC_SUPABASE_URL),
       'process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY': JSON.stringify(env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
     },
+    ssr: {
+      noExternal: ['rrweb', 'rrweb-player', 'fflate'],
+    },
     build: {
       rollupOptions: {
         output: {
@@ -71,6 +82,7 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
+        'worker_threads': path.resolve(__dirname, 'empty-module.js'),
       }
     }
   };

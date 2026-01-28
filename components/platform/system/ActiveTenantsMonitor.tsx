@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { createClient } from '../../../lib/supabase/client';
+import { createPlatformClient } from '../../../lib/supabase/platform-client';
 import { Loader2, Monitor, Users, Building2, RefreshCw } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { toast } from 'sonner';
@@ -19,7 +19,7 @@ interface TenantSessionSummary {
 export const ActiveTenantsMonitor: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [tenants, setTenants] = useState<TenantSessionSummary[]>([]);
-    const supabase = createClient();
+    const supabase = createPlatformClient();
 
     const fetchSessions = async () => {
         setLoading(true);

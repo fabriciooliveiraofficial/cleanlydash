@@ -753,7 +753,11 @@ export const Bookings: React.FC = () => {
                   <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
                     <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Status</label>
                     <div className="mt-1">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${selectedBooking?.status === 'confirmed' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold capitalize ${selectedBooking?.status === 'confirmed' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+                          selectedBooking?.status === 'pending' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                            selectedBooking?.status === 'completed' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                              selectedBooking?.status === 'cancelled' ? 'bg-orange-100 text-orange-800 border border-orange-200' :
+                                'bg-slate-100 text-slate-800'
                         }`}>
                         {selectedBooking?.status}
                       </span>

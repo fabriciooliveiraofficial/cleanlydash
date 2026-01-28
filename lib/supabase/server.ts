@@ -24,7 +24,7 @@ export function createClient() {
           try {
             cookieStore.set({ name, value, ...options })
           } catch (error) {
-            // Silencia erro se chamado em Server Component (apenas leitura permitida)
+            // Silencia erro se chamado em Server Component
           }
         },
         remove(name: string, options: CookieOptions) {
@@ -35,6 +35,13 @@ export function createClient() {
           }
         },
       },
+      cookieOptions: {
+        name: 'sb-tenant-auth-token',
+        lifetime: 60 * 60 * 24 * 365,
+        domain: '',
+        path: '/',
+        sameSite: 'lax'
+      }
     }
   )
 }

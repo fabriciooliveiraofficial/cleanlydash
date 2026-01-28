@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from '../../ui/button';
 import { ExternalLink, CheckCircle, Loader2 } from 'lucide-react';
-import { createClient } from '../../../lib/supabase/client';
+import { createPlatformClient } from '../../../lib/supabase/platform-client';
 import { toast } from 'sonner';
 
 interface ConnectStripeButtonProps {
@@ -11,7 +11,7 @@ interface ConnectStripeButtonProps {
 
 export const ConnectStripeButton: React.FC<ConnectStripeButtonProps> = ({ connectedAccountId, onConnect }) => {
     const [loading, setLoading] = useState(false);
-    const supabase = createClient();
+    const supabase = createPlatformClient();
 
     const handleConnect = async () => {
         setLoading(true);

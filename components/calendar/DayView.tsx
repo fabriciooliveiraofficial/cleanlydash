@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { format, isSameDay, parseISO, isBefore, addHours } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Clock, ClipboardList } from 'lucide-react';
 import { Badge } from '../ui/badge';
 
 interface Booking {
@@ -48,6 +48,7 @@ export const DayView: React.FC<DayViewProps> = ({
     // Drag state (HTML5)
     const [draggedBooking, setDraggedBooking] = useState<Booking | null>(null);
     const [dragOverHour, setDragOverHour] = useState<number | null>(null);
+    const [dragOverMinute, setDragOverMinute] = useState<number>(0);
 
     // Resize state
     const [resizingBooking, setResizingBooking] = useState<Booking | null>(null);
@@ -154,13 +155,18 @@ export const DayView: React.FC<DayViewProps> = ({
         e.stopPropagation();
         e.dataTransfer.dropEffect = 'move';
 
+        const rect = e.currentTarget.getBoundingClientRect();
+        const offsetY = e.clientY - rect.top;
+        const rawMinutes = (offsetY / HOUR_HEIGHT) * 60;
+        const snappedMinutes = Math.round(rawMinutes / 1); // 1-min precision
+
         if (draggedBooking) {
             const originalStart = parseISO(draggedBooking.start_date);
             const originalEnd = parseISO(draggedBooking.end_date);
             const duration = originalEnd.getTime() - originalStart.getTime();
 
             const newStart = new Date(currentDate);
-            newStart.setHours(hour, originalStart.getMinutes(), 0, 0);
+            newStart.setHours(hour, snappedMinutes, 0, 0);
             const newEnd = new Date(newStart.getTime() + duration);
 
             if (checkConflict(draggedBooking.id, draggedBooking.assigned_to, newStart, newEnd)) {
@@ -171,6 +177,15 @@ export const DayView: React.FC<DayViewProps> = ({
         }
 
         setDragOverHour(hour);
+        setDragOverMinute(snappedMinutes);
+
+        // Auto-scroll
+        if (gridRef.current) {
+            const container = gridRef.current;
+            const threshold = 100;
+            if (e.clientY < container.getBoundingClientRect().top + threshold) container.scrollTop -= 10;
+            if (e.clientY > container.getBoundingClientRect().bottom - threshold) container.scrollTop += 10;
+        }
     };
 
     const handleDragLeave = () => {
@@ -187,8 +202,13 @@ export const DayView: React.FC<DayViewProps> = ({
             const originalEnd = parseISO(draggedBooking.end_date);
             const duration = originalEnd.getTime() - originalStart.getTime();
 
+            const rect = e.currentTarget.getBoundingClientRect();
+            const offsetY = e.clientY - rect.top;
+            const rawMinutes = (offsetY / HOUR_HEIGHT) * 60;
+            const snappedMinutes = Math.round(rawMinutes / 1); // 1-min precision
+
             const newStart = new Date(currentDate);
-            newStart.setHours(hour, originalStart.getMinutes(), 0, 0);
+            newStart.setHours(hour, snappedMinutes, 0, 0);
             const newEnd = new Date(newStart.getTime() + duration);
 
             if (!checkConflict(draggedBooking.id, draggedBooking.assigned_to, newStart, newEnd)) {
@@ -454,17 +474,46 @@ export const DayView: React.FC<DayViewProps> = ({
                                     </div>
                                 )}
 
-                                {/* Drop indicator */}
-                                {isDragOverThis && !hasConflict && (
-                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
-                                        <span className="text-sm text-indigo-600 font-bold">Soltar aqui</span>
+                                {/* Drop indicator & Ghost Preview */}
+                                {isDragOverThis && !hasConflict && draggedBooking && (
+                                    <div
+                                        className="absolute left-1 right-1 rounded-lg pointer-events-none z-[100] border-2 border-indigo-400 bg-indigo-500/10 shadow-xl overflow-hidden flex flex-col p-2"
+                                        style={{
+                                            top: `${dragOverMinute / 60 * HOUR_HEIGHT}px`,
+                                            height: `${(parseISO(draggedBooking.end_date).getTime() - parseISO(draggedBooking.start_date).getTime()) / (1000 * 60 * 60) * HOUR_HEIGHT}px`
+                                        }}
+                                    >
+                                        <div className="flex items-center gap-1.5 mb-1">
+                                            <Badge className="h-4 px-1.5 text-[8px] bg-indigo-600 text-white border-0 shadow-sm">
+                                                PREVISÃO
+                                            </Badge>
+                                            <div className="bg-slate-900/90 text-[10px] text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                                                <Clock size={10} className="text-amber-400" />
+                                                {hour}:{dragOverMinute.toString().padStart(2, '0')}
+                                            </div>
+                                        </div>
+                                        <span className="text-xs font-black text-indigo-900 border-b border-indigo-200 truncate leading-none pb-1 mb-1">
+                                            {draggedBooking.summary}
+                                        </span>
+                                        <div className="flex items-center gap-1 text-[10px] text-indigo-700/70 font-bold">
+                                            <ClipboardList size={10} />
+                                            <span>Solte para confirmar</span>
+                                        </div>
                                     </div>
+                                )}
+
+                                {/* Highlight for hover Cell (without booking) */}
+                                {isDragOverThis && !draggedBooking && (
+                                    <div className="absolute inset-0 bg-indigo-100/30 ring-2 ring-indigo-400/50 ring-inset z-30" />
                                 )}
 
                                 {/* Conflict indicator */}
                                 {hasConflict && (
-                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
-                                        <span className="text-sm text-red-600 font-bold">⚠️ Conflito</span>
+                                    <div className="absolute inset-0 bg-rose-100 ring-4 ring-rose-500 ring-inset flex items-center justify-center pointer-events-none z-30 animate-pulse">
+                                        <div className="bg-rose-600 text-white text-xs font-black px-3 py-1.5 rounded-full shadow-2xl flex items-center gap-2 border-2 border-white/20">
+                                            <AlertCircle size={14} />
+                                            CONFLITO DETECTADO
+                                        </div>
                                     </div>
                                 )}
 
@@ -508,7 +557,19 @@ export const DayView: React.FC<DayViewProps> = ({
                                                     <div className="text-sm font-bold">
                                                         {format(parseISO(booking.start_date), 'HH:mm')} - {format(parseISO(booking.end_date), 'HH:mm')}
                                                     </div>
-                                                    <Badge className="px-2 py-0 text-[10px] uppercase font-bold bg-white/20 border-white text-white" variant="outline">
+                                                    <Badge
+                                                        className="px-2 py-0 text-[10px] uppercase font-bold bg-white/20"
+                                                        style={{
+                                                            borderColor:
+                                                                booking.status === 'confirmed' ? '#3b82f6' :
+                                                                    booking.status === 'pending' ? '#f59e0b' :
+                                                                        booking.status === 'completed' ? '#22c55e' :
+                                                                            booking.status === 'cancelled' ? '#f97316' :
+                                                                                'white',
+                                                            color: 'white' // Text is white on colored background in DayView
+                                                        }}
+                                                        variant="outline"
+                                                    >
                                                         {booking.status}
                                                     </Badge>
                                                 </div>

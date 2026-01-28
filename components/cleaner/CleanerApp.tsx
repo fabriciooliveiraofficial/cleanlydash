@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { createClient } from '../../lib/supabase/client';
+import { createCleanerClient } from '../../lib/supabase/cleaner-client';
 import { JobCard } from './JobCard';
 import { ActiveJobView } from './ActiveJobView';
 import { EarningsTab } from './EarningsTab';
-import { LogOut, RefreshCw, UserCheck, Settings, Key, Briefcase, DollarSign } from 'lucide-react';
+import { LogOut, RefreshCw, UserCheck, Settings, Key, Briefcase, DollarSign, BellOff, Navigation } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR, enUS, es } from 'date-fns/locale';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +16,8 @@ import { CleanerNotificationsDrawer } from './CleanerNotificationsDrawer';
 import { DelayModal } from './DelayModal';
 import { Bell } from 'lucide-react';
 import { PWAInstallPrompt } from '../PWAInstallPrompt';
+import { useNotifications } from '../../hooks/use-notifications';
+import { Button } from '../ui/button';
 
 interface CleanerAppProps {
     userName?: string;
@@ -33,9 +35,40 @@ export const CleanerApp: React.FC<CleanerAppProps> = ({ userName, userId: initia
     const [detailsJob, setDetailsJob] = useState<any | null>(null);
     const [showNotifications, setShowNotifications] = useState(false);
     const [selectedDelayJob, setSelectedDelayJob] = useState<any>(null);
+    const [locationPermission, setLocationPermission] = useState<'granted' | 'denied' | 'prompt' | 'unknown'>('unknown');
 
-    const supabase = createClient();
+    // Check browser geolocation permission on mount and listen for changes
+    useEffect(() => {
+        const checkPermission = async () => {
+            if (!navigator.permissions) {
+                // Fallback for browsers without Permissions API
+                setLocationPermission('unknown');
+                return;
+            }
+            try {
+                const result = await navigator.permissions.query({ name: 'geolocation' });
+                setLocationPermission(result.state as 'granted' | 'denied' | 'prompt');
+
+                // Listen for permission changes
+                result.addEventListener('change', () => {
+                    setLocationPermission(result.state as 'granted' | 'denied' | 'prompt');
+                    if (result.state === 'granted') {
+                        toast.success('📍 Localização ativada!', { id: 'loc-granted' });
+                    } else if (result.state === 'denied') {
+                        toast.error('📍 Localização bloqueada pelo navegador.', { id: 'loc-denied' });
+                    }
+                });
+            } catch (e) {
+                console.error('[Permissions] Error checking geolocation:', e);
+                setLocationPermission('unknown');
+            }
+        };
+        checkPermission();
+    }, []);
+
+    const supabase = createCleanerClient(); // ISOLATED CLEANER CLIENT
     const { t, i18n } = useTranslation();
+    const { isSubscribed, subscribe, checkSubscription, loading: notifLoading } = useNotifications({ supabaseClient: supabase });
 
     const handleNotifyDelay = async (minutes: number) => {
         if (!selectedDelayJob) return;
@@ -95,15 +128,18 @@ export const CleanerApp: React.FC<CleanerAppProps> = ({ userName, userId: initia
 
     const fetchJobs = async () => {
         setLoading(true);
+
+        // Use date-only format to avoid timezone issues with ISO string
         const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD format
 
-        const nextWeek = new Date(today);
-        nextWeek.setDate(today.getDate() + 5);
-        nextWeek.setHours(23, 59, 59, 999);
+        console.log('[CleanerApp] Fetching jobs for cleaner:', userId);
+        console.log('[CleanerApp] Today (local):', today.toLocaleDateString('pt-BR'));
+        console.log('[CleanerApp] Today (ISO date):', todayStr);
 
-        // Fetch bookings for Today + Next 5 Days (Assigned to this cleaner)
-        const { data } = await supabase
+        // Fetch bookings for TODAY ONLY (Assigned to this cleaner)
+        // Filter only pending/in_progress jobs (exclude completed/cancelled)
+        const { data, error } = await supabase
             .from('bookings')
             .select(`
                 *,
@@ -111,14 +147,26 @@ export const CleanerApp: React.FC<CleanerAppProps> = ({ userName, userId: initia
                 services ( name )
             `)
             .eq('assigned_to', userId) // FILTER BY CLEANER
-            .gte('start_date', today.toISOString())
-            .lte('start_date', nextWeek.toISOString())
+            .gte('start_date', todayStr) // start_date >= today
+            .lt('start_date', todayStr + 'T23:59:59') // start_date < end of today
+            .in('status', ['pending', 'in_progress', 'confirmed', 'completed']) // Include completed for today's history
             .order('start_date', { ascending: true }); // Primary sort by date
 
-        // Sort: Active/Pending first, Completed last, ordered by date
+        if (error) {
+            console.error('[CleanerApp] Error fetching jobs:', error);
+        }
+
+        // Debug: Log each job's date
+        console.log('[CleanerApp] Fetched jobs:', data?.length || 0);
+        data?.forEach((job: any, i: number) => {
+            const jobDate = new Date(job.start_date);
+            console.log(`[CleanerApp] Job ${i + 1}: ${job.customers?.name} | Date: ${jobDate.toLocaleDateString('pt-BR')} | Status: ${job.status} | Raw: ${job.start_date}`);
+        });
+
+        // Sort: Active/In-Progress first, then by date
         const sorted = ((data as any[]) || []).sort((a, b) => {
-            if (a.status === 'completed' && b.status !== 'completed') return 1;
-            if (a.status !== 'completed' && b.status === 'completed') return -1;
+            if (a.status === 'in_progress' && b.status !== 'in_progress') return -1;
+            if (a.status !== 'in_progress' && b.status === 'in_progress') return 1;
             return new Date(a.start_date).getTime() - new Date(b.start_date).getTime();
         });
 
@@ -128,6 +176,7 @@ export const CleanerApp: React.FC<CleanerAppProps> = ({ userName, userId: initia
 
     useEffect(() => {
         fetchJobs();
+        checkSubscription();
     }, []);
 
     const handleLogout = async () => {
@@ -142,7 +191,7 @@ export const CleanerApp: React.FC<CleanerAppProps> = ({ userName, userId: initia
     };
 
     if (activeJob) {
-        return <ActiveJobView job={activeJob} onBack={() => setActiveJob(null)} />;
+        return <ActiveJobView job={activeJob} onBack={() => { setActiveJob(null); fetchJobs(); }} />;
     }
 
     return (
@@ -179,6 +228,74 @@ export const CleanerApp: React.FC<CleanerAppProps> = ({ userName, userId: initia
                             </div>
                             {showSettingsMenu && (
                                 <div className="absolute right-0 top-12 bg-white rounded-xl shadow-lg border border-slate-100 py-2 min-w-[180px] z-50">
+                                    {!isSubscribed && (
+                                        <div className="px-4 py-2 border-b border-slate-100">
+                                            <p className="text-xs text-slate-500 mb-2">Notificações desativadas</p>
+                                            <Button
+                                                onClick={() => subscribe('cleaner')}
+                                                size="sm"
+                                                className="w-full h-8 text-xs bg-indigo-600 hover:bg-indigo-700"
+                                            >
+                                                Ativar Notificações
+                                            </Button>
+                                        </div>
+                                    )}
+                                    {/* Location Permission Toggle */}
+                                    <div className="px-4 py-3 border-b border-slate-100">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <Navigation size={16} className={locationPermission === 'granted' ? 'text-emerald-500' : locationPermission === 'denied' ? 'text-red-500' : 'text-slate-400'} />
+                                                <span className="text-sm font-medium text-slate-700">Localização</span>
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    if (locationPermission === 'granted') {
+                                                        // Already granted - show toast with instructions to revoke
+                                                        toast.info('📍 Para desativar, acesse as configurações do navegador e remova a permissão de localização deste site.', {
+                                                            id: 'loc-revoke-info',
+                                                            duration: 8000
+                                                        });
+                                                    } else {
+                                                        // Not granted - request permission
+                                                        navigator.geolocation.getCurrentPosition(
+                                                            () => {
+                                                                setLocationPermission('granted');
+                                                                toast.success('📍 Localização ativada com sucesso!', { id: 'loc-enabled' });
+                                                            },
+                                                            (err) => {
+                                                                console.error('[Geo] Permission request failed:', err);
+                                                                if (err.code === 1) {
+                                                                    setLocationPermission('denied');
+                                                                    toast.error('📍 Localização negada. Para ativar, clique no ícone de cadeado na barra de endereços e permita o acesso.', {
+                                                                        id: 'loc-denied',
+                                                                        duration: 10000
+                                                                    });
+                                                                } else {
+                                                                    toast.error('📍 Não foi possível obter localização. Tente novamente.', { id: 'loc-error' });
+                                                                }
+                                                            },
+                                                            { enableHighAccuracy: true, timeout: 15000 }
+                                                        );
+                                                    }
+                                                }}
+                                                className={`relative w-12 h-6 rounded-full transition-colors ${locationPermission === 'granted' ? 'bg-emerald-500' :
+                                                    locationPermission === 'denied' ? 'bg-red-400' : 'bg-slate-300'
+                                                    }`}
+                                            >
+                                                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${locationPermission === 'granted' ? 'translate-x-7' : 'translate-x-1'
+                                                    }`} />
+                                            </button>
+                                        </div>
+                                        {/* Status text */}
+                                        <p className={`text-xs mt-1 ${locationPermission === 'granted' ? 'text-emerald-600' :
+                                            locationPermission === 'denied' ? 'text-red-500' : 'text-slate-400'
+                                            }`}>
+                                            {locationPermission === 'granted' && '✓ Ativo - Check-in por GPS disponível'}
+                                            {locationPermission === 'denied' && '✗ Bloqueado - Use check-in manual'}
+                                            {locationPermission === 'prompt' && 'Toque para ativar o GPS'}
+                                            {locationPermission === 'unknown' && 'Status desconhecido'}
+                                        </p>
+                                    </div>
                                     <button
                                         onClick={() => { setShowPasswordModal(true); setShowSettingsMenu(false); }}
                                         className="w-full px-4 py-3 text-left flex items-center gap-3 hover:bg-slate-50 text-sm font-medium text-slate-700"

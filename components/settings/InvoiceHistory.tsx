@@ -142,24 +142,20 @@ export const InvoiceHistory: React.FC = () => {
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
-                                                    asChild
                                                     className="text-indigo-600 hover:text-indigo-800"
+                                                    onClick={() => window.open(invoice.invoice_pdf, '_blank')}
                                                 >
-                                                    <a href={invoice.invoice_pdf} target="_blank" rel="noopener noreferrer">
-                                                        <Download size={14} />
-                                                    </a>
+                                                    <Download size={14} />
                                                 </Button>
                                             )}
                                             {invoice.hosted_invoice_url && (
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
-                                                    asChild
                                                     className="text-slate-500 hover:text-slate-700"
+                                                    onClick={() => window.open(invoice.hosted_invoice_url, '_blank')}
                                                 >
-                                                    <a href={invoice.hosted_invoice_url} target="_blank" rel="noopener noreferrer">
-                                                        <ExternalLink size={14} />
-                                                    </a>
+                                                    <ExternalLink size={14} />
                                                 </Button>
                                             )}
                                         </div>

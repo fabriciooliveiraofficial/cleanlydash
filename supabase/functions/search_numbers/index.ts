@@ -8,142 +8,148 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-    // Handle CORS preflight requests
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders })
     }
 
+    let diag: any = {
+        stage: "start",
+        platform_keys: [],
+        telnyx_rows: []
+    };
+
     try {
         const authHeader = req.headers.get('Authorization');
         if (!authHeader) {
-            throw new Error('Missing Authorization Header');
+            diag.error = "Missing Authorization Header";
+            throw new Error(diag.error);
         }
 
-        // Initialize Supabase Client
+        diag.auth_header_start = authHeader.substring(0, 15) + "...";
+        const token = authHeader.replace('Bearer ', '');
+        diag.token_len = token.length;
+        diag.token_hint = token.substring(0, 10) + "..." + token.substring(token.length - 10);
+
         const supabaseClient = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
             Deno.env.get('SUPABASE_ANON_KEY') ?? '',
             { global: { headers: { Authorization: authHeader } } }
         )
 
-        // Verify User
-        const token = authHeader.replace('Bearer ', '');
         const { data: { user }, error: userError } = await supabaseClient.auth.getUser(token)
-
         if (userError || !user) {
-            throw new Error('Unauthorized: ' + (userError?.message || 'No user'));
+            diag.auth_error = userError?.message || "User not found";
+            diag.auth_status = userError?.status || 401;
+            console.error("Auth failed:", diag.auth_error);
+            return new Response(JSON.stringify({
+                error: "Unauthorized: " + diag.auth_error,
+                debug: diag
+            }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 401
+            });
         }
 
-        // Parse Request Body for Filters
+        diag.current_user_id = user.id;
+
         const { country_code, state, city, area_code, sandbox } = await req.json();
 
-        if (!country_code) {
-            throw new Error('Country code is required');
+        const supabaseAdmin = createClient(
+            Deno.env.get('SUPABASE_URL') ?? '',
+            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+        )
+
+        // Resolve Key (Priority: Database Platform Settings -> System Env -> User Settings)
+        let telnyxApiKey: string | undefined = undefined;
+
+        // 1. FIRST: Try Platform Settings (Admin-configured key in DB)
+        const { data: platformKeyData, error: platformKeyError } = await supabaseAdmin
+            .from('platform_settings')
+            .select('value, created_at')
+            .eq('key', 'TELNYX_API_KEY')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        diag.platform_query_error = platformKeyError?.message;
+        diag.platform_key_found = !!platformKeyData?.value;
+
+        if (platformKeyData?.value && platformKeyData.value.length > 20) {
+            telnyxApiKey = platformKeyData.value.trim();
+            diag.resolved_from = "platform_settings_db";
         }
 
-        const telnyxApiKey = Deno.env.get('TELNYX_MASTER_KEY');
-
-        // MOCK / SANDBOX FALLBACK
-        if (sandbox || !telnyxApiKey) {
-            console.log("Returning MOCK numbers (Sandbox/NoKey mode)");
-            const mockNumbers = [];
-            const count = 5;
-            for (let i = 0; i < count; i++) {
-                const random = Math.floor(Math.random() * 10000);
-                let num = '';
-                let region = '';
-                let ndc = '';
-
-                if (country_code === 'BR') {
-                    ndc = area_code || '11';
-                    num = `+55${ndc}9${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
-                    region = state || 'SP';
-                } else {
-                    // Default US
-                    ndc = area_code || '212';
-                    num = `+1${ndc}${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
-                    region = state || 'NY';
-                }
-
-                mockNumbers.push({
-                    phone_number: num,
-                    national_destination_code: ndc,
-                    region_information: {
-                        region_name: region,
-                        region_code: region
-                    },
-                    cost_information: {
-                        upfront_cost: "1.00",
-                        monthly_cost: "1.00",
-                        currency: "USD"
-                    }
-                });
+        // 2. FALLBACK: Try Environment Variables
+        if (!telnyxApiKey || telnyxApiKey.length < 20) {
+            const envKey = Deno.env.get('TELNYX_MASTER_KEY') || Deno.env.get('TELNYX_API_KEY');
+            if (envKey && envKey.length > 20) {
+                telnyxApiKey = envKey;
+                diag.resolved_from = "environment_variable";
             }
-
-            return new Response(
-                JSON.stringify({ data: mockNumbers }),
-                { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
-            );
         }
 
-        if (!telnyxApiKey) {
-            throw new Error('Server misconfiguration: Missing Telnyx API Key');
+        // 2. Fallback to User Settings
+        if (!telnyxApiKey || telnyxApiKey.length < 20) {
+            const { data: settings } = await supabaseAdmin.from('telnyx_settings').select('*');
+            const myRow = settings?.find(s => s.user_id === user.id);
+            const fallbackRow = settings?.find(s => s.api_key || s.managed_api_key);
+            const targetRow = myRow || fallbackRow;
+
+            if (targetRow) {
+                if (targetRow.api_key && targetRow.api_key.length > 20) {
+                    telnyxApiKey = targetRow.api_key.trim();
+                    diag.resolved_from = "row_api_key";
+                } else if (targetRow.managed_api_key && targetRow.managed_api_key.length > 20) {
+                    telnyxApiKey = targetRow.managed_api_key.trim();
+                    diag.resolved_from = "row_managed_key";
+                }
+            }
         }
 
-        // Build Telnyx API URL
+        if (telnyxApiKey) {
+            diag.final_key_len = telnyxApiKey.length;
+            diag.final_key_mask = `${telnyxApiKey.substring(0, 5)}...${telnyxApiKey.substring(telnyxApiKey.length - 5)}`;
+            diag.key_fingerprint = telnyxApiKey.substring(0, 5) + "...";
+        }
+
+        if (sandbox || !telnyxApiKey || telnyxApiKey.length < 20) {
+            return new Response(JSON.stringify({
+                data: [{
+                    phone_number: "+12125550000",
+                    national_destination_code: "212",
+                    region_information: { region_name: "Mock City (Sandbox/No Valid Key)", region_code: "MC" },
+                    cost_information: { upfront_cost: "0", monthly_cost: "0", currency: "USD" }
+                }],
+                debug: diag
+            }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        // Real Search
         const url = new URL('https://api.telnyx.com/v2/available_phone_numbers');
-        url.searchParams.append('filter[country_code]', country_code);
-        url.searchParams.append('filter[limit]', '10'); // Limit to 10 results
-        url.searchParams.append('filter[features][]', 'sms'); // Ensure SMS capability
-        url.searchParams.append('filter[features][]', 'voice'); // Ensure Voice capability
-
-        if (state) {
-            url.searchParams.append('filter[administrative_area]', state);
-        }
-        if (city) {
-            url.searchParams.append('filter[locality]', city);
-        }
-        if (area_code) {
-            // Telnyx recommendation: if searching by area code, map it to national_destination_code
-            // Or use starts_with if NDC is not strict.
-            // Using national_destination_code for accuracy if country supports it (US/CA/BR generally do).
-            url.searchParams.append('filter[national_destination_code]', area_code);
-        }
-
-        console.log(`Searching numbers at: ${url.toString()}`);
+        url.searchParams.append('filter[country_code]', country_code || 'US');
+        url.searchParams.append('filter[limit]', '5');
+        url.searchParams.append('filter[reservable]', 'true');
+        url.searchParams.append('filter[exclude_held_numbers]', 'true');
+        if (state) url.searchParams.append('filter[administrative_area]', state);
+        if (area_code) url.searchParams.append('filter[national_destination_code]', area_code);
 
         const response = await fetch(url.toString(), {
             method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${telnyxApiKey}`,
-                'Accept': 'application/json'
-            }
+            headers: { 'Authorization': `Bearer ${telnyxApiKey}`, 'Accept': 'application/json' }
         });
 
+        const resultData = await response.json();
         if (!response.ok) {
-            const errorData = await response.json();
-            console.error('Telnyx API Error:', errorData);
-            throw new Error(errorData?.errors?.[0]?.detail || 'Failed to fetch numbers from Telnyx');
+            return new Response(JSON.stringify({
+                error: 'Telnyx search failed',
+                debug: diag,
+                telnyx_error: resultData
+            }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
         }
 
-        const data = await response.json();
-
-        return new Response(
-            JSON.stringify(data),
-            {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                status: 200,
-            }
-        )
+        return new Response(JSON.stringify({ ...resultData, debug: diag }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     } catch (error: any) {
-        console.error('Error in search_numbers:', error);
-        return new Response(
-            JSON.stringify({ error: error.message }),
-            {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                status: 400,
-            }
-        )
+        return new Response(JSON.stringify({ error: error.message, debug: diag }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
     }
 })

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Megaphone, Send, AlertTriangle, Info, CheckCircle } from 'lucide-react';
-import { createClient } from '../../../lib/supabase/client';
+import { createPlatformClient } from '../../../lib/supabase/platform-client';
 import { toast } from 'sonner';
 
 export const BroadcastCenter: React.FC = () => {
@@ -10,7 +10,7 @@ export const BroadcastCenter: React.FC = () => {
     const [audience, setAudience] = useState<'all' | 'paid' | 'free'>('all');
     const [duration, setDuration] = useState('24'); // hours
 
-    const supabase = createClient();
+    const supabase = createPlatformClient();
 
     const handleSendBroadcast = async () => {
         if (!title || !message) {

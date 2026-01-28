@@ -5,6 +5,8 @@ import { Button } from './ui/button.tsx';
 import { Input } from './ui/input.tsx';
 import { InternationalPhoneInput } from './ui/InternationalPhoneInput.tsx';
 import { createClient } from '../lib/supabase/client.ts';
+import { useSessionManager } from '../hooks/use-session-manager';
+import { useAuthOrchestrator } from '../hooks/use-auth-orchestrator';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { LanguageSwitcher } from './language-switcher';
@@ -37,6 +39,8 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
   const [selectedPlanId, setSelectedPlanId] = useState<string>(selectedPlan || '');
 
   const supabase = createClient();
+  const { saveSessionForRoute } = useSessionManager();
+  const { signInUnified } = useAuthOrchestrator();
 
   useEffect(() => {
     const fetchPlans = async () => {
@@ -65,12 +69,19 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
 
     try {
       if (mode === 'login') {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: formData.email,
-          password: formData.password
-        });
-        if (error) throw error;
-        onAuthenticated();
+        const result = await signInUnified(formData.email, formData.password);
+
+        if (result.success) {
+          // Intelligent Routing based on detected role
+          if (result.route === 'platform') {
+            window.location.href = '/platform';
+          } else if (result.route === 'cleaner') {
+            window.location.href = '/cleaner';
+          } else {
+            // Default Tenant Dashboard
+            onAuthenticated();
+          }
+        }
       } else if (mode === 'forgot_password') {
         const { error } = await supabase.auth.resetPasswordForEmail(formData.email, {
           redirectTo: `${window.location.origin}/auth/update-password`,
@@ -345,6 +356,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
                     <Mail className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                     <Input
                       type="email"
+                      autoComplete="email"
                       placeholder={t('auth.email_placeholder')}
                       className="pl-9 h-11"
                       value={formData.email}
@@ -383,6 +395,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
                       <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                       <Input
                         type={showPassword ? "text" : "password"}
+                        autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                         placeholder={t('auth.password_placeholder')}
                         className="pl-9 pr-10 h-11"
                         value={formData.password}
@@ -407,6 +420,7 @@ export const AuthFlow: React.FC<AuthFlowProps> = ({ onBack, onAuthenticated, sel
                       <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                       <Input
                         type={showConfirmPassword ? "text" : "password"}
+                        autoComplete="new-password"
                         placeholder={t('auth.password_placeholder')}
                         className="pl-9 pr-10 h-11"
                         value={formData.confirmPassword}

@@ -9,10 +9,10 @@ import {
     Loader2
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { createClient } from '../../../lib/supabase/client';
+import { createPlatformClient } from '../../../lib/supabase/platform-client';
 
 export const FinancialCommand: React.FC = () => {
-    const supabase = createClient();
+    const supabase = createPlatformClient();
     const [loading, setLoading] = useState(true);
     const [loadingTx, setLoadingTx] = useState(false);
     const [transactions, setTransactions] = useState<any[]>([]);

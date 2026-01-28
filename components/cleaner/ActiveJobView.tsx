@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, MapPin, Camera, CheckSquare, Clock, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, MapPin, Camera, CheckSquare, Clock, AlertTriangle, Navigation } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { getDistance } from '../../lib/route-optimizer';
 import { useTranslation } from 'react-i18next';
-import { createClient } from '../../lib/supabase/client';
+import { createCleanerClient } from '../../lib/supabase/cleaner-client';
 
 interface ActiveJobViewProps {
     job: any;
@@ -14,18 +14,70 @@ interface ActiveJobViewProps {
 
 export const ActiveJobView: React.FC<ActiveJobViewProps> = ({ job, onBack }) => {
     const getInitialStep = () => {
-        if (job.status === 'in_progress') return 'inspect';
-        if (job.status === 'completed') return 'finish';
+        console.log('[ActiveJobView] Job status:', job.status);
+        if (job.status === 'in_progress') {
+            console.log('[ActiveJobView] Starting at: inspect (skipping check-in)');
+            return 'inspect';
+        }
+        if (job.status === 'completed') {
+            console.log('[ActiveJobView] Starting at: finish');
+            return 'finish';
+        }
+        console.log('[ActiveJobView] Starting at: arrive (check-in)');
         return 'arrive';
     };
 
     const [step, setStep] = useState<'arrive' | 'inspect' | 'clean' | 'finish'>(getInitialStep());
     const [loadingLocation, setLoadingLocation] = useState(false);
     const { t } = useTranslation();
-    const supabase = createClient();
+    const supabase = createCleanerClient(); // Use Cleaner's isolated client
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [inventory, setInventory] = useState<any[]>([]);
     const [fetchingInventory, setFetchingInventory] = useState(false);
+    const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const timerRef = useRef<NodeJS.Timeout | null>(null);
+    const [geoPermission, setGeoPermission] = useState<'granted' | 'denied' | 'prompt' | 'unknown'>('unknown');
+
+    // Check geolocation permission on mount
+    useEffect(() => {
+        if ('permissions' in navigator) {
+            navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+                console.log('[Geo] Permission status:', result.state);
+                setGeoPermission(result.state as any);
+                result.onchange = () => {
+                    console.log('[Geo] Permission changed to:', result.state);
+                    setGeoPermission(result.state as any);
+                };
+            }).catch(() => setGeoPermission('unknown'));
+        }
+    }, []);
+
+    // Timer effect - starts when entering 'clean' step
+    useEffect(() => {
+        if (step === 'clean') {
+            console.log('[Timer] Starting timer...');
+            timerRef.current = setInterval(() => {
+                setElapsedSeconds(prev => prev + 1);
+            }, 1000);
+        } else {
+            if (timerRef.current) {
+                console.log('[Timer] Stopping timer. Elapsed:', elapsedSeconds, 'seconds');
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+            }
+        }
+        return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
+        };
+    }, [step]);
+
+    // Format seconds to HH:MM:SS
+    const formatTime = (totalSeconds: number) => {
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    };
 
     useEffect(() => {
         const fetchInventory = async () => {
@@ -139,22 +191,37 @@ export const ActiveJobView: React.FC<ActiveJobViewProps> = ({ job, onBack }) => 
     };
 
     const handleCheckIn = () => {
+        console.log('[CheckIn] Button clicked');
+        console.log('[CheckIn] Job data:', job);
+        console.log('[CheckIn] Customer coords:', job.customers?.latitude, job.customers?.longitude);
+
+        // Prevent duplicate calls while loading
+        if (loadingLocation) {
+            console.log('[CheckIn] Already loading, ignoring duplicate call');
+            return;
+        }
+
         if (!navigator.geolocation) {
+            console.error('[CheckIn] Geolocation not supported');
             toast.error(t('geo.error_support', { defaultValue: "GPS not supported by this browser." }));
             return;
         }
 
         setLoadingLocation(true);
-        toast.info(t('geo.requesting', { defaultValue: "Requesting location access..." }));
+        console.log('[CheckIn] Requesting geolocation...');
 
+        // No need for toast here - UI shows loading state
         navigator.geolocation.getCurrentPosition(
             async (position) => {
                 const { latitude, longitude } = position.coords;
+                console.log('[CheckIn] User location:', latitude, longitude);
+
                 // Target coordinates
                 const targetLat = job.customers?.latitude;
                 const targetLng = job.customers?.longitude;
 
                 if (!targetLat || !targetLng) {
+                    console.warn('[CheckIn] No geofence coordinates for this property');
                     toast.error(t('geo.no_coordinates', {
                         defaultValue: "This property has no Geofence set. Please use the Manual Check-in option below for audit purposes."
                     }));
@@ -163,35 +230,43 @@ export const ActiveJobView: React.FC<ActiveJobViewProps> = ({ job, onBack }) => 
                 }
 
                 const distance = getDistance(latitude, longitude, targetLat, targetLng);
-                console.log(`Distance to target: ${distance.toFixed(2)} meters`);
+                console.log(`[CheckIn] Distance to target: ${distance.toFixed(2)} meters`);
 
                 const MAX_DISTANCE_METERS = job.customers?.geofence_radius || 60; // Geofence Radius (Default: 60m ~ 200ft)
+                console.log(`[CheckIn] Max allowed distance: ${MAX_DISTANCE_METERS} meters`);
 
                 if (distance <= MAX_DISTANCE_METERS) {
                     toast.success(t('geo.success', { defaultValue: "You are at the property!" }));
 
                     // Update Status in DB
-                    await (supabase.from('bookings') as any).update({ status: 'in_progress' }).eq('id', job.id);
-                    notifyClient('CHECK_IN');
-
-                    setStep('inspect');
+                    const { error } = await supabase.from('bookings').update({ status: 'in_progress' }).eq('id', job.id);
+                    if (error) {
+                        console.error('[CheckIn] DB update error:', error);
+                        toast.error('Erro ao atualizar status: ' + error.message);
+                    } else {
+                        console.log('[CheckIn] Status updated to in_progress');
+                        notifyClient('CHECK_IN');
+                        setStep('inspect');
+                    }
                 } else {
-                    toast.error(t('geo.too_far', {
-                        defaultValue: `You are ${(distance / 1000).toFixed(2)}km away. Please go to the property.`,
-                        distance: (distance / 1000).toFixed(2)
-                    }));
+                    console.warn(`[CheckIn] Too far: ${distance}m > ${MAX_DISTANCE_METERS}m`);
+                    const distanceKm = (distance / 1000).toFixed(2);
+                    const toastMsg = `📍 Você está a ${distanceKm}km da propriedade. Use o "Check-in Manual" abaixo.`;
+                    console.log('[CheckIn] Showing toast:', toastMsg);
+                    toast.error(toastMsg, { duration: 8000, id: 'checkin-too-far' });
                 }
                 setLoadingLocation(false);
             },
             (error) => {
-                console.error("Geo Error:", error);
-                let msg = "Unknown GPS Error";
+                console.error("[CheckIn] Geo Error:", error);
+                let msg = "Erro de GPS desconhecido";
+                // GeolocationPositionError codes: 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT
                 switch (error.code) {
-                    case error.PERMISSION_DENIED: msg = t('geo.denied', { defaultValue: "Please enable Location Services." }); break;
-                    case error.POSITION_UNAVAILABLE: msg = t('geo.unavailable', { defaultValue: "Location signal unavailable." }); break;
-                    case error.TIMEOUT: msg = t('geo.timeout', { defaultValue: "Location request timed out." }); break;
+                    case 1: msg = "📍 Localização negada. Ative o GPS nas configurações do navegador."; break;
+                    case 2: msg = "📍 Sinal de localização indisponível. Tente novamente."; break;
+                    case 3: msg = "📍 Tempo esgotado ao buscar localização. Tente novamente."; break;
                 }
-                toast.error(msg);
+                toast.error(msg, { id: 'geo-error', duration: 6000 });
                 setLoadingLocation(false);
             },
             { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
@@ -203,9 +278,35 @@ export const ActiveJobView: React.FC<ActiveJobViewProps> = ({ job, onBack }) => 
     };
 
     const handleFinish = async () => {
+        console.log('[Finish] Attempting to complete job:', job.id);
+
+        try {
+            const { error } = await supabase.from('bookings').update({ status: 'completed' }).eq('id', job.id);
+
+            if (error) {
+                console.error('[Finish] DB error:', error);
+                toast.error('Erro ao finalizar: ' + error.message);
+                return;
+            }
+
+            console.log('[Finish] Success! Status updated to completed');
+            notifyClient('JOB_COMPLETED');
+            toast.success(t('cleaner.active_job.completed_success', { defaultValue: 'Tarefa finalizada com sucesso!' }));
+
+            setTimeout(() => {
+                onBack();
+            }, 1500);
+        } catch (err: any) {
+            console.error('[Finish] Unexpected error:', err);
+            toast.error('Erro inesperado: ' + err.message);
+        }
+    };
+
+    // Legacy toast.promise version (removed)
+    const _handleFinishLegacy = async () => {
         toast.promise(
             async () => {
-                await (supabase.from('bookings') as any).update({ status: 'completed' }).eq('id', job.id);
+                await supabase.from('bookings').update({ status: 'completed' }).eq('id', job.id);
                 notifyClient('JOB_COMPLETED');
                 setTimeout(() => {
                     onBack();
@@ -250,25 +351,48 @@ export const ActiveJobView: React.FC<ActiveJobViewProps> = ({ job, onBack }) => 
                             <h3 className="text-2xl font-black text-slate-900">{t('cleaner.active_job.arrive_title')}</h3>
                             <p className="text-slate-500 max-w-[200px] mx-auto mt-2">{t('cleaner.active_job.arrive_subtitle')}</p>
                         </div>
-                        <Button onClick={handleCheckIn} className="w-full h-14 text-lg bg-indigo-600 hover:bg-indigo-700 rounded-2xl shadow-xl shadow-indigo-200">
-                            {t('cleaner.active_job.check_in_button')}
+                        <Button
+                            onClick={handleCheckIn}
+                            disabled={loadingLocation}
+                            className="w-full h-14 text-lg bg-indigo-600 hover:bg-indigo-700 rounded-2xl shadow-xl shadow-indigo-200 disabled:opacity-50"
+                        >
+                            {loadingLocation ? t('cleaner.active_job.locating') : t('cleaner.active_job.check_in_button')}
                         </Button>
                         {loadingLocation && <p className="text-sm text-slate-400 animate-pulse">{t('cleaner.active_job.locating')}</p>}
 
-                        {/* Fallback / Fail-safe */}
-                        <div className={`transition-opacity duration-500 ${step === 'arrive' ? 'opacity-100' : 'opacity-0'}`}>
+                        {/* Manual Check-in - Always visible as fail-safe */}
+                        <div className="pt-4 border-t border-slate-100 w-full">
+                            <p className="text-xs text-slate-400 mb-2">Problemas com GPS? Use a opção manual:</p>
                             <button
-                                onClick={async () => {
-                                    if (confirm(t('cleaner.active_job.manual_confirm'))) {
-                                        await (supabase.from('bookings') as any).update({ status: 'in_progress' }).eq('id', job.id);
-                                        notifyClient('CHECK_IN_BYPASS');
-                                        toast.warning(t('cleaner.active_job.manual_success'));
-                                        setStep('inspect');
-                                    }
+                                onClick={() => {
+                                    toast(
+                                        '⚠️ Check-in Manual',
+                                        {
+                                            description: 'Tem certeza que está no local? O uso desta opção será auditado.',
+                                            duration: 10000,
+                                            id: 'manual-checkin-confirm',
+                                            actionButtonStyle: { backgroundColor: '#4f46e5', color: 'white' },
+                                            cancelButtonStyle: { backgroundColor: '#f1f5f9', color: '#475569' },
+                                            action: {
+                                                label: 'Confirmar',
+                                                onClick: async () => {
+                                                    const { error } = await supabase.from('bookings').update({ status: 'in_progress' }).eq('id', job.id);
+                                                    if (error) {
+                                                        toast.error('Erro no check-in: ' + error.message);
+                                                        return;
+                                                    }
+                                                    notifyClient('CHECK_IN_BYPASS');
+                                                    toast.success('✅ Check-in manual realizado!');
+                                                    setStep('inspect');
+                                                }
+                                            },
+                                            cancel: { label: 'Cancelar', onClick: () => { } }
+                                        }
+                                    );
                                 }}
-                                className="text-xs font-semibold text-slate-400 underline mt-4 hover:text-indigo-600"
+                                className="text-xs font-semibold text-slate-400 underline hover:text-indigo-600"
                             >
-                                {t('cleaner.active_job.manual_check_in')}
+                                Check-in Manual (será auditado)
                             </button>
                         </div>
                     </div>
@@ -321,7 +445,7 @@ export const ActiveJobView: React.FC<ActiveJobViewProps> = ({ job, onBack }) => 
                             <p className="text-slate-500">{t('cleaner.active_job.timer_running')}</p>
                         </div>
                         <div className="bg-slate-50 px-6 py-3 rounded-xl font-mono text-2xl font-bold text-slate-700">
-                            00:15:23
+                            {formatTime(elapsedSeconds)}
                         </div>
                         <Button onClick={handleFinish} className="w-full h-14 text-lg bg-emerald-600 hover:bg-emerald-700 rounded-2xl shadow-xl shadow-emerald-200 mt-auto">
                             {t('cleaner.active_job.finish_button')}

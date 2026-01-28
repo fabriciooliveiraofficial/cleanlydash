@@ -1,18 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { createClient } from '../../../lib/supabase/client';
+import { createPlatformClient } from '../../../lib/supabase/platform-client';
 import { CheckCircle2, XCircle, Loader2, ArrowRight } from 'lucide-react';
 import { Button } from '../../ui/button';
 
 export const PlatformCallback: React.FC = () => {
     const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
-    const supabase = createClient();
+    const supabase = createPlatformClient();
 
     useEffect(() => {
         const handleCallback = async () => {
             const params = new URLSearchParams(window.location.search);
             const code = params.get('code');
-            const state = params.get('state'); // In index.ts it was user.id
+            const state = params.get('state');
             const error = params.get('error');
 
             if (error) {
@@ -28,13 +28,11 @@ export const PlatformCallback: React.FC = () => {
             }
 
             try {
-                // Call the Edge Function to exchange the token
-                // supabase.functions.invoke automatically adds the Authorization header with the user's JWT
                 const { data, error: functionError } = await supabase.functions.invoke('stripe-connect-oauth', {
                     body: {
                         action: 'exchange_token',
                         code,
-                        state // This is used by the function to verify CSRF/User match
+                        state
                     }
                 });
 
@@ -44,7 +42,6 @@ export const PlatformCallback: React.FC = () => {
                 }
 
                 setStatus('success');
-                // Auto redirect after 3 seconds for better UX
                 setTimeout(() => {
                     window.location.href = '/dashboard';
                 }, 3000);

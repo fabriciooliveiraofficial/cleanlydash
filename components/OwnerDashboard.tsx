@@ -4,7 +4,7 @@ import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
 
 import { createClient } from '../lib/supabase/client.ts';
 import { useRole } from '../hooks/use-role.ts';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 export const OwnerDashboard: React.FC = () => {
     const [stats, setStats] = useState([
@@ -14,8 +14,24 @@ export const OwnerDashboard: React.FC = () => {
     ]);
     const [chartData, setChartData] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+    const containerRef = useRef<HTMLDivElement>(null);
     const supabase = createClient();
-    const { user } = useRole(); // Get current user (Owner)
+
+    useEffect(() => {
+        if (!containerRef.current) return;
+
+        const observer = new ResizeObserver((entries) => {
+            if (!entries.length) return;
+            const { width, height } = entries[0].contentRect;
+            if (width > 0 && height > 0) {
+                setDimensions({ width, height });
+            }
+        });
+
+        observer.observe(containerRef.current);
+        return () => observer.disconnect();
+    }, []);
 
     useEffect(() => {
         async function fetchOwnerData() {
@@ -25,14 +41,10 @@ export const OwnerDashboard: React.FC = () => {
                 const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
 
                 // 1. Fetch My Properties (RLS Filtered)
-                // Note: If 'properties' table doesn't support Owner RLS yet, this might return 0. 
-                // We rely on the platform RLS policies being correctly set up for the 'owner' role.
-                const { data: properties, error: propError } = await supabase
+                const { data: properties } = await supabase
                     .from('properties')
                     .select('id');
 
-                // If properties fetch fails or returns empty, we might try counting unique calendars from bookings as fallback?
-                // For now, adhere to schema.
                 const propertyCount = properties?.length || 0;
 
                 // 2. Fetch My Bookings (RLS Filtered) for Month
@@ -42,14 +54,12 @@ export const OwnerDashboard: React.FC = () => {
                     .gte('start_date', startOfMonth)
                     .lte('start_date', endOfMonth);
 
-                const validBookings = bookings || [];
+                const validBookings = (bookings || []) as any[];
 
                 // 3. Calculate Revenue (Estimated Payout)
                 const revenue = validBookings.reduce((acc, b) => acc + (Number(b.price) || 0), 0);
 
                 // 4. Calculate Occupancy
-                // Total Capacity = Properties * Days in Month
-                // Booked Days = Sum of (End - Start) overlapping this month
                 let occupancyRate = 0;
                 if (propertyCount > 0) {
                     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
@@ -58,7 +68,6 @@ export const OwnerDashboard: React.FC = () => {
                     const totalBookedDays = validBookings.reduce((acc, b) => {
                         const start = new Date(b.start_date);
                         const end = new Date(b.end_date);
-                        // Simple difference in days
                         const diffTime = Math.abs(end.getTime() - start.getTime());
                         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                         return acc + diffDays;
@@ -118,10 +127,11 @@ export const OwnerDashboard: React.FC = () => {
 
             <div className="glass-panel p-6 rounded-3xl">
                 <h3 className="text-sm font-bold text-[var(--text-primary)] mb-6">Tendência de Receita</h3>
-                <div className="h-64 w-full min-w-0">
-                    {chartData.length > 0 ? (
+                <div ref={containerRef} className="h-64 w-full min-w-0 bg-slate-50/50 rounded-2xl overflow-hidden relative"
+                    style={{ minHeight: '256px' }}>
+                    {(dimensions.width > 0 && chartData.length > 0) ? (
                         <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={chartData}>
+                            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                                 <defs>
                                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                                         <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1} />
@@ -137,8 +147,8 @@ export const OwnerDashboard: React.FC = () => {
                             </AreaChart>
                         </ResponsiveContainer>
                     ) : (
-                        <div className="flex h-full items-center justify-center text-sm text-slate-400">
-                            Sem dados para o período
+                        <div className="flex h-full items-center justify-center text-sm text-slate-400 font-medium h-64">
+                            {loading ? 'Carregando dados...' : 'Sem dados para o período'}
                         </div>
                     )}
                 </div>

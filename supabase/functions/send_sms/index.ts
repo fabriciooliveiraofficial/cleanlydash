@@ -35,7 +35,7 @@ serve(async (req) => {
         // 1. Get User's Phone Number
         const { data: settings } = await supabaseAdmin
             .from('telnyx_settings')
-            .select('phone_number, managed_account_id')
+            .select('phone_number, api_key, managed_account_id, managed_api_key')
             .eq('user_id', user.id)
             .single();
 
@@ -44,7 +44,7 @@ serve(async (req) => {
         }
 
         // 2. Parse Body
-        const { to, message, sandbox } = await req.json();
+        const { to, message, media_urls, sandbox } = await req.json();
 
         if (!to || !message) {
             throw new Error("Missing 'to' or 'message' fields.");
@@ -61,6 +61,7 @@ serve(async (req) => {
                 from_number: settings.phone_number,
                 to_number: to,
                 content: message,
+                media_urls: media_urls,
                 status: 'sent', // Autocomplete in sandbox
                 cost: 0,
                 price: 0
@@ -72,23 +73,67 @@ serve(async (req) => {
             );
 
         } else {
-            // Real Send Logic (Placeholder)
-            // TODO: Integrate Telnyx Messages API
+            // Real Send Logic
+            let telnyxApiKey = Deno.env.get('TELNYX_API_KEY');
 
-            // For now, we allow it but mark as queued/simulated if no real API implemented yet
+            // Try fetching from user settings first (if they BYOC)
+            if (settings.api_key) {
+                telnyxApiKey = settings.api_key;
+            } else if (settings.managed_api_key) {
+                telnyxApiKey = settings.managed_api_key;
+            }
+
+            // Fallback to Platform Settings
+            if (!telnyxApiKey) {
+                const { data } = await supabaseAdmin
+                    .from('platform_settings')
+                    .select('value')
+                    .eq('key', 'TELNYX_API_KEY')
+                    .maybeSingle();
+                if (data?.value) telnyxApiKey = data.value;
+            }
+
+            if (!telnyxApiKey) throw new Error("No API Key found for sending SMS.");
+
+            const telnyxUrl = 'https://api.telnyx.com/v2/messages';
+            const body: any = {
+                from: settings.phone_number,
+                to: to,
+                text: message
+            };
+
+            if (media_urls && Array.isArray(media_urls) && media_urls.length > 0) {
+                body.media_urls = media_urls;
+            }
+
+            const response = await fetch(telnyxUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${telnyxApiKey}`
+                },
+                body: JSON.stringify(body)
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                console.error("Telnyx SMS Error:", data);
+                throw new Error(data.errors?.[0]?.detail || "Failed to send SMS");
+            }
+
             await supabaseAdmin.from('sms_logs').insert({
                 tenant_id: user.id,
                 direction: 'outbound',
                 from_number: settings.phone_number,
                 to_number: to,
                 content: message,
-                status: 'queued',
-                cost: 0.004,
-                price: 0.05
+                status: 'sent',
+                external_id: data.data?.id
             });
 
             return new Response(
-                JSON.stringify({ success: true, message: "SMS queued (Real)", status: "queued" }),
+                JSON.stringify({ success: true, message: "SMS sent successfully", data: data, status: "sent" }),
                 { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
             );
         }

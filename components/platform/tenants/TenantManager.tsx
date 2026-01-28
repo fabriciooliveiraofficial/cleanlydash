@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { createClient } from '../../../lib/supabase/client';
+import { createPlatformClient } from '../../../lib/supabase/platform-client';
 import {
     Search,
     LogIn,
@@ -13,6 +13,8 @@ import {
     Loader2
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { PortalTransition } from '../../support/PortalTransition';
+import { useSessionManager } from '../../../hooks/use-session-manager';
 
 interface Tenant {
     id: string;
@@ -32,7 +34,8 @@ export const TenantManager: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState('all');
-    const supabase = createClient();
+    const [isPortaling, setIsPortaling] = useState(false);
+    const supabase = createPlatformClient();
 
     useEffect(() => {
         fetchTenants();
@@ -62,9 +65,32 @@ export const TenantManager: React.FC = () => {
         }
     };
 
-    const handleImpersonate = async (tenantId: string) => {
-        toast.info("Impersonation requires Edge Function (Pending Deployment). Use Suspend/Delete for now.");
-        // Real implementation requires admin.generateLink() on server-side.
+    const handleImpersonate = async (tenantId: string, tenantName: string) => {
+        setIsPortaling(true);
+        toast.loading("Iniciando Portal de Suporte...");
+
+        try {
+            // 1. Save config to session storage
+            const { data: { user } } = await supabase.auth.getUser();
+
+            const config = {
+                targetTenantId: tenantId,
+                targetTenantName: tenantName,
+                impersonatorId: user?.id,
+                startTime: new Date().toISOString()
+            };
+            sessionStorage.setItem('portal_mode_config', JSON.stringify(config));
+
+            // 2. Redirect to dashboard root
+            // The RoleContext will detect this and override the tenant_id
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 2000);
+        } catch (err) {
+            console.error(err);
+            setIsPortaling(false);
+            toast.error("Erro ao abrir portal");
+        }
     };
 
     const handleToggleStatus = async (tenantId: string, currentStatus: string) => {
@@ -123,6 +149,8 @@ export const TenantManager: React.FC = () => {
 
     return (
         <div className="space-y-6">
+            <PortalTransition active={isPortaling} />
+
             {/* Header Actions */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
@@ -214,7 +242,7 @@ export const TenantManager: React.FC = () => {
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex items-center justify-end gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
                                             <button
-                                                onClick={() => handleImpersonate(tenant.id)}
+                                                onClick={() => handleImpersonate(tenant.id, tenant.name)}
                                                 className="p-2 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-colors"
                                                 title="Impersonate"
                                             >

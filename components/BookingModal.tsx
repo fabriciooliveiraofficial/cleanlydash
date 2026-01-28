@@ -70,7 +70,6 @@ interface RecurrenceInstance {
     cleaner_pay_rate: number;
     service_id: string;
     duration_minutes: number;
-    duration_minutes: number;
     addon_ids: string[]; // New: Per-instance addons
     assignments: { member_id: string, pay_rate: number, name: string }[]; // New: Per-instance assignments
     isEditing?: boolean;
@@ -430,7 +429,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                             cleaner_pay_rate: booking.cleaner_pay_rate || 0,
                             service_id: booking.service_id,
                             duration_minutes: booking.duration_minutes,
-                            duration_minutes: booking.duration_minutes,
                             addon_ids: addonsByBooking.get(booking.id) || [],
                             assignments: [] // Populated below
                         }
@@ -443,8 +441,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                             time: format(new Date(c.start_date), 'HH:mm'),
                             price: c.price,
                             cleaner_pay_rate: c.cleaner_pay_rate || 0,
-                            service_id: c.service_id,
-                            duration_minutes: c.duration_minutes,
                             service_id: c.service_id,
                             duration_minutes: c.duration_minutes,
                             addon_ids: addonsByBooking.get(c.id) || [],
@@ -724,8 +720,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 cleaner_pay_rate: formData.cleaner_pay_rate,
                 service_id: instanceServiceId,
                 duration_minutes: instanceDuration,
-                service_id: instanceServiceId,
-                duration_minutes: instanceDuration,
                 addon_ids: [...selectedAddons], // Default to currently selected top-level addons
                 assignments: [...assignments] // Default to current main assignments
             });
@@ -755,10 +749,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                         service_id: source.service_id,
                         price: source.price,
                         duration_minutes: source.duration_minutes,
-                        time: source.time,
-                        cleaner_pay_rate: source.cleaner_pay_rate,
-                        time: source.time,
-                        cleaner_pay_rate: source.cleaner_pay_rate,
                         addon_ids: [...source.addon_ids],
                         assignments: source.assignments.map(a => ({ ...a }))
                     };
@@ -1644,6 +1634,30 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                         </div>
                                     )}
 
+                                    {/* Booking Color Palette */}
+                                    <div className="mt-4 pt-4 border-t border-slate-100/50">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                                                <Palette size={12} className="text-indigo-500" />
+                                                Cor do Agendamento
+                                            </label>
+                                            <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">Visualização no Calendário</span>
+                                        </div>
+                                        <div className="flex items-center gap-2.5">
+                                            {PRESET_COLORS.map(c => (
+                                                <button
+                                                    key={c}
+                                                    type="button"
+                                                    onClick={() => setFormData({ ...formData, color: c })}
+                                                    className={`w-7 h-7 rounded-lg border-2 transition-all ${formData.color === c
+                                                        ? 'border-indigo-600 scale-110 shadow-lg shadow-indigo-100 ring-2 ring-indigo-100'
+                                                        : 'border-white hover:border-indigo-200 shadow-sm hover:scale-105'}`}
+                                                    style={{ backgroundColor: c }}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+
                                     {!isStaffAvailable(formData.assigned_to) && formData.assigned_to && !selectedCrewId && (
                                         <div className="flex items-center gap-2 mt-2 p-2 bg-amber-50 rounded-lg text-xs text-amber-700 border border-amber-200 animate-in fade-in">
                                             <div className="min-w-4"><Clock size={14} /></div>
@@ -1818,7 +1832,11 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                         key={st}
                                         onClick={() => setFormData({ ...formData, status: st })}
                                         className={`flex-1 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider border transition-all ${formData.status === st
-                                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-md'
+                                            ? st === 'confirmed' ? 'bg-blue-600 border-blue-600 text-white shadow-md' :
+                                                st === 'pending' ? 'bg-amber-500 border-amber-500 text-white shadow-md' :
+                                                    st === 'completed' ? 'bg-emerald-600 border-emerald-600 text-white shadow-md' :
+                                                        st === 'cancelled' ? 'bg-orange-500 border-orange-500 text-white shadow-md' :
+                                                            'bg-indigo-600 border-indigo-600 text-white shadow-md'
                                             : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-300 hover:text-indigo-600'
                                             }`}
                                     >
