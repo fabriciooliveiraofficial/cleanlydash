@@ -12,9 +12,68 @@ export const TelephonyManager: React.FC = () => {
     const [provisioning, setProvisioning] = useState(false);
     const supabase = createPlatformClient();
 
+    const [plans, setPlans] = useState<any[]>([]);
+    const [selectedPlanId, setSelectedPlanId] = useState<string>('');
+    const [prices, setPrices] = useState({
+        voice: '0.00',
+        sms: '0.00',
+        mms: '0.00',
+        rcs: '0.00'
+    });
+
     useEffect(() => {
         fetchLogs();
+        fetchPlans();
     }, []);
+
+    useEffect(() => {
+        if (selectedPlanId) {
+            fetchPricesForPlan(selectedPlanId);
+        }
+    }, [selectedPlanId]);
+
+    const fetchPlans = async () => {
+        const { data, error } = await supabase
+            .from('plans')
+            .select('id, name')
+            .in('type', ['telephony', 'combo'])
+            .order('name');
+
+        if (!error && data) {
+            setPlans(data);
+            if (data.length > 0) setSelectedPlanId(data[0].id);
+        }
+    };
+
+    const fetchPricesForPlan = async (planId: string) => {
+        const { data, error } = await supabase
+            .from('platform_settings')
+            .select('value')
+            .eq('key', `TELEPHONY_PRICES:${planId}`)
+            .single();
+
+        if (!error && data) {
+            try {
+                const parsed = JSON.parse(data.value);
+                setPrices({
+                    voice: parsed.voice || '0.00',
+                    sms: parsed.sms || '0.00',
+                    mms: parsed.mms || '0.00',
+                    rcs: parsed.rcs || '0.00'
+                });
+            } catch (e) {
+                console.error("Error parsing prices for plan", planId, e);
+            }
+        } else {
+            // Default if nothing set
+            setPrices({ voice: '0.00', sms: '0.00', mms: '0.00', rcs: '0.00' });
+        }
+    };
+
+    const fetchPrices = async () => {
+        // Redundant with fetchPricesForPlan, keeping signature if needed or removing
+        if (selectedPlanId) fetchPricesForPlan(selectedPlanId);
+    };
 
     const fetchLogs = async () => {
         const { data, error } = await supabase
@@ -32,6 +91,27 @@ export const TelephonyManager: React.FC = () => {
             setLogs(data as any || []);
         }
         setLoading(false);
+    };
+
+    const handleSavePrices = async () => {
+        if (!selectedPlanId) return toast.error("Select a plan first");
+        setProvisioning(true);
+        try {
+            const key = `TELEPHONY_PRICES:${selectedPlanId}`;
+            const value = JSON.stringify(prices);
+
+            const { error } = await supabase
+                .from('platform_settings')
+                .upsert({ key, value }, { onConflict: 'key' });
+
+            if (error) throw error;
+
+            toast.success(`Preços para o plano ${plans.find(p => p.id === selectedPlanId)?.name} atualizados!`);
+        } catch (e: any) {
+            toast.error("Error updating prices: " + e.message);
+        } finally {
+            setProvisioning(false);
+        }
     };
 
     const handleSavePlatformConfig = async () => {
@@ -74,42 +154,125 @@ export const TelephonyManager: React.FC = () => {
                 </div>
             </div>
 
-            {/* PLATFORM CONFIGURATION SECTION */}
-            <div className="bg-slate-900 rounded-2xl p-6 text-white shadow-xl">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2 bg-indigo-500/20 rounded-lg text-indigo-400">
-                        <ShieldCheck size={24} />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* PLATFORM CONFIGURATION SECTION */}
+                <div className="bg-slate-900 rounded-2xl p-6 text-white shadow-xl flex flex-col">
+                    <div className="flex items-center gap-3 mb-6">
+                        <div className="p-2 bg-indigo-500/20 rounded-lg text-indigo-400">
+                            <ShieldCheck size={24} />
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-bold">Global Provider Configuration</h3>
+                            <p className="text-xs text-slate-400">Cleanlydash Master Credentials.</p>
+                        </div>
                     </div>
-                    <div>
-                        <h3 className="text-lg font-bold">Global Provider Configuration (Cleanlydash Master)</h3>
-                        <p className="text-xs text-slate-400">Essential credentials for reselling Telnyx services to all tenants.</p>
+
+                    <div className="space-y-4 flex-1">
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Telnyx Master API Key</label>
+                            <input
+                                type="password" id="p-api-key" placeholder="KEY..."
+                                className="w-full bg-slate-800 border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Master SIP Credential ID</label>
+                            <input
+                                type="text" id="p-sip-id" placeholder="Ex: 278139..."
+                                className="w-full bg-slate-800 border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                            />
+                        </div>
                     </div>
+
+                    <Button
+                        disabled={provisioning}
+                        className="mt-6 bg-indigo-600 hover:bg-indigo-700 w-full px-10 transition-all active:scale-95"
+                        onClick={handleSavePlatformConfig}
+                    >
+                        {provisioning ? <Loader2 className="animate-spin" size={18} /> : "Save Master Settings"}
+                    </Button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Telnyx Master API Key</label>
-                        <input
-                            type="password" id="p-api-key" placeholder="KEY..."
-                            className="w-full bg-slate-800 border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-                        />
+                {/* PRICE MANAGEMENT SECTION */}
+                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col">
+                    <div className="flex items-center gap-3 mb-6">
+                        <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600">
+                            <Globe size={24} />
+                        </div>
+                        <div className="flex-1">
+                            <h3 className="text-lg font-bold text-slate-800">Preços por Plano</h3>
+                            <p className="text-xs text-slate-500">Defina os custos de consumo para cada nível de assinatura.</p>
+                        </div>
                     </div>
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Master SIP Credential ID</label>
-                        <input
-                            type="text" id="p-sip-id" placeholder="Ex: 278139..."
-                            className="w-full bg-slate-800 border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-                        />
-                    </div>
-                </div>
 
-                <Button
-                    disabled={provisioning}
-                    className="mt-6 bg-indigo-600 hover:bg-indigo-700 w-full md:w-auto px-10 transition-all active:scale-95"
-                    onClick={handleSavePlatformConfig}
-                >
-                    {provisioning ? <Loader2 className="animate-spin" size={18} /> : "Save Master Settings"}
-                </Button>
+                    <div className="mb-6 space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Selecionar Plano</label>
+                        <select
+                            value={selectedPlanId}
+                            onChange={(e) => setSelectedPlanId(e.target.value)}
+                            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
+                        >
+                            {plans.map(plan => (
+                                <option key={plan.id} value={plan.id}>{plan.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 flex-1">
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Voz (por minuto)</label>
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">R$</span>
+                                <input
+                                    type="number" step="0.01" value={prices.voice}
+                                    onChange={(e) => setPrices({ ...prices, voice: e.target.value })}
+                                    className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">SMS (unidade)</label>
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">R$</span>
+                                <input
+                                    type="number" step="0.01" value={prices.sms}
+                                    onChange={(e) => setPrices({ ...prices, sms: e.target.value })}
+                                    className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">MMS (unidade)</label>
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">R$</span>
+                                <input
+                                    type="number" step="0.01" value={prices.mms}
+                                    onChange={(e) => setPrices({ ...prices, mms: e.target.value })}
+                                    className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">RCS (unidade)</label>
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">R$</span>
+                                <input
+                                    type="number" step="0.01" value={prices.rcs}
+                                    onChange={(e) => setPrices({ ...prices, rcs: e.target.value })}
+                                    className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <Button
+                        disabled={provisioning}
+                        className="mt-6 bg-slate-900 hover:bg-black text-white w-full rounded-xl h-11 font-bold"
+                        onClick={handleSavePrices}
+                    >
+                        {provisioning ? <Loader2 className="animate-spin" size={18} /> : "Salvar Preços do Plano"}
+                    </Button>
+                </div>
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">

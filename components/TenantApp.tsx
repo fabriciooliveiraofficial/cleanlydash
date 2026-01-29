@@ -14,6 +14,7 @@ import { FeaturesPage } from './FeaturesPage.tsx';
 import { SystemDiagnostics } from './SystemDiagnostics';
 import { AuthFlow } from './AuthFlow.tsx';
 import { UnifiedInbox } from './telephony/UnifiedInbox.tsx';
+import { TelephonyHub } from './telephony/TelephonyHub.tsx';
 import { Resources } from './Resources.tsx';
 import { NotificationInbox } from './notifications/NotificationInbox.tsx';
 import AirbnbDispatch from './AirbnbDispatch.tsx';
@@ -39,6 +40,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { PortalSupportHUD } from './support/PortalSupportHUD.tsx';
 import { PortalTransition } from './support/PortalTransition.tsx';
 import { MirrorEmitter } from './support/MirrorEmitter.tsx';
+import { ReleaseGuard } from './system/ReleaseGuard.tsx';
 
 const TenantAppInner: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabType>(TabType.OVERVIEW);
@@ -92,6 +94,7 @@ const TenantAppInner: React.FC = () => {
             case TabType.WALLET: return <Wallet />;
             case TabType.FINANCE: return <PaymentLinkManager />;
             case TabType.TELEPHONY: return <UnifiedInbox />;
+            case TabType.TELEPHONY_HUB: return <TelephonyHub />;
             case TabType.SUPPORT: return <TenantSupport />;
             case TabType.RESOURCES: return <Resources />;
             case TabType.AIRBNB_CENTER: return <AirbnbDispatch />;
@@ -198,6 +201,7 @@ const TenantAppInner: React.FC = () => {
 
     return (
         <TelnyxProvider>
+            <ReleaseGuard />
             <PortalSupportHUD />
             {user && roleContext.tenant_id && !sessionStorage.getItem('portal_mode_config') && (
                 <MirrorEmitter tenantId={roleContext.tenant_id} userId={user.id} />

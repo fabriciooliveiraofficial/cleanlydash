@@ -26,7 +26,7 @@ interface DayViewProps {
     onBookingResize?: (bookingId: string, newEnd: Date) => void;
 }
 
-const HOURS = Array.from({ length: 14 }, (_, i) => i + 6); // 6am to 7pm
+const HOURS = Array.from({ length: 24 }, (_, i) => i); // 0 to 23
 const HOUR_HEIGHT = 70; // pixels per hour
 const LONG_PRESS_DURATION = 400; // ms to trigger drag on mobile
 

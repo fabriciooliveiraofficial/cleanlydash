@@ -10,13 +10,14 @@ import {
     Webhook,
     AlertTriangle,
     CheckCircle,
-    XCircle
+    XCircle,
+    Zap
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { createPlatformClient } from '../../../lib/supabase/platform-client';
 
 export const SystemTools: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'sql' | 'flags' | 'settings' | 'webhooks'>('flags');
+    const [activeTab, setActiveTab] = useState<'sql' | 'flags' | 'settings' | 'webhooks' | 'releases'>('releases');
     const [sqlQuery, setSqlQuery] = useState('SELECT * FROM tenant_profiles LIMIT 10;');
     const [queryResult, setQueryResult] = useState<any>(null);
 
@@ -58,6 +59,34 @@ export const SystemTools: React.FC = () => {
     const handleChangePassword = (e: React.FormEvent) => {
         e.preventDefault();
         toast.success("Password update request sent to Auth Provider.");
+    };
+
+    const handleQuickRelease = async () => {
+        const supabase = createPlatformClient();
+        const version = `v${new Date().toISOString().split('T')[0]}.${Math.floor(Date.now() / 1000).toString().slice(-4)}`;
+
+        const toastId = toast.loading("Broadcasting new release to all users...");
+
+        try {
+            const channel = supabase.channel('app-releases');
+            await channel.subscribe(async (status) => {
+                if (status === 'SUBSCRIBED') {
+                    await channel.send({
+                        type: 'broadcast',
+                        event: 'new_release',
+                        payload: {
+                            version,
+                            message: 'Uma nova atualização do Cleanlydash foi publicada. Clique em atualizar para carregar as melhorias!',
+                            timestamp: new Date().toISOString()
+                        }
+                    });
+                    toast.success(`Release ${version} transmitida com sucesso!`, { id: toastId });
+                    supabase.removeChannel(channel);
+                }
+            });
+        } catch (err: any) {
+            toast.error(`Erro ao transmitir release: ${err.message}`, { id: toastId });
+        }
     };
 
     return (
@@ -131,6 +160,12 @@ export const SystemTools: React.FC = () => {
                     className={`px-6 py-3 font-medium text-sm transition-colors border-b-2 ${activeTab === 'settings' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
                 >
                     Admin Settings
+                </button>
+                <button
+                    onClick={() => setActiveTab('releases')}
+                    className={`px-6 py-3 font-medium text-sm transition-colors border-b-2 ${activeTab === 'releases' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                >
+                    Releases
                 </button>
 
             </div>
@@ -274,6 +309,52 @@ export const SystemTools: React.FC = () => {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                )}
+
+                {/* Quick Release Tab */}
+                {activeTab === 'releases' && (
+                    <div className="p-8 max-w-2xl">
+                        <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-6 mb-8">
+                            <div className="flex items-start gap-4">
+                                <div className="p-3 bg-indigo-500 text-white rounded-xl shadow-lg shadow-indigo-200">
+                                    <Zap size={24} />
+                                </div>
+                                <div className="space-y-1">
+                                    <h3 className="text-lg font-black text-indigo-900 tracking-tight">Quick Release Hub</h3>
+                                    <p className="text-indigo-700/70 text-sm leading-relaxed">
+                                        Esta ferramenta força uma notificação de "Nova Versão" para **todos os usuários** atualmente online em
+                                        todas as plataformas (Admin, Tenant e Cleaner). Use isto após fazer um `git push` ou deploy.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-6">
+                            <div className="p-6 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 text-center space-y-4">
+                                <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 inline-block">
+                                    <code className="text-indigo-600 font-bold">EVENT: app-releases {"->"} new_release</code>
+                                </div>
+
+                                <p className="text-slate-500 text-sm max-w-md mx-auto">
+                                    Ao clicar no botão abaixo, um sinal de broadcast será enviado via Supabase Realtime.
+                                    Os usuários verão um banner solicitando o refresh da página.
+                                </p>
+
+                                <button
+                                    onClick={handleQuickRelease}
+                                    className="px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl shadow-xl shadow-indigo-200 transition-all active:scale-95 flex items-center gap-2 mx-auto"
+                                >
+                                    <Megaphone size={20} />
+                                    DISPARAR ATUALIZAÇÃO GLOBAL
+                                </button>
+                            </div>
+
+                            <div className="flex items-center gap-2 text-amber-600 bg-amber-50 p-4 rounded-lg border border-amber-100 italic text-sm">
+                                <AlertTriangle size={16} />
+                                <span>Atenção: Use apenas após a conclusão do deploy no servidor de hospedagem.</span>
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>

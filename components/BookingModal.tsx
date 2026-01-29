@@ -1398,8 +1398,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     // Generate Time Slots based on Staff Availability
     const generateTimeSlots = () => {
         const slots: { time: string; available: boolean }[] = [];
-        const startHour = 8; // Configurable?
-        const endHour = 18; // Configurable?
+        const startHour = 0;
+        const endHour = 23;
 
         for (let hour = startHour; hour <= endHour; hour++) {
             for (let min = 0; min < 60; min += 30) {

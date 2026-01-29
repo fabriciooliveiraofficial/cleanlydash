@@ -10,6 +10,7 @@ import {
   LogOut,
   Plane,
   PhoneCall,
+  MessageSquare,
   Sparkles,
   Map,
   Package,
@@ -50,7 +51,16 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen, onClo
     { id: TabType.MAP_VIEW, icon: Map, label: t('sidebar.map', { defaultValue: 'Mapa' }), permission: PERMISSIONS.TASKS_VIEW },
     { id: TabType.WALLET, icon: WalletIcon, label: t('sidebar.wallet', { defaultValue: 'Carga de Créditos' }), permission: PERMISSIONS.FINANCE_VIEW_BALANCE },
     { id: TabType.FINANCE, icon: DollarSign, label: t('sidebar.finance', { defaultValue: 'Financeiro' }), permission: PERMISSIONS.FINANCE_VIEW_BALANCE },
-    { id: TabType.TELEPHONY, icon: PhoneCall, label: t('sidebar.telephony'), permission: PERMISSIONS.CUSTOMERS_VIEW },
+    {
+      id: TabType.TELEPHONY_HUB,
+      icon: PhoneCall,
+      label: 'Telefonia',
+      permission: PERMISSIONS.CUSTOMERS_VIEW,
+      subItems: [
+        { id: TabType.TELEPHONY_HUB, label: 'Dashboard CRM' },
+        { id: TabType.TELEPHONY, label: 'Inbox Unificada' },
+      ]
+    },
     { id: TabType.SUPPORT, icon: LifeBuoy, label: t('sidebar.support', { defaultValue: 'Ajuda & Suporte' }), permission: PERMISSIONS.TASKS_VIEW }, // Basic permission for now
     { id: TabType.RESOURCES, icon: Package, label: t('sidebar.resources', { defaultValue: 'Recursos' }), permission: PERMISSIONS.TEAM_VIEW },
     { id: TabType.AI_INSIGHTS, icon: Sparkles, label: t('sidebar.ai_insights', { defaultValue: 'AI Insights' }), permission: PERMISSIONS.SETTINGS_VIEW }, // Admin level
@@ -123,30 +133,54 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen, onClo
           </div>
         )}
 
-        {visibleItems.map((item, index) => (
-          <button
-            key={item.id}
-            onClick={() => {
-              onTabChange(item.id);
-              if (onClose) onClose();
-            }}
-            title={isCollapsed ? item.label : undefined}
-            style={{ animationDelay: `${index * 50}ms` }}
-            className={`flex w-full items-center rounded-xl py-3 text-[13px] font-bold transition-all duration-300 animate-in fade-in slide-in-from-left-2 ${isCollapsed ? 'justify-center px-0' : 'justify-between px-4'
-              } ${activeTab === item.id
-                ? 'bg-white/90 text-indigo-700 shadow-md backdrop-blur-md border border-indigo-100'
-                : 'text-slate-600 hover:bg-white/40 hover:text-slate-900 shadow-sm border border-transparent hover:border-white/40'
-              }`}
-          >
-            <div className={`flex items-center gap-3 ${isCollapsed ? 'justify-center' : ''}`}>
-              <item.icon size={18} className={activeTab === item.id ? 'text-indigo-600' : 'text-slate-500'} />
-              {!isCollapsed && <span>{item.label}</span>}
+        {visibleItems.map((item, index) => {
+          const hasSubItems = 'subItems' in item && (item as any).subItems.length > 0;
+          const isSubItemSelected = hasSubItems && (item as any).subItems.some((s: any) => s.id === activeTab);
+          const isMainSelected = activeTab === item.id;
+          const isOpen = isMainSelected || isSubItemSelected;
+
+          return (
+            <div key={item.id} className="space-y-1">
+              <button
+                onClick={() => {
+                  onTabChange(item.id);
+                  if (onClose) onClose();
+                }}
+                title={isCollapsed ? item.label : undefined}
+                style={{ animationDelay: `${index * 50}ms` }}
+                className={`flex w-full items-center rounded-xl py-3 text-[13px] font-bold transition-all duration-300 animate-in fade-in slide-in-from-left-2 ${isCollapsed ? 'justify-center px-0' : 'justify-between px-4'
+                  } ${(isMainSelected || isSubItemSelected)
+                    ? 'bg-white/90 text-indigo-700 shadow-md backdrop-blur-md border border-indigo-100'
+                    : 'text-slate-600 hover:bg-white/40 hover:text-slate-900 shadow-sm border border-transparent hover:border-white/40'
+                  }`}
+              >
+                <div className={`flex items-center gap-3 ${isCollapsed ? 'justify-center' : ''}`}>
+                  <item.icon size={18} className={(isMainSelected || isSubItemSelected) ? 'text-indigo-600' : 'text-slate-500'} />
+                  {!isCollapsed && <span>{item.label}</span>}
+                </div>
+                {(isMainSelected || isSubItemSelected) && !isCollapsed && (
+                  <div className="h-2 w-2 rounded-full bg-indigo-600 shadow-lg shadow-indigo-500/50" />
+                )}
+              </button>
+
+              {/* Submenu rendering */}
+              {hasSubItems && isOpen && !isCollapsed && (
+                <div className="ml-9 border-l-2 border-slate-100 pl-4 py-1 space-y-1 animate-in slide-in-from-top-2 duration-300">
+                  {(item as any).subItems.map((sub: any) => (
+                    <button
+                      key={sub.id}
+                      onClick={() => onTabChange(sub.id)}
+                      className={`block w-full text-left py-2 text-[11px] font-bold transition-all ${activeTab === sub.id ? 'text-indigo-600 font-black scale-105 origin-left' : 'text-slate-400 hover:text-slate-600'
+                        }`}
+                    >
+                      {sub.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            {activeTab === item.id && !isCollapsed && (
-              <div className="h-2 w-2 rounded-full bg-indigo-600 shadow-lg shadow-indigo-500/50" />
-            )}
-          </button>
-        ))}
+          );
+        })}
       </nav>
 
       <div className="mt-auto p-4 space-y-1">

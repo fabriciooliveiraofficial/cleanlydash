@@ -4,6 +4,7 @@ import { useSessionManager } from '../../hooks/use-session-manager';
 import { CleanerApp } from './CleanerApp';
 import { Loader2, Key, Mail, Lock } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
+import { ReleaseGuard } from '../system/ReleaseGuard';
 
 export const CleanerAppWrapper: React.FC = () => {
     const [user, setUser] = useState<any>(null);
@@ -146,6 +147,7 @@ export const CleanerAppWrapper: React.FC = () => {
 
     return (
         <>
+            <ReleaseGuard />
             <CleanerApp
                 userId={user.id}
                 userName={userName}

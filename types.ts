@@ -6,6 +6,7 @@ export enum TabType {
   MAP_VIEW = 'map_view',
   WALLET = 'wallet',
   TELEPHONY = 'telephony',
+  TELEPHONY_HUB = 'telephony_hub',
   RESOURCES = 'resources',
   AI_INSIGHTS = 'ai_insights',
   TEAM = 'team',

@@ -15,6 +15,7 @@ import { BroadcastCenter } from './platform/broadcast/BroadcastCenter';
 import { TelephonyManager } from './platform/telephony/TelephonyManager';
 import { PlatformCallback } from './platform/finance/PlatformCallback';
 import { Loader2 } from 'lucide-react';
+import { ReleaseGuard } from './system/ReleaseGuard';
 
 export const PlatformApp: React.FC = () => {
     const [platformModule, setPlatformModule] = useState<'dashboard' | 'tenants' | 'finance' | 'system' | 'logs' | 'support' | 'broadcast' | 'telephony'>('dashboard');
@@ -52,16 +53,6 @@ export const PlatformApp: React.FC = () => {
     };
 
     useEffect(() => {
-        // Nuke any Service Workers to ensure Admin Platform is always fresh/uncached
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(registrations => {
-                for (let registration of registrations) {
-                    console.log('Unregistering SW for Admin Platform:', registration.scope);
-                    registration.unregister();
-                }
-            });
-        }
-
         checkSession();
 
         // Listen for auth changes on the platform client
@@ -117,6 +108,7 @@ export const PlatformApp: React.FC = () => {
                 {platformModule === 'support' && <SupportInbox />}
                 {platformModule === 'broadcast' && <BroadcastCenter />}
                 {platformModule === 'telephony' && <TelephonyManager />}
+                <ReleaseGuard />
                 <Toaster position="top-right" richColors />
             </SuperAdminLayout>
         </TelnyxProvider>

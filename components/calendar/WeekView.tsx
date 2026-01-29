@@ -26,7 +26,7 @@ interface WeekViewProps {
     onBookingResize?: (bookingId: string, newEnd: Date) => void;
 }
 
-const HOURS = Array.from({ length: 17 }, (_, i) => i + 7); // 7am to 11pm
+const HOURS = Array.from({ length: 24 }, (_, i) => i); // 0 to 23
 
 /**
  * Parse ISO date string as local time (not UTC).
@@ -505,7 +505,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
                     <div key={hour} className="flex border-b border-slate-100" style={{ minHeight: `${HOUR_HEIGHT}px` }}>
                         {/* Hour Label */}
                         <div className="w-16 flex-shrink-0 border-r border-slate-200 text-xs text-slate-400 text-right pr-2 pt-1">
-                            {format(new Date().setHours(hour, 0), 'ha')}
+                            {format(new Date().setHours(hour, 0), 'HH:mm')}
                         </div>
 
                         {/* Day Cells */}

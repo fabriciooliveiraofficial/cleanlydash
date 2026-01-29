@@ -28,18 +28,18 @@ const PRICING_DATA = {
         },
         plans: {
             system: [
-                { id: "system_essentials", name: "Essentials", description: "For small operations", features: ["Full System Access", "Property Management", "Task Automation", "Mobile App for Cleaners"] },
-                { id: "system_business", name: "Business", description: "For growing teams", features: ["Everything in Essentials", "Advanced Analytics", "Inventory Management", "API Access"] }
+                { id: "system_essentials", name: "Plano Essentials", description: "For small operations", features: ["Full System Access", "Property Management", "Task Automation", "Mobile App for Cleaners"] },
+                { id: "system_business", name: "Plano Business", description: "For growing teams", features: ["Everything in Essentials", "Advanced Analytics", "Inventory Management", "API Access"] }
             ],
             combos: [
                 { id: "founders_combo", name: "Founders", features: ["Full System", "Local Number (US)", "Call Recording", "Voicemail Transcription"] },
                 { id: "solopreneur_combo", name: "Solopreneur", features: ["All Founders features", "Voice Menus (IVR)", "Call Queues", "SMS Marketing"] },
-                { id: "growth_team_combo", name: "Growth Team", features: ["Solopreneur Features", "Power Dialer", "Real-time Monitoring", "Advanced CRM"] }
+                { id: "growth_team_combo", name: "Growth team", features: ["Solopreneur Features", "Power Dialer", "Real-time Monitoring", "Advanced CRM"] }
             ],
             telephony: [
-                { id: "voice_starter", name: "Voice Starter", features: ["Business Line Only", "Web & Mobile Apps", "Call Recording", "Voicemail Drop"] },
-                { id: "voice_pro", name: "Voice Pro", features: ["All Starter features", "Call Queues", "Voice Menus (IVR)", "Warm Transfers"] },
-                { id: "voice_scale", name: "Voice Scale", features: ["All Pro features", "Power Dialer", "Sentiment Analysis", "Advanced Reporting"] }
+                { id: "voice_starter", name: "Voice starter", features: ["Business Line Only", "Web & Mobile Apps", "Call Recording", "Voicemail Drop"] },
+                { id: "voice_pro", name: "Voice pro", features: ["All Starter features", "Call Queues", "Voice Menus (IVR)", "Warm Transfers"] },
+                { id: "voice_sale", name: "Voice Sale", features: ["All Pro features", "Power Dialer", "Sentiment Analysis", "Advanced Reporting"] }
             ]
         }
     },
@@ -58,18 +58,18 @@ const PRICING_DATA = {
         },
         plans: {
             system: [
-                { id: "system_essentials", name: "Essentials", description: "Para pequenas operações", features: ["Acesso completo ao Sistema", "Gestão de Propriedades", "Automação de Tarefas", "App Mobile para Cleaners"] },
-                { id: "system_business", name: "Business", description: "Para times em crescimento", features: ["Tudo do Essentials", "Analytics Avançado", "Gestão de Inventário", "API Acesso"] }
+                { id: "system_essentials", name: "Plano Essentials", description: "Para pequenas operações", features: ["Acesso completo ao Sistema", "Gestão de Propriedades", "Automação de Tarefas", "App Mobile para Cleaners"] },
+                { id: "system_business", name: "Plano Business", description: "Para times em crescimento", features: ["Tudo do Essentials", "Analytics Avançado", "Gestão de Inventário", "API Acesso"] }
             ],
             combos: [
                 { id: "founders_combo", name: "Founders", features: ["Sistema Completo", "Número Local (EUA)", "Gravador de Chamadas", "Correio de Voz Transcrito"] },
                 { id: "solopreneur_combo", name: "Solopreneur", features: ["Todas features Founders", "Menus de Voz (IVR)", "Filas de Chamada", "SMS Marketing"] },
-                { id: "growth_team_combo", name: "Growth Team", features: ["Features Solopreneur", "Power Dialer", "Monitoramento em Tempo Real", "CRM Avançado"] }
+                { id: "growth_team_combo", name: "Growth team", features: ["Features Solopreneur", "Power Dialer", "Monitoramento em Tempo Real", "CRM Avançado"] }
             ],
             telephony: [
-                { id: "voice_starter", name: "Voice Starter", features: ["Apenas Linha Comercial", "Apps Web & Mobile", "Gravador de Chamadas", "Voicemail Drop"] },
-                { id: "voice_pro", name: "Voice Pro", features: ["Todas features Starter", "Filas de Chamada", "Menus de Voz (IVR)", "Transferências Quentes"] },
-                { id: "voice_scale", name: "Voice Scale", features: ["Todas features Pro", "Power Dialer", "Analise de Sentimento", "Relatórios Avançados"] }
+                { id: "voice_starter", name: "Voice starter", features: ["Apenas Linha Comercial", "Apps Web & Mobile", "Gravador de Chamadas", "Voicemail Drop"] },
+                { id: "voice_pro", name: "Voice pro", features: ["Todas features Starter", "Filas de Chamada", "Menus de Voz (IVR)", "Transferências Quentes"] },
+                { id: "voice_sale", name: "Voice Sale", features: ["Todas features Pro", "Power Dialer", "Analise de Sentimento", "Relatórios Avançados"] }
             ]
         }
     },
@@ -88,18 +88,18 @@ const PRICING_DATA = {
         },
         plans: {
             system: [
-                { id: "system_essentials", name: "Essentials", description: "Para pequeñas operaciones", features: ["Acceso completo al Sistema", "Gestión de Propiedades", "Automatización de Tareas", "App Móvil para Cleaners"] },
-                { id: "system_business", name: "Business", description: "Para equipos en crecimiento", features: ["Todo de Essentials", "Analytics Avanzado", "Gestión de Inventario", "Acceso API"] }
+                { id: "system_essentials", name: "Plano Essentials", description: "Para pequeñas operaciones", features: ["Acceso completo al Sistema", "Gestión de Propiedades", "Automatización de Tareas", "App Móvil para Cleaners"] },
+                { id: "system_business", name: "Plano Business", description: "Para equipos en crecimiento", features: ["Todo de Essentials", "Analytics Avanzado", "Gestión de Inventario", "Acceso API"] }
             ],
             combos: [
                 { id: "founders_combo", name: "Founders", features: ["Sistema Completo", "Número Local (EE.UU.)", "Grabador de Llamadas", "Transcripción de Buzón de Voz"] },
                 { id: "solopreneur_combo", name: "Solopreneur", features: ["Todas las funciones Founders", "Menús de Voz (IVR)", "Colas de Llamada", "SMS Marketing"] },
-                { id: "growth_team_combo", name: "Growth Team", features: ["Funciones Solopreneur", "Power Dialer", "Monitoreo en Tiempo Real", "CRM Avanzado"] }
+                { id: "growth_team_combo", name: "Growth team", features: ["Funciones Solopreneur", "Power Dialer", "Monitoreo en Tiempo Real", "CRM Avanzado"] }
             ],
             telephony: [
-                { id: "voice_starter", name: "Voice Starter", features: ["Solo Línea Comercial", "Apps Web y Móvil", "Grabador de Llamadas", "Voicemail Drop"] },
-                { id: "voice_pro", name: "Voice Pro", features: ["Todas las funciones Starter", "Colas de Llamada", "Menús de Voz (IVR)", "Transferencias Calientes"] },
-                { id: "voice_scale", name: "Voice Scale", features: ["Todas las funciones Pro", "Power Dialer", "Análisis de Sentimiento", "Reportes Avanzados"] }
+                { id: "voice_starter", name: "Voice starter", features: ["Solo Línea Comercial", "Apps Web y Móvil", "Grabador de Llamadas", "Voicemail Drop"] },
+                { id: "voice_pro", name: "Voice pro", features: ["Todas las funciones Starter", "Colas de Llamada", "Menús de Voz (IVR)", "Transferencias Calientes"] },
+                { id: "voice_sale", name: "Voice Sale", features: ["Todas las funciones Pro", "Power Dialer", "Análisis de Sentimiento", "Reportes Avanzados"] }
             ]
         }
     }

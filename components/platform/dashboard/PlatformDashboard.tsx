@@ -15,15 +15,14 @@ import { ActiveTenantsMonitor } from '../system/ActiveTenantsMonitor';
 
 // Price Map from SQL (20240111_pricing_schema.sql)
 const PRICES: Record<string, number> = {
-    'system_essentials': 29.00,
-    'system_business': 59.00,
-    'system_enterprise': 299.00,
+    'system_essentials': 29.90,
+    'system_business': 39.90,
     'voice_starter': 14.99,
     'voice_pro': 34.99,
-    'voice_scale': 89.99,
-    'founders_combo': 29.90,
-    'solopreneur_combo': 39.00,
-    'growth_team_combo': 89.00
+    'voice_sale': 89.99,
+    'founders_combo': 49.90,
+    'solopreneur_combo': 69.90,
+    'growth_team_combo': 99.90
 };
 
 export const PlatformDashboard: React.FC = () => {
