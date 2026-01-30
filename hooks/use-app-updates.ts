@@ -47,9 +47,34 @@ export function useAppUpdates() {
             config: { broadcast: { self: false } }
         });
 
+
         channel
-            .on('broadcast', { event: 'new_release' }, ({ payload }) => {
+            .on('broadcast', { event: 'new_release' }, async ({ payload }) => {
                 console.log('[ReleaseGuard] 🚀 Manual push received:', payload);
+
+                // 1. Check Platform Targeting
+                const currentPath = window.location.pathname;
+                let currentPlatform = 'landing';
+
+                if (currentPath.includes('/platform')) currentPlatform = 'platform';
+                else if (currentPath.includes('/cleaner')) currentPlatform = 'cleaner'; // Assuming cleaner app route
+                else if (currentPath.includes('/tenant')) currentPlatform = 'tenant'; // Assuming tenant app route
+
+                // If payload specifies target_platform, invoke filter
+                if (payload.target_platform && payload.target_platform !== 'all' && payload.target_platform !== currentPlatform) {
+                    console.log(`[ReleaseGuard] update ignored. Target: ${payload.target_platform}, Current: ${currentPlatform}`);
+                    return;
+                }
+
+                // 2. Check Authentication (skip for landing page)
+                if (currentPlatform !== 'landing') {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    if (!session) {
+                        console.log('[ReleaseGuard] update ignored. User not logged in.');
+                        return;
+                    }
+                }
+
                 setUpdateState({
                     needRefresh: true,
                     source: 'realtime',

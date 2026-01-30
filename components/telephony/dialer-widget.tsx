@@ -23,11 +23,13 @@ import { Input } from '@/components/ui/input.tsx'
 import { cn } from '@/lib/utils.ts'
 import { useTelnyx } from '@/hooks/use-telnyx.ts'
 import { useLiveCoach } from '@/hooks/use-live-coach.ts'
+import { useDtmf } from '@/hooks/use-dtmf.ts'
 
 export function DialerWidget() {
   const [isOpen, setIsOpen] = React.useState(false)
   const [isDragging, setIsDragging] = React.useState(false)
   const [destination, setDestination] = React.useState('')
+  const { playTone } = useDtmf()
 
   // Persist position
   const [position, setPosition] = React.useState(() => {
@@ -52,6 +54,37 @@ export function DialerWidget() {
     if (callState === 'ringing') setIsOpen(true)
   }, [callState])
 
+  // Keyboard support
+  React.useEffect(() => {
+    if (!isOpen || callState !== 'idle') return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Allow standard navigation keys
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+
+      const key = e.key
+
+      // Numbers and symbols
+      if (/^[0-9*#]$/.test(key)) {
+        e.preventDefault()
+        handleKeyClick(key)
+      }
+      // Backspace
+      else if (key === 'Backspace') {
+        e.preventDefault()
+        setDestination(prev => prev.slice(0, -1))
+      }
+      // Enter
+      else if (key === 'Enter') {
+        e.preventDefault()
+        if (destination) makeCall(destination)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, callState, destination, makeCall])
+
   const formatTime = (s: number) => {
     const mins = Math.floor(s / 60)
     const secs = s % 60
@@ -59,6 +92,7 @@ export function DialerWidget() {
   }
 
   const handleKeyClick = (key: string) => {
+    playTone(key)
     setDestination(prev => prev + key)
   }
 
@@ -136,7 +170,7 @@ export function DialerWidget() {
                 </div>
               )}
 
-              {callState === 'idle' || callState === 'connecting' ? (
+              {callState === 'idle' ? (
                 <div className="space-y-6">
                   <div className="relative group">
                     <Input

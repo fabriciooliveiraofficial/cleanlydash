@@ -113,17 +113,47 @@ export const UnifiedInbox: React.FC = () => {
         }
     }, [selectedId]);
 
-    const handleSend = () => {
+    const [isUploading, setIsUploading] = useState(false);
+
+    const handleSend = async () => {
         if (!inputText.trim()) return;
+        const selectedConversation = conversations.find(c => c.id === selectedId);
+        if (!selectedConversation) {
+            toast.error(t('inbox.select_conversation'));
+            return;
+        }
+
+        const tempId = Date.now().toString();
         const newMessage: Message = {
-            id: Date.now().toString(),
+            id: tempId,
             content: inputText,
             direction: 'outbound',
             created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             status: 'queued'
         };
-        setMessages([...messages, newMessage]);
+
+        // Optimistic UI update
+        setMessages(prev => [...prev, newMessage]);
         setInputText('');
+
+        try {
+            const { error } = await supabase.functions.invoke('send_sms', {
+                body: {
+                    to: selectedConversation.customer_phone,
+                    message: newMessage.content
+                }
+            });
+
+            if (error) throw error;
+
+            // Update status to 'sent'
+            setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'sent' } : m));
+        } catch (error: any) {
+            console.error('Error sending SMS:', error);
+            toast.error('Failed to send SMS');
+            // Update status to 'failed' (or remove)
+            setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m)); // define failed status if needed or just error toast
+        }
     };
 
     const handleAudioCall = () => {
@@ -145,10 +175,60 @@ export const UnifiedInbox: React.FC = () => {
         fileInputRef.current?.click();
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
-            toast.success(`Attached: ${e.target.files[0].name}`);
-            // Logic to upload to Supabase Storage would go here
+            const file = e.target.files[0];
+            const selectedConversation = conversations.find(c => c.id === selectedId);
+            if (!selectedConversation) return;
+
+            setIsUploading(true);
+            toast.loading('Uploading attachment...');
+
+            try {
+                // Upload to Supabase Storage
+                const fileName = `${Date.now()}_${file.name.replace(/\s/g, '_')}`;
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('attachments')
+                    .upload(`${selectedConversation.customer_phone}/${fileName}`, file);
+
+                if (uploadError) throw uploadError;
+
+                const { data: { publicUrl } } = supabase.storage
+                    .from('attachments')
+                    .getPublicUrl(`${selectedConversation.customer_phone}/${fileName}`);
+
+                // Send MMS
+                const { error: sendError } = await supabase.functions.invoke('send_sms', {
+                    body: {
+                        to: selectedConversation.customer_phone,
+                        message: `[Attachment: ${file.name}]`,
+                        media_urls: [publicUrl]
+                    }
+                });
+
+                if (sendError) throw sendError;
+
+                toast.dismiss();
+                toast.success('MMS enviado!');
+
+                const newMessage: Message = {
+                    id: Date.now().toString(),
+                    content: `[File] ${file.name}`,
+                    direction: 'outbound',
+                    created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    status: 'sent'
+                };
+                setMessages(prev => [...prev, newMessage]);
+
+            } catch (error: any) {
+                console.error(error);
+                toast.dismiss();
+                toast.error('Erro ao enviar anexo: ' + error.message);
+            } finally {
+                setIsUploading(false);
+                // Reset file input
+                if (fileInputRef.current) fileInputRef.current.value = '';
+            }
         }
     };
 
@@ -322,15 +402,14 @@ export const UnifiedInbox: React.FC = () => {
                                         placeholder={t('inbox.type_message')}
                                         className="flex-1 bg-transparent border-none outline-none text-sm text-slate-700 placeholder:text-slate-400"
                                     />
-                                    {inputText ? (
-                                        <Button onClick={handleSend} size="icon" className="bg-indigo-600 hover:bg-indigo-700 h-8 w-8 rounded-full shadow-md text-white transition-all hover:scale-105 active:scale-95">
-                                            <Send size={14} className="ml-0.5" />
-                                        </Button>
-                                    ) : (
-                                        <Button onClick={handleMicClick} variant="ghost" size="icon" className="text-slate-400 hover:text-indigo-600 h-8 w-8 rounded-full transition-colors" title="Record Voice Message">
-                                            <Mic size={18} />
-                                        </Button>
-                                    )}
+                                    <Button
+                                        onClick={handleSend}
+                                        disabled={!inputText.trim() && !isUploading}
+                                        size="icon"
+                                        className={`h-8 w-8 rounded-full shadow-md transition-all ${!inputText.trim() ? 'bg-slate-200 text-slate-400' : 'bg-indigo-600 hover:bg-indigo-700 text-white hover:scale-105 active:scale-95'}`}
+                                    >
+                                        {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} className="ml-0.5" />}
+                                    </Button>
                                 </div>
                             </div>
                         </>

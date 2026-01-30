@@ -4,12 +4,14 @@ import { useForm } from 'react-hook-form';
 import { X, Search, Phone, Loader2, CheckCircle, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClient } from '../../lib/supabase/client';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 interface NumberSelectionModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSuccess: (phoneNumber: string) => void;
     isSandbox: boolean;
+    supabaseClient?: SupabaseClient; // Optional: pass client for Platform Admin context
 }
 
 interface SearchFormData {
@@ -37,7 +39,8 @@ const NumberSelectionModal: React.FC<NumberSelectionModalProps> = ({
     isOpen,
     onClose,
     onSuccess,
-    isSandbox
+    isSandbox,
+    supabaseClient
 }) => {
     const [step, setStep] = useState<'search' | 'confirm'>('search');
     const [loading, setLoading] = useState(false);
@@ -47,7 +50,8 @@ const NumberSelectionModal: React.FC<NumberSelectionModalProps> = ({
         defaultValues: { country_code: 'US' }
     });
 
-    const supabase = createClient();
+    // Use provided client or create default
+    const supabase = supabaseClient || createClient();
 
     const onSearch = async (data: SearchFormData) => {
         setLoading(true);
@@ -100,6 +104,17 @@ const NumberSelectionModal: React.FC<NumberSelectionModalProps> = ({
 
         setLoading(true);
         try {
+            // Check session first
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                toast.error("Sessão expirada. Por favor, faça login novamente.");
+                setLoading(false);
+                return;
+            }
+
+            console.log("[buy_number] Session valid, user:", session.user.id);
+            console.log("[buy_number] Token length:", session.access_token?.length);
+
             const { data, error } = await supabase.functions.invoke('buy_number', {
                 body: {
                     phone_number: selectedNumber.phone_number,

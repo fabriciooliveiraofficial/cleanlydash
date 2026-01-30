@@ -24,6 +24,7 @@ export const TelephonyManager: React.FC = () => {
     useEffect(() => {
         fetchLogs();
         fetchPlans();
+        fetchPlatformConfig();
     }, []);
 
     useEffect(() => {
@@ -93,6 +94,24 @@ export const TelephonyManager: React.FC = () => {
         setLoading(false);
     };
 
+    const fetchPlatformConfig = async () => {
+        const { data: apiKey } = await supabase
+            .from('platform_settings')
+            .select('value')
+            .eq('key', 'TELNYX_API_KEY')
+            .maybeSingle();
+
+        const { data: sipId } = await supabase
+            .from('platform_settings')
+            .select('value')
+            .eq('key', 'TELNYX_SIP_CREDENTIAL_ID')
+            .maybeSingle();
+
+        if (apiKey) (document.getElementById('p-api-key') as HTMLInputElement).value = apiKey.value;
+        if (sipId) (document.getElementById('p-sip-id') as HTMLInputElement).value = sipId.value;
+    };
+
+
     const handleSavePrices = async () => {
         if (!selectedPlanId) return toast.error("Select a plan first");
         setProvisioning(true);
@@ -119,9 +138,16 @@ export const TelephonyManager: React.FC = () => {
         const sip = (document.getElementById('p-sip-id') as HTMLInputElement).value;
         if (!key) return toast.error("Provider API Key is required");
 
+        // Check session first
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+            toast.error("Sessão expirada. Por favor, faça login novamente no Platform Admin.");
+            return;
+        }
+
         setProvisioning(true);
         try {
-            const { error } = await supabase.functions.invoke('provision_tenant', {
+            const { data, error } = await supabase.functions.invoke('provision_tenant', {
                 body: {
                     action: 'save_key',
                     is_platform_key: true,
@@ -129,11 +155,22 @@ export const TelephonyManager: React.FC = () => {
                     sip_id: sip.trim()
                 }
             });
-            if (error) throw error;
+
+            if (error) {
+                console.error("provision_tenant error:", error);
+                throw error;
+            }
+
+            console.log("provision_tenant response:", data);
             toast.success("Master Configuration Saved!");
-            (document.getElementById('p-api-key') as HTMLInputElement).value = '';
+
+            if (data?.debug) {
+                console.log("Debug info:", data.debug);
+            }
         } catch (e: any) {
-            toast.error("Error: " + e.message);
+            console.error("Full error:", e);
+            const msg = e?.message || e?.context?.message || JSON.stringify(e);
+            toast.error("Error: " + msg);
         } finally {
             setProvisioning(false);
         }
@@ -173,6 +210,7 @@ export const TelephonyManager: React.FC = () => {
                             <input
                                 type="password" id="p-api-key" placeholder="KEY..."
                                 className="w-full bg-slate-800 border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                                onChange={(e) => { }} // Controlled by DOM for simplicity but fetched on mount
                             />
                         </div>
                         <div className="space-y-1">

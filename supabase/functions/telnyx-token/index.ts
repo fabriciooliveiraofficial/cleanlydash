@@ -15,10 +15,6 @@ serve(async (req) => {
     try {
         const authHeader = req.headers.get('Authorization')!;
         console.log("Authorization Header Present:", !!authHeader);
-        if (authHeader) {
-            const jwt = authHeader.replace('Bearer ', '');
-            console.log("JWT Payload Hint:", jwt.split('.')[1]?.slice(0, 20) + "...");
-        }
 
         const supabase = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
@@ -38,92 +34,62 @@ serve(async (req) => {
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         )
 
-        // Standardized Key Resolution (Priority: Platform DB -> Env -> User Settings)
-        let telnyxApiKey: string | undefined = undefined;
-        let resolutionSource: string = 'none';
-
-        // 1. Platform Database Settings (Admin-configured)
-        const { data: platformKeyData, error: platformError } = await supabaseAdmin
+        // Get SIP credentials from platform_settings
+        const { data: sipUsername } = await supabaseAdmin
             .from('platform_settings')
             .select('value')
-            .eq('key', 'TELNYX_API_KEY')
-            .order('created_at', { ascending: false })
-            .limit(1)
+            .eq('key', 'TELNYX_SIP_USERNAME')
             .maybeSingle();
 
-        if (platformError) console.error("Platform Settings Error:", platformError);
+        const { data: sipPassword } = await supabaseAdmin
+            .from('platform_settings')
+            .select('value')
+            .eq('key', 'TELNYX_SIP_PASSWORD')
+            .maybeSingle();
 
-        if (platformKeyData?.value && platformKeyData.value.length > 20) {
-            telnyxApiKey = platformKeyData.value.trim();
-            resolutionSource = 'database_platform';
-        }
+        const { data: callerIdNumber } = await supabaseAdmin
+            .from('platform_settings')
+            .select('value')
+            .eq('key', 'TELNYX_CALLER_ID')
+            .maybeSingle();
 
-        // 2. Fallback: Environment Variables
-        if (!telnyxApiKey) {
-            const envKey = Deno.env.get('TELNYX_MASTER_KEY') || Deno.env.get('TELNYX_API_KEY');
-            if (envKey && envKey.length > 20) {
-                telnyxApiKey = envKey;
-                resolutionSource = 'environment_variable';
-            }
-        }
+        // Get from user's telnyx_settings as fallback
+        const { data: userSettings } = await supabaseAdmin
+            .from('telnyx_settings')
+            .select('*')
+            .eq('user_id', user.id)
+            .maybeSingle();
 
-        // 3. Fallback: User Settings
-        if (!telnyxApiKey) {
-            const { data: settings, error: settingsError } = await supabaseAdmin.from('telnyx_settings').select('*');
-            if (settingsError) console.error("Telnyx Settings Fetch Error:", settingsError);
+        const login = sipUsername?.value || userSettings?.sip_username;
+        const password = sipPassword?.value || userSettings?.sip_password;
+        const callerId = callerIdNumber?.value || userSettings?.phone_number;
 
-            const myRow = settings?.find(s => s.user_id === user.id);
-            const fallbackRow = settings?.find(s => s.api_key || s.managed_api_key);
-            const targetRow = myRow || fallbackRow;
-
-            if (targetRow) {
-                const pk = targetRow.api_key || targetRow.managed_api_key;
-                if (pk && pk.length > 20) {
-                    telnyxApiKey = pk.trim();
-                    resolutionSource = 'database_user_settings';
-                }
-            }
-        }
-
-        console.log(`Telnyx Key Resolved via ${resolutionSource}. Length: ${telnyxApiKey?.length || 0}`);
-
-        if (!telnyxApiKey) throw new Error('TELNYX_API_KEY missing or invalid');
-
-        // Get SIP Credential
-        const { data: platformSip } = await supabaseAdmin.from('platform_settings').select('value').eq('key', 'TELNYX_SIP_CREDENTIAL_ID').maybeSingle();
-        const sipCredentialId = platformSip?.value;
-
-        if (!sipCredentialId) throw new Error('TELNYX_SIP_CREDENTIAL_ID missing');
-
-        const response = await fetch(`https://api.telnyx.com/v2/telephony_credentials/${sipCredentialId}/token`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${telnyxApiKey}`
-            }
-        })
-
-        if (!response.ok) {
-            const errorBody = await response.text();
-            console.error("Telnyx API Error:", errorBody);
-            // Return the actual Telnyx error body in the response
+        if (!login || !password) {
+            console.error("Missing SIP credentials", { login: !!login, password: !!password });
             return new Response(JSON.stringify({
-                error: `Telnyx Token Error: ${response.statusText}`,
-                details: errorBody
+                error: 'SIP credentials not configured',
+                details: 'Please configure TELNYX_SIP_USERNAME and TELNYX_SIP_PASSWORD in platform_settings'
             }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                status: response.status,
+                status: 400,
             })
         }
 
-        const token = await response.text();
+        console.log(`Returning SIP credentials for user: ${login}`);
 
+        // Return SIP credentials for direct authentication
         return new Response(
-            JSON.stringify({ token, refresh_token: "not_implemented" }),
+            JSON.stringify({
+                authType: 'sip_credentials',
+                login: login,
+                password: password,
+                callerId: callerId || ''
+            }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
 
     } catch (error: any) {
+        console.error("Error in telnyx-token:", error);
         return new Response(JSON.stringify({ error: error.message }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             status: 400,

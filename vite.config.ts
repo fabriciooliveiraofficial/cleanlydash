@@ -54,6 +54,9 @@ export default defineConfig(({ mode }) => {
               options: { cacheName: 'google-fonts', expiration: { maxAgeSeconds: 31536000 } }
             }
           ]
+        },
+        injectManifest: {
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024 // 5MB limit for injectManifest strategy
         }
       })
     ],

@@ -28,7 +28,20 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
     const [callState, setCallState] = useState<CallState>('idle')
     const [isMuted, setIsMuted] = useState(false)
     const [duration, setDuration] = useState(0)
+    const [callerId, setCallerId] = useState<string>('')
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+    const audioRef = useRef<HTMLAudioElement>(null)
+
+    // Monitor Call Object for Remote Stream updates
+    useEffect(() => {
+        if (call && call.remoteStream && audioRef.current && callState === 'active') {
+            console.log('Attaching remote stream (useEffect)', call.remoteStream);
+            if (audioRef.current.srcObject !== call.remoteStream) {
+                audioRef.current.srcObject = call.remoteStream;
+                audioRef.current.play().catch(e => console.error('Error playing audio stream:', e));
+            }
+        }
+    }, [call, callState]);
 
     // Inicializar Cliente Telnyx
     useEffect(() => {
@@ -43,8 +56,8 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
 
             const { data, error } = await supabase.functions.invoke('telnyx-token')
 
-            if (error || !data?.token) {
-                console.error('Failed to get Telnyx token:', error);
+            if (error || (!data?.token && !data?.login)) {
+                console.error('Failed to get Telnyx credentials:', error);
                 // Attempt to log more detail if it's an HTTP error with a response
                 if (error && typeof error === 'object' && 'context' in error) {
                     try {
@@ -57,9 +70,32 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
                 return
             }
 
-            const rtcClient = new TelnyxRTC({
-                login_token: data.token
-            })
+            let rtcClient: any;
+
+            // Check if using SIP credentials (new method)
+            if (data.authType === 'sip_credentials' && data.login && data.password) {
+                console.log('Using SIP credential authentication for:', data.login);
+                // Save callerId for outbound calls
+                if (data.callerId) {
+                    setCallerId(data.callerId);
+                    console.log('Caller ID configured:', data.callerId);
+                }
+                rtcClient = new TelnyxRTC({
+                    login: data.login,
+                    password: data.password,
+                    debug: true
+                });
+            }
+            // Fallback to token-based auth (old method)
+            else if (data.token) {
+                console.log('Using token-based authentication');
+                rtcClient = new TelnyxRTC({
+                    login_token: data.token
+                });
+            } else {
+                console.error('No valid authentication credentials received');
+                return;
+            }
 
             rtcClient.on('telnyx.ready', () => {
                 console.log('Telnyx WebRTC Ready (Context)')
@@ -88,10 +124,16 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
                             setCallState('idle')
                             setCall(null)
                             stopTimer()
+                            if (audioRef.current) {
+                                audioRef.current.srcObject = null
+                            }
                             break
                     }
                 }
             })
+            // ... (rest of init)
+
+            // ... (rest of methods)
 
             try {
                 rtcClient.connect()
@@ -121,15 +163,40 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
         setDuration(0)
     }
 
-    const makeCall = useCallback((destination: string) => {
+    const makeCall = useCallback(async (destination: string) => {
         if (!client) {
             console.warn("Telnyx client not ready")
             return
         }
         try {
+            // Normalize destination to E.164 if it looks like a US number
+            let cleanDest = destination.replace(/\D/g, '');
+            if (cleanDest.length === 10) {
+                cleanDest = `+1${cleanDest}`;
+            } else if (!cleanDest.startsWith('+')) {
+                cleanDest = `+${cleanDest}`;
+            }
+
+            const configuredCallerId = callerId || 'Anonymous';
+            console.log(`Making call to ${cleanDest} with caller ID: ${configuredCallerId}`);
+
+            // Log the call immediately to call_logs (bypasses webhook delay/dependency)
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                await supabase.from('call_logs').insert({
+                    tenant_id: user.id,
+                    direction: 'outbound',
+                    from_number: configuredCallerId,
+                    to_number: cleanDest,
+                    status: 'ringing',
+                    created_at: new Date().toISOString()
+                });
+                console.log('Call logged to call_logs table');
+            }
+
             const newCall = client.newCall({
-                destinationNumber: destination,
-                callerNumber: 'Cleanlydash-System',
+                destinationNumber: cleanDest,
+                callerNumber: configuredCallerId,
                 audio: true
             })
             setCall(newCall)
@@ -137,7 +204,7 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
         } catch (e) {
             console.error("Error making call", e)
         }
-    }, [client])
+    }, [client, callerId, supabase])
 
     const answerCall = useCallback(() => {
         if (call) call.answer()
@@ -155,6 +222,18 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
         }
     }, [call, isMuted])
 
+    // Listen for quick action events from other components
+    useEffect(() => {
+        const handleQuickCall = (e: CustomEvent<{ number: string }>) => {
+            if (e.detail?.number) {
+                makeCall(e.detail.number);
+            }
+        };
+
+        window.addEventListener('quick-call', handleQuickCall as EventListener);
+        return () => window.removeEventListener('quick-call', handleQuickCall as EventListener);
+    }, [makeCall]);
+
     const value = {
         callState,
         makeCall,
@@ -168,6 +247,7 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
 
     return (
         <TelnyxContext.Provider value={value}>
+            <audio ref={audioRef} autoPlay playsInline style={{ display: 'none' }} />
             {children}
         </TelnyxContext.Provider>
     )

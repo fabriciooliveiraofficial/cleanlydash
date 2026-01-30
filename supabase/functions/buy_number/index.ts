@@ -175,6 +175,24 @@ serve(async (req) => {
             }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
         }
 
+        // SUCCESS! Save the number to the database for this user
+        diag.step = "saving_to_db";
+        const { error: dbError } = await supabaseAdmin
+            .from('telnyx_settings')
+            .upsert({
+                user_id: user.id,
+                phone_number: phone_number,
+                is_active: true
+            }, { onConflict: 'user_id' });
+
+        if (dbError) {
+            console.error("Failed to save number to DB:", dbError);
+            diag.db_save_error = dbError.message;
+            // Still return success since Telnyx purchase worked
+        } else {
+            diag.db_saved = true;
+        }
+
         return new Response(JSON.stringify({ success: true, data: resultData, debug: diag }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     } catch (error: any) {

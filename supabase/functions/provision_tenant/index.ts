@@ -52,16 +52,48 @@ serve(async (req) => {
             if (is_platform_key) {
                 if (!isAdmin) throw new Error('Apenas administradores podem salvar a Chave Global da Plataforma.');
 
-                console.log(`Saving Platform Global Key (Cleanlydash Provider Mode)`);
-                const { error: pError } = await supabaseAdmin
+                console.log(`[provision_tenant] Saving Platform Global Key. Key length: ${api_key.trim().length}`);
+
+                const { data: upsertData, error: pError } = await supabaseAdmin
                     .from('platform_settings')
-                    .upsert({ key: 'TELNYX_API_KEY', value: api_key.trim() });
+                    .upsert({ key: 'TELNYX_API_KEY', value: api_key.trim() }, { onConflict: 'key' })
+                    .select();
+
+                console.log(`[provision_tenant] Upsert result:`, { upsertData, error: pError?.message });
 
                 if (sip_id) {
-                    await supabaseAdmin.from('platform_settings').upsert({ key: 'TELNYX_SIP_CREDENTIAL_ID', value: sip_id.trim() });
+                    const { error: sipError } = await supabaseAdmin
+                        .from('platform_settings')
+                        .upsert({ key: 'TELNYX_SIP_CREDENTIAL_ID', value: sip_id.trim() }, { onConflict: 'key' });
+                    if (sipError) console.log(`[provision_tenant] SIP ID save error:`, sipError.message);
                 }
 
-                if (pError) throw pError;
+                if (pError) {
+                    console.error(`[provision_tenant] Platform key save FAILED:`, pError);
+                    throw pError;
+                }
+
+                // Verify the save
+                const { data: verifyData } = await supabaseAdmin
+                    .from('platform_settings')
+                    .select('key, value')
+                    .eq('key', 'TELNYX_API_KEY')
+                    .maybeSingle();
+
+                console.log(`[provision_tenant] Verification read:`, verifyData ? `Found, length=${verifyData.value?.length}` : 'NOT FOUND');
+
+                return new Response(JSON.stringify({
+                    success: true,
+                    message: "Chave salva com sucesso",
+                    debug: {
+                        saved_key_length: api_key.trim().length,
+                        verified: !!verifyData?.value,
+                        verified_length: verifyData?.value?.length
+                    }
+                }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    status: 200,
+                });
             } else {
                 console.log(`Saving User Specific Key for user ${user.id}`);
                 const { error: upsertError } = await supabaseAdmin

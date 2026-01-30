@@ -61,9 +61,40 @@ serve(async (req) => {
             }
 
         } else if (eventType === 'call.initiated') {
-            // ... (keep or simplified call logging)
-            // For now, allow it to just log console or do nothing if we don't have 'calls' table active
             console.log("Call initiated:", payload.call_control_id)
+
+            // 1. Identify Tenant/User to dial
+            // For now, we dial the SIP User associated with the credential.
+            // In a multi-tenant setup, we ideally map 'To' number -> SIP Username.
+            // But since we use one global credential id, we can just dial the SIP Domain or a specific client if registered.
+            // A common pattern for WebRTC is to dial the SIP Username.
+            // If the client registers with a token, they are effectively 'sip:username@sip.telnyx.com'.
+
+            // Simple Strategy: Dial the SIP connection. Telnyx handles ringing registered clients.
+            // We use TeXML to dial.
+
+            const xmlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+            <Response>
+                <Record channels="dual" format="mp3" playBeep="true" />
+                <Dial>
+                    <Sip>sip:${payload.to}@sip.telnyx.com</Sip>
+                </Dial>
+            </Response>`;
+
+            // Note: The above assumes we want to ring the SIP URI matching the DID.
+            // If clients register as "user1", we need to dial "user1@sip.telnyx.com".
+            // Since we don't have user mapping yet, we will dial the SIP Domain with the DID as user.
+            // Clients must register as that DID or we use a fallback.
+
+            // BETTER: Use <Client> if we are using the SDK client name.
+            // But our SDK init doesn't set client name.
+            // Let's stick to <Sip> routing or just <Dial> to the SIP interface.
+
+            // ALTERNATIVE: Just return the TeXML.
+            return new Response(xmlResponse, {
+                headers: { ...corsHeaders, 'Content-Type': 'application/xml' },
+                status: 200
+            });
 
         } else if (eventType === 'call.hangup') {
             console.log("Call hangup:", payload.call_control_id)

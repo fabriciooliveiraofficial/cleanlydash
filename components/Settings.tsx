@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Mail, Globe, Lock, Bell, User, Shield, MessageSquare, CreditCard } from 'lucide-react';
+import { Mail, Globe, Lock, Bell, User, Shield, MessageSquare, CreditCard, FileSpreadsheet } from 'lucide-react';
 import { SmtpSettings } from './SmtpSettings';
 import { TelnyxSettings } from './settings/TelnyxSettings';
 import { LanguageSwitcher } from './language-switcher';
@@ -11,9 +11,10 @@ import { NotificationSettings } from './settings/NotificationSettings';
 import { SecuritySettings } from './settings/SecuritySettings';
 import { IntegrationsSettings } from './settings/IntegrationsSettings';
 import { BillingSettings } from './settings/BillingSettings';
+import { DataHub } from './settings/data-hub/DataHub';
 
 
-type SettingsTab = 'profile' | 'billing' | 'smtp' | 'telnyx' | 'roles' | 'notifications' | 'integrations' | 'security';
+type SettingsTab = 'profile' | 'billing' | 'smtp' | 'telnyx' | 'roles' | 'notifications' | 'integrations' | 'security' | 'datahub';
 
 export const Settings: React.FC = () => {
     const { t } = useTranslation();
@@ -27,6 +28,7 @@ export const Settings: React.FC = () => {
         { id: 'telnyx', label: 'SMS / Voz', icon: MessageSquare }, // New Tab
         { id: 'roles', label: 'Roles & Permissions', icon: Shield },
         { id: 'integrations', label: 'Integrations', icon: CreditCard },
+        { id: 'datahub', label: 'Data Hub', icon: FileSpreadsheet },
         { id: 'notifications', label: 'Notifications', icon: Bell },
 
         { id: 'security', label: 'Security', icon: Lock },
@@ -50,6 +52,7 @@ export const Settings: React.FC = () => {
             case 'profile': return <TenantProfile />;
             case 'notifications': return <NotificationSettings />;
             case 'integrations': return <IntegrationsSettings />;
+            case 'datahub': return <DataHub />;
             case 'security': return <SecuritySettings />;
             default: return null;
 
