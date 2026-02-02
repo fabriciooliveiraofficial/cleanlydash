@@ -46,55 +46,25 @@ export function useSessionManager() {
     /**
      * Load session for a specific route context
      */
+    /**
+     * Load session for a specific route context
+     */
     const loadSessionForRoute = useCallback(async (route: RouteContext): Promise<boolean> => {
         const client = getClientForRoute(route);
-        let storageKey = STORAGE_KEYS[route];
-
-        // Portal Mode: If we are portaling, we should use the platform session
-        // regardless of the current route, as the admin is authenticated in the platform.
-        const portalConfig = sessionStorage.getItem('portal_mode_config');
-        if (portalConfig && route === 'tenant') {
-            console.log('[SessionManager] 🛡️ Portal Mode detected, using platform session storage');
-            storageKey = STORAGE_KEYS.platform;
-        }
 
         try {
-            // Step 1: Clear any existing Supabase session (local only, don't hit server)
-            await client.auth.signOut({ scope: 'local' });
+            // Simply check if we have a valid session
+            const { data: { session }, error } = await client.auth.getSession();
 
-            // Step 2: Try to load session from custom storage
-            const storedSessionRaw = localStorage.getItem(storageKey);
-
-            if (!storedSessionRaw) {
-                console.log(`[SessionManager] No stored session for ${route}`);
+            if (error || !session) {
+                console.log(`[SessionManager] No active session for ${route}`);
                 return false;
             }
 
-            const storedSession: Session = JSON.parse(storedSessionRaw);
-
-            // Step 3: Validate session has required fields
-            if (!storedSession.access_token || !storedSession.user) {
-                console.warn(`[SessionManager] Invalid session data for ${route}, clearing...`);
-                localStorage.removeItem(storageKey);
-                return false;
-            }
-
-            // Step 4: Restore session in Supabase
-            const { error } = await client.auth.setSession({
-                access_token: storedSession.access_token,
-                refresh_token: storedSession.refresh_token,
-            });
-
-            if (error) {
-                console.error(`[SessionManager] Failed to restore session for ${route}:`, error);
-                localStorage.removeItem(storageKey);
-                return false;
-            }
-
-            console.log(`[SessionManager] ✅ Session loaded for ${route}:`, storedSession.user.email);
+            console.log(`[SessionManager] ✅ Session valid for ${route}:`, session.user.email);
             return true;
         } catch (err) {
-            console.error(`[SessionManager] Error loading session for ${route}:`, err);
+            console.error(`[SessionManager] Error checking session for ${route}:`, err);
             return false;
         }
     }, [getClientForRoute]);
