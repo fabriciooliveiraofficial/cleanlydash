@@ -32,6 +32,7 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
     const audioRef = useRef<HTMLAudioElement>(null)
     const ringtoneRef = useRef<HTMLAudioElement>(null)
+    const startTimeRef = useRef<number | null>(null)
 
     // Handle Ringtone
     useEffect(() => {
@@ -137,24 +138,69 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
             })
 
             rtcClient.on('telnyx.notification', (notification: any) => {
-                const { call: updatedCall } = notification
                 if (notification.type === 'callUpdate') {
-                    setCall(updatedCall)
+                    const { call: updatedCall } = notification;
+
+                    // Support Singleton Call: 
+                    // 1. If we don't have a call state, accept this as the current call (e.g. inbound)
+                    // 2. If we have a call state, only update if the IDs match
+                    setCall((prevCall: any) => {
+                        if (!prevCall || prevCall.id === updatedCall.id) {
+                            return updatedCall;
+                        }
+                        return prevCall;
+                    });
 
                     switch (updatedCall.state) {
                         case 'ringing':
-                            setCallState('ringing')
+                            // Only set global callState if it's the call we are tracking
+                            setCallState((prev: string) => {
+                                if (updatedCall.id === (window as any)._telnyx_current_call_id) return 'ringing';
+                                return prev as any;
+                            });
                             break
                         case 'active':
-                            setCallState('active')
-                            startTimer()
+                            setCallState((prev: string) => {
+                                if (updatedCall.id === (window as any)._telnyx_current_call_id) {
+                                    startTimeRef.current = Date.now();
+                                    startTimer();
+                                    return 'active';
+                                }
+                                return prev as any;
+                            });
                             break
                         case 'hangup':
-                            setCallState('idle')
-                            setCall(null)
-                            stopTimer()
-                            if (audioRef.current) {
-                                audioRef.current.srcObject = null
+                            if (updatedCall.id === (window as any)._telnyx_current_call_id) {
+                                console.log(`Active call ${updatedCall.id} hung up.`);
+                                setCallState('idle')
+                                setCall(null)
+                                stopTimer()
+                                if (audioRef.current) {
+                                    audioRef.current.srcObject = null
+                                }
+                                (window as any)._telnyx_current_call_id = null;
+
+                                // Update log ... (logging logic remains)
+                                const endTime = Date.now()
+                                const start = startTimeRef.current || endTime
+                                const durationSecs = Math.round((endTime - start) / 1000)
+                                const minutes = Math.ceil(durationSecs / 60)
+                                const cost = durationSecs > 0 ? (minutes * 0.08) : 0
+
+                                supabase.auth.getUser().then(({ data: { user } }) => {
+                                    if (user && updatedCall.id) {
+                                        supabase.from('call_logs')
+                                            .update({
+                                                status: 'completed',
+                                                duration_seconds: durationSecs,
+                                                cost: cost
+                                            })
+                                            .eq('external_id', updatedCall.id);
+                                    }
+                                });
+                                startTimeRef.current = null;
+                            } else {
+                                console.log(`Background call ${updatedCall.id} hung up.`);
                             }
                             break
                     }
@@ -174,8 +220,26 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
 
         initTelnyx()
 
+        const handleBeforeUnload = () => {
+            if (client) {
+                // Try to hang up any active calls before closing
+                if (client.calls) {
+                    Object.values(client.calls).forEach((c: any) => c.hangup());
+                }
+                client.disconnect();
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+
         return () => {
-            if (client) client.disconnect()
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            if (client) {
+                if (client.calls) {
+                    Object.values(client.calls).forEach((c: any) => c.hangup());
+                }
+                client.disconnect();
+            }
             stopTimer()
         }
     }, [])
@@ -197,6 +261,15 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
             console.warn("Telnyx client not ready")
             return
         }
+
+        // 1. Prevent overlapping calls - CRITICAL GUARD
+        if (callState !== 'idle' || (window as any)._telnyx_current_call_id || call) {
+            console.warn("Call already in progress. Ignoring makeCall request.");
+            // If there's a ghost call, try to clean it up but don't start a new one yet
+            if (call) call.hangup();
+            return;
+        }
+
         try {
             // Normalize destination to E.164 if it looks like a US number
             let cleanDest = destination.replace(/\D/g, '');
@@ -207,9 +280,21 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
             }
 
             const configuredCallerId = callerId || 'Anonymous';
-            console.log(`Making call to ${cleanDest} with caller ID: ${configuredCallerId}`);
+            console.log(`Initiating call to ${cleanDest}...`);
 
-            // Log the call immediately to call_logs (bypasses webhook delay/dependency)
+            const newCall = client.newCall({
+                destinationNumber: cleanDest,
+                callerNumber: configuredCallerId,
+                audio: true
+            });
+
+            // Track this call ID globally to filter notifications correctly
+            (window as any)._telnyx_current_call_id = newCall.id;
+
+            setCall(newCall)
+            setCallState('connecting')
+
+            // Log the call immediately to call_logs
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
                 await supabase.from('call_logs').insert({
@@ -218,30 +303,29 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
                     from_number: configuredCallerId,
                     to_number: cleanDest,
                     status: 'ringing',
-                    created_at: new Date().toISOString()
+                    created_at: new Date().toISOString(),
+                    external_id: newCall.id
                 });
-                console.log('Call logged to call_logs table');
             }
-
-            const newCall = client.newCall({
-                destinationNumber: cleanDest,
-                callerNumber: configuredCallerId,
-                audio: true
-            })
-            setCall(newCall)
-            setCallState('connecting')
         } catch (e) {
             console.error("Error making call", e)
+            setCallState('error')
         }
-    }, [client, callerId, supabase])
+    }, [client, callerId, supabase, call])
 
     const answerCall = useCallback(() => {
         if (call) call.answer()
     }, [call])
 
     const hangup = useCallback(() => {
-        if (call) call.hangup()
-        else setCallState('idle')
+        console.log("Hangup requested manually");
+        if (call) {
+            call.hangup();
+        } else {
+            console.log("No active call object found in state, force resetting UI");
+            setCallState('idle');
+            (window as any)._telnyx_current_call_id = null;
+        }
     }, [call])
 
     const toggleMute = useCallback(() => {
