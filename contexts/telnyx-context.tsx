@@ -31,6 +31,29 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
     const [callerId, setCallerId] = useState<string>('')
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
     const audioRef = useRef<HTMLAudioElement>(null)
+    const ringtoneRef = useRef<HTMLAudioElement>(null)
+
+    // Handle Ringtone
+    useEffect(() => {
+        if (callState === 'ringing' && call?.direction === 'inbound') {
+            const playRingtone = async () => {
+                try {
+                    if (ringtoneRef.current) {
+                        ringtoneRef.current.currentTime = 0;
+                        await ringtoneRef.current.play();
+                    }
+                } catch (error) {
+                    console.error("Error playing ringtone:", error);
+                }
+            };
+            playRingtone();
+        } else {
+            if (ringtoneRef.current) {
+                ringtoneRef.current.pause();
+                ringtoneRef.current.currentTime = 0;
+            }
+        }
+    }, [callState, call]);
 
     // Monitor Call Object for Remote Stream updates
     useEffect(() => {
@@ -47,6 +70,12 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
     useEffect(() => {
         async function initTelnyx() {
             setCallState('idle')
+            // ... (rest of the file remains same until return)
+            // I will start the replacement from timerRef line to include the new useEffect and Refs
+            // And I need to update the return statement too. This tool doesn't support multiple disjoint edits in 'replace_file_content' unless I use 'multi_replace'.
+            // But I can limit the scope.
+            // Let's use multi_replace for safety and clarity.
+
 
             const { data: { session } } = await supabase.auth.getSession()
             if (!session) {
@@ -248,6 +277,7 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
     return (
         <TelnyxContext.Provider value={value}>
             <audio ref={audioRef} autoPlay playsInline style={{ display: 'none' }} />
+            <audio ref={ringtoneRef} src="/ringtone.mp3" loop style={{ display: 'none' }} />
             {children}
         </TelnyxContext.Provider>
     )
