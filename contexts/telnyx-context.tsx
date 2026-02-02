@@ -58,7 +58,9 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
 
     // Monitor Call Object for Remote Stream updates
     useEffect(() => {
-        if (call && call.remoteStream && audioRef.current && callState === 'active') {
+        if (call && call.remoteStream && audioRef.current) {
+            // Attach stream for Ringback (Early Media) and Active audio
+            // Do not restrict to 'active' state only, as ringback happens in 'connecting'/'ringing'
             console.log('Attaching remote stream (useEffect)', call.remoteStream);
             if (audioRef.current.srcObject !== call.remoteStream) {
                 audioRef.current.srcObject = call.remoteStream;
@@ -161,9 +163,13 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
                             break
                         case 'active':
                             setCallState((prev: string) => {
+                                // If IDs match OR if we are transitioning from connecting/ringing for the same call object
                                 if (updatedCall.id === (window as any)._telnyx_current_call_id) {
-                                    startTimeRef.current = Date.now();
-                                    startTimer();
+                                    if (!startTimeRef.current) {
+                                        console.log('Call Active - Starting Timer');
+                                        startTimeRef.current = Date.now();
+                                        startTimer();
+                                    }
                                     return 'active';
                                 }
                                 return prev as any;
