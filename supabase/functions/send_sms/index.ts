@@ -14,6 +14,7 @@ serve(async (req) => {
 
     let apiKeySource = 'Initial';
     let redactedKey = 'None';
+    let telnyxApiKey: any = null;
 
     try {
         const authHeader = req.headers.get('Authorization');
@@ -77,15 +78,15 @@ serve(async (req) => {
 
         } else {
             // Real Send Logic
-            let telnyxApiKey = Deno.env.get('TELNYX_API_KEY');
+            telnyxApiKey = Deno.env.get('TELNYX_API_KEY')?.trim() || null;
             let apiKeySource = 'Deno Env';
 
             // Try fetching from user settings first (if they BYOC)
             if (settings.api_key) {
-                telnyxApiKey = settings.api_key;
+                telnyxApiKey = settings.api_key.trim();
                 apiKeySource = 'User Settings (api_key)';
             } else if (settings.managed_api_key) {
-                telnyxApiKey = settings.managed_api_key;
+                telnyxApiKey = settings.managed_api_key.trim();
                 apiKeySource = 'User Settings (managed_api_key)';
             }
 
@@ -97,7 +98,7 @@ serve(async (req) => {
                     .eq('key', 'TELNYX_API_KEY')
                     .maybeSingle();
                 if (data?.value) {
-                    telnyxApiKey = data.value;
+                    telnyxApiKey = data.value.trim();
                     apiKeySource = 'Platform Settings';
                 }
             }
@@ -106,7 +107,8 @@ serve(async (req) => {
 
             // Redacted preview for debug info
             redactedKey = telnyxApiKey ? `${telnyxApiKey.substring(0, 5)}...${telnyxApiKey.slice(-4)}` : 'None';
-            console.log(`[send_sms] Using API Key from ${apiKeySource}: ${redactedKey}`);
+            const apiKeyLength = telnyxApiKey?.length || 0;
+            console.log(`[send_sms] Using API Key from ${apiKeySource}: ${redactedKey} (Length: ${apiKeyLength})`);
 
             const telnyxUrl = 'https://api.telnyx.com/v2/messages';
             const body: any = {
@@ -160,12 +162,13 @@ serve(async (req) => {
             stack: error.stack,
             apiKeySource: apiKeySource,
             apiKeyPreview: redactedKey,
+            apiKeyLength: typeof telnyxApiKey !== 'undefined' ? telnyxApiKey?.length : 0,
             timestamp: new Date().toISOString()
         };
 
         return new Response(
             JSON.stringify({
-                error: error.message,
+                error: `[${apiKeySource}] ${error.message} (Key Length: ${debugInfo.apiKeyLength})`,
                 debug: debugInfo
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
