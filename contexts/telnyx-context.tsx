@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { TelnyxRTC } from '@telnyx/webrtc'
 import { createClient } from '@/lib/supabase/client'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { useRole } from '@/hooks/use-role'
 
 export type CallState = 'idle' | 'connecting' | 'ringing' | 'active' | 'on-hold' | 'error'
 
@@ -33,6 +34,7 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
     const audioRef = useRef<HTMLAudioElement>(null)
     const ringtoneRef = useRef<HTMLAudioElement>(null)
     const startTimeRef = useRef<number | null>(null)
+    const { tenant_id } = useRole()
 
     // Handle Ringtone
     useEffect(() => {
@@ -302,10 +304,9 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
             setCallState('connecting')
 
             // Log the call immediately to call_logs
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
+            if (tenant_id) {
                 await supabase.from('call_logs').insert({
-                    tenant_id: user.id,
+                    tenant_id: tenant_id,
                     direction: 'outbound',
                     from_number: configuredCallerId,
                     to_number: cleanDest,
@@ -313,6 +314,8 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
                     created_at: new Date().toISOString(),
                     external_id: newCall.id
                 });
+            } else {
+                console.warn('Cannot log call: No tenant_id available');
             }
         } catch (e) {
             console.error("Error making call", e)
