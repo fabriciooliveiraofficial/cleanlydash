@@ -88,7 +88,7 @@ export const TelnyxSettings: React.FC = () => {
 
     if (loading) return <div className="p-8 text-center text-slate-400"><Loader2 className="animate-spin inline mr-2" />Carregando...</div>;
 
-    const isProvisioned = config?.managed_account_id;
+    const isProvisioned = config?.managed_account_id || config?.sip_username;
     const isKYCApproved = kycStatus?.status === 'approved';
 
     return (

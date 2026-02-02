@@ -34,48 +34,89 @@ serve(async (req) => {
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         )
 
-        // Get SIP credentials from platform_settings
-        const { data: sipUsername } = await supabaseAdmin
-            .from('platform_settings')
-            .select('value')
-            .eq('key', 'TELNYX_SIP_USERNAME')
-            .maybeSingle();
-
-        const { data: sipPassword } = await supabaseAdmin
-            .from('platform_settings')
-            .select('value')
-            .eq('key', 'TELNYX_SIP_PASSWORD')
-            .maybeSingle();
-
-        const { data: callerIdNumber } = await supabaseAdmin
-            .from('platform_settings')
-            .select('value')
-            .eq('key', 'TELNYX_CALLER_ID')
-            .maybeSingle();
-
-        // Get from user's telnyx_settings as fallback
+        // Check for individual settings FIRST (Absolute priority for isolation)
         const { data: userSettings } = await supabaseAdmin
             .from('telnyx_settings')
             .select('*')
             .eq('user_id', user.id)
             .maybeSingle();
 
-        const login = sipUsername?.value || userSettings?.sip_username;
-        const password = sipPassword?.value || userSettings?.sip_password;
-        const callerId = callerIdNumber?.value || userSettings?.phone_number;
+        let login = userSettings?.sip_username;
+        let password = userSettings?.sip_password;
+        const callerId = userSettings?.phone_number;
+
+        // LAZY PROVISIONING: If we have a phone number but no SIP credentials, create them now.
+        if (!login && callerId) {
+            console.log(`Lazy provisioning SIP credentials for existing tenant: ${user.id}`);
+
+            // 1. Resolve Telnyx API Key
+            const { data: platformKeyData } = await supabaseAdmin
+                .from('platform_settings')
+                .select('value')
+                .eq('key', 'TELNYX_API_KEY')
+                .maybeSingle();
+
+            const { data: connData } = await supabaseAdmin
+                .from('platform_settings')
+                .select('value')
+                .eq('key', 'TELNYX_CONNECTION_ID')
+                .maybeSingle();
+
+            const telnyxApiKey = platformKeyData?.value;
+            const connectionId = connData?.value;
+
+            if (telnyxApiKey && connectionId) {
+                try {
+                    const credResponse = await fetch(`https://api.telnyx.com/v2/telephony_credentials`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${telnyxApiKey}`
+                        },
+                        body: JSON.stringify({
+                            connection_id: connectionId,
+                            name: `Tenant_${user.id.substring(0, 8)}`,
+                            tag: user.id
+                        })
+                    });
+
+                    const credData = await credResponse.json();
+                    if (credResponse.ok) {
+                        login = credData.data.sip_username;
+                        password = credData.data.sip_password;
+
+                        // Save to database immediately
+                        await supabaseAdmin
+                            .from('telnyx_settings')
+                            .update({
+                                sip_username: login,
+                                sip_password: password,
+                                telnyx_connection_id: connectionId
+                            })
+                            .eq('user_id', user.id);
+
+                        console.log("Lazy provisioning successful");
+                    } else {
+                        console.error("Lazy provisioning failed:", credData);
+                    }
+                } catch (e: any) {
+                    console.error("Lazy provisioning exception:", e.message);
+                }
+            }
+        }
 
         if (!login || !password) {
-            console.error("Missing SIP credentials", { login: !!login, password: !!password });
+            console.error("Missing User SIP credentials", { user_id: user.id });
             return new Response(JSON.stringify({
-                error: 'SIP credentials not configured',
-                details: 'Please configure TELNYX_SIP_USERNAME and TELNYX_SIP_PASSWORD in platform_settings'
+                error: 'Telefonia não configurada para este inquilino',
+                details: 'Por favor, adquira um número ou configure suas credenciais SIP para ativar a telefonia.'
             }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                status: 400,
+                status: 403, // Forbidden instead of 400
             })
         }
 
-        console.log(`Returning SIP credentials for user: ${login}`);
+        console.log(`Returning ISOLATED SIP credentials for user: ${user.id}`);
 
         // Return SIP credentials for direct authentication
         return new Response(

@@ -35,6 +35,7 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
     const ringtoneRef = useRef<HTMLAudioElement>(null)
     const startTimeRef = useRef<number | null>(null)
     const isDialingRef = useRef(false)
+    const clientRef = useRef<any>(null) // Track specific instance for Strict Mode cleanup
     const { tenant_id } = useRole()
 
     // Handle Ringtone
@@ -76,6 +77,13 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
     useEffect(() => {
         async function initTelnyx() {
             setCallState('idle')
+
+            // Cleanup potential existing client from strict mode double-mount
+            if (clientRef.current) {
+                console.log("Disconnecting existing client before re-init");
+                clientRef.current.disconnect();
+                clientRef.current = null;
+            }
             // ... (rest of the file remains same until return)
             // I will start the replacement from timerRef line to include the new useEffect and Refs
             // And I need to update the return statement too. This tool doesn't support multiple disjoint edits in 'replace_file_content' unless I use 'multi_replace'.
@@ -148,9 +156,15 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
 
                     // Support Singleton Call: 
                     // 1. If we don't have a call state, accept this as the current call (e.g. inbound)
+                    // 1. If we don't have a call state, accept this as the current call (e.g. inbound)
                     // 2. If we have a call state, only update if the IDs match
                     setCall((prevCall: any) => {
                         if (!prevCall || prevCall.id === updatedCall.id) {
+                            // Vital: Preserve remoteStream if the update doesn't have it (JSON payload vs SDK Object)
+                            if (prevCall?.remoteStream && !updatedCall.remoteStream) {
+                                console.log('Preserving remoteStream from previous state');
+                                updatedCall.remoteStream = prevCall.remoteStream;
+                            }
                             return updatedCall;
                         }
                         return prevCall;
@@ -222,6 +236,7 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
             try {
                 rtcClient.connect()
                 setClient(rtcClient)
+                clientRef.current = rtcClient; // Save specific instance to ref
             } catch (err) {
                 console.error("Connection failed", err)
             }
@@ -243,11 +258,14 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
 
         return () => {
             window.removeEventListener('beforeunload', handleBeforeUnload);
-            if (client) {
-                if (client.calls) {
-                    Object.values(client.calls).forEach((c: any) => c.hangup());
+            // Cleanup Strict Mode / Unmount
+            if (clientRef.current) {
+                console.log("Cleaning up Telnyx Client (Unmount)");
+                if (clientRef.current.calls) {
+                    Object.values(clientRef.current.calls).forEach((c: any) => c.hangup());
                 }
-                client.disconnect();
+                clientRef.current.disconnect();
+                clientRef.current = null;
             }
             stopTimer()
         }

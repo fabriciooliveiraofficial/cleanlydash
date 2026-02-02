@@ -175,20 +175,75 @@ serve(async (req) => {
             }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
         }
 
-        // SUCCESS! Save the number to the database for this user
+        // SUCCESS! 
+        // Step 3: Provision SIP Credentials if they don't exist
+        diag.step = "provisioning_sip";
+
+        let sipUsername = null;
+        let sipPassword = null;
+        let connectionId = null;
+
+        // 3.1 Get Connection ID from platform_settings
+        const { data: connData } = await supabaseAdmin
+            .from('platform_settings')
+            .select('value')
+            .eq('key', 'TELNYX_CONNECTION_ID')
+            .maybeSingle();
+
+        connectionId = connData?.value;
+        diag.connection_id_found = !!connectionId;
+
+        if (connectionId && !sandbox) {
+            try {
+                const credResponse = await fetch(`https://api.telnyx.com/v2/telephony_credentials`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${telnyxApiKey}`
+                    },
+                    body: JSON.stringify({
+                        connection_id: connectionId,
+                        name: `Tenant_${user.id.substring(0, 8)}`,
+                        tag: user.id
+                    })
+                });
+
+                const credData = await credResponse.json();
+                diag.cred_status = credResponse.status;
+
+                if (credResponse.ok) {
+                    sipUsername = credData.data.sip_username;
+                    sipPassword = credData.data.sip_password;
+                    diag.sip_provisioned = true;
+                } else {
+                    console.error("Failed to provision SIP credentials:", credData);
+                    diag.sip_error = credData?.errors?.[0]?.detail;
+                }
+            } catch (e: any) {
+                console.error("SIP Provisioning Exception:", e.message);
+                diag.sip_exception = e.message;
+            }
+        }
+
+        // Step 4: Save everything to DB
         diag.step = "saving_to_db";
+        const upsertData: any = {
+            user_id: user.id,
+            phone_number: phone_number,
+            is_active: true
+        };
+
+        if (sipUsername) upsertData.sip_username = sipUsername;
+        if (sipPassword) upsertData.sip_password = sipPassword;
+        if (connectionId) upsertData.telnyx_connection_id = connectionId;
+
         const { error: dbError } = await supabaseAdmin
             .from('telnyx_settings')
-            .upsert({
-                user_id: user.id,
-                phone_number: phone_number,
-                is_active: true
-            }, { onConflict: 'user_id' });
+            .upsert(upsertData, { onConflict: 'user_id' });
 
         if (dbError) {
-            console.error("Failed to save number to DB:", dbError);
+            console.error("Failed to save number/creds to DB:", dbError);
             diag.db_save_error = dbError.message;
-            // Still return success since Telnyx purchase worked
         } else {
             diag.db_saved = true;
         }

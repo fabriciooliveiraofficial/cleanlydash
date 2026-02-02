@@ -15,20 +15,33 @@ export async function POST(request: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    // 1. Identificar o Tenant vinculado à conexão Telnyx
-    // Note: This relies on Telnyx sending connection_id. 
-    // If connection_id is missing, we might need another lookup strategy (e.g. from/to number).
-    const { data: tenant } = await supabase
-      .from('tenants')
-      .select('id')
-      .eq('telnyx_connection_id', event.payload.connection_id)
+    // 1. Identificar o Tenant vinculado pelo número de telefone (DID)
+    // Para chamadas recebidas, buscamos pelo 'to'. Para feitas, pelo 'from'.
+    const direction = event.payload.direction
+    const lookupNumber = direction === 'inbound' ? event.payload.to : event.payload.from
+
+    // Busca nas configurações individuais do inquilino
+    const { data: tenantSetting } = await supabase
+      .from('telnyx_settings')
+      .select('user_id')
+      .eq('phone_number', lookupNumber)
       .maybeSingle()
 
-    if (!tenant) {
-      // Fallback: Try to find tenant by phone number if connection_id fails
-      // This is important for some call flows
-      console.warn(`Tenant not found by connection_id: ${event.payload.connection_id}. Event: ${eventType}`)
-      return NextResponse.json({ error: "Tenant not mapped to this connection" }, { status: 404 })
+    let tenantId = tenantSetting?.user_id
+
+    if (!tenantId) {
+      console.warn(`Tenant não encontrado para o número: ${lookupNumber}. Evento: ${eventType}`)
+      // Fallback: Tenta por connection_id se for legado ou configuração global
+      const { data: fallbackTenant } = await supabase
+        .from('tenants')
+        .select('id')
+        .eq('telnyx_connection_id', event.payload.connection_id)
+        .maybeSingle()
+
+      if (!fallbackTenant) {
+        return NextResponse.json({ error: "Número não mapeado a nenhum tenant" }, { status: 404 })
+      }
+      tenantId = fallbackTenant.id
     }
 
     // 2. Processar Eventos do Ciclo de Vida da Chamada
@@ -36,7 +49,7 @@ export async function POST(request: Request) {
     switch (eventType) {
       case 'call.initiated':
         await supabase.from('call_logs').insert({
-          tenant_id: tenant.id,
+          tenant_id: tenantId,
           direction: event.payload.direction,
           from_number: event.payload.from,
           to_number: event.payload.to,
@@ -70,7 +83,7 @@ export async function POST(request: Request) {
         // Debitar Wallet do Cliente
         if (totalCost > 0) {
           await debitWallet(
-            tenant.id,
+            tenantId,
             totalCost,
             `Chamada Telnyx: ${minutes} min(s)`,
             'telephony'
