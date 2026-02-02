@@ -111,9 +111,10 @@ serve(async (req) => {
 
         // 5. Handle Staff Push Notifications
         if (booking.assigned_to) {
+            // Fix: Select specific columns instead of non-existent subscription_json
             const { data: subs } = await supabaseAdmin
                 .from('push_subscriptions')
-                .select('subscription_json')
+                .select('endpoint, p256dh, auth')
                 .eq('user_id', booking.assigned_to);
 
             if (subs && subs.length > 0) {
@@ -124,22 +125,41 @@ serve(async (req) => {
 
                 if (vapidPublic && vapidPrivate) {
                     try {
-                        const { default: webpush } = await import("web-push");
+                        // Use consistent import
+                        const { default: webpush } = await import("npm:web-push@3.6.6");
                         webpush.setVapidDetails(vapidEmail, vapidPublic, vapidPrivate);
+
+                        const notificationPayload = JSON.stringify({
+                            title: "Nova Atribuição! 🧹",
+                            body: `Você foi escalado para: ${booking.service?.name || 'Limpeza Residencial'}`,
+                            url: "/cleaner",
+                            bookingId: booking.id, // Critical for deep linking
+                            actions: [
+                                { action: 'open', title: 'Ver Detalhes' }
+                            ]
+                        });
 
                         for (const sub of subs) {
                             try {
-                                await webpush.sendNotification(sub.subscription_json, JSON.stringify({
-                                    title: "Nova Atribuição!",
-                                    body: `Você foi escalado para: ${booking.service?.name || 'Limpeza'}`,
-                                    url: "/cleaner"
-                                }));
-                            } catch (err) {
+                                const pushConfig = {
+                                    endpoint: sub.endpoint,
+                                    keys: {
+                                        p256dh: sub.p256dh,
+                                        auth: sub.auth
+                                    }
+                                };
+
+                                await webpush.sendNotification(pushConfig, notificationPayload);
+                            } catch (err: any) {
                                 console.error("Push delivery fail:", err);
+                                // Optional: clean up dead subscriptions
+                                if (err.statusCode === 410 || err.statusCode === 404) {
+                                    await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
+                                }
                             }
                         }
                         results.push = `Sent to ${subs.length} devices`;
-                    } catch (e) {
+                    } catch (e: any) {
                         console.error("WebPush Error:", e);
                         results.push = `error: ${e.message}`;
                     }
@@ -151,8 +171,11 @@ serve(async (req) => {
                 await supabaseAdmin.from('notification_history').insert({
                     booking_id: booking.id,
                     user_id: booking.assigned_to,
-                    type: 'push',
-                    status: results.push === 'sent' ? 'sent' : 'failed',
+                    title: "Nova Atribuição!",
+                    body: `Você foi escalado para: ${booking.service?.name || 'Limpeza'}`,
+                    category: 'assignment',
+                    data: { url: '/cleaner', bookingId: booking.id },
+                    status: results.push?.includes('Sent') ? 'sent' : 'failed',
                     tenant_id: booking.tenant_id
                 });
             }

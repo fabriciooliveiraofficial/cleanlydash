@@ -104,24 +104,48 @@ export const CleanerApp: React.FC<CleanerAppProps> = ({ userName, userId: initia
             toast.error(t('cleaner.notifications.delay_failed'));
         }
     };
-    const [notifications, setNotifications] = useState<any[]>([
-        {
-            id: '1',
-            type: 'assignment',
-            title: 'Novo Trabalho Atribuído',
-            message: 'Você foi escalado para uma limpeza em Adam Kate amanhã às 08:00.',
-            timestamp: '1h atrás',
-            isRead: false
-        },
-        {
-            id: '2',
-            type: 'update',
-            title: 'Horário Alterado',
-            message: 'O horário do agendamento de hoje foi ajustado para às 11:30.',
-            timestamp: '3h atrás',
-            isRead: true
+    const [notifications, setNotifications] = useState<any[]>([]);
+
+    const fetchNotifications = async () => {
+        if (!userId) return;
+        try {
+            const { data, error } = await supabase
+                .from('notification_history')
+                .select('*')
+                .eq('user_id', userId)
+                .order('created_at', { ascending: false })
+                .limit(20);
+
+            if (error) {
+                console.error('Error fetching notifications:', error);
+                return;
+            }
+
+            // Map DB fields to UI format
+            const mapped = (data || []).map((n: any) => ({
+                id: n.id,
+                type: n.category || 'assignment',
+                title: n.title,
+                message: n.body,
+                timestamp: format(new Date(n.created_at), "d MMM, HH:mm", { locale: ptBR }),
+                isRead: !!n.read_at,
+                rawDate: n.created_at
+            }));
+
+            setNotifications(mapped);
+        } catch (err) {
+            console.error('Error loading notifications:', err);
         }
-    ]);
+    };
+
+    // Poll for new notifications every minute
+    useEffect(() => {
+        if (userId) {
+            fetchNotifications();
+            const interval = setInterval(fetchNotifications, 60000); // 1 min polling
+            return () => clearInterval(interval);
+        }
+    }, [userId]);
 
     const unreadCount = notifications.filter(n => !n.isRead).length;
 
@@ -406,7 +430,12 @@ export const CleanerApp: React.FC<CleanerAppProps> = ({ userName, userId: initia
                 notifications={notifications}
                 isOpen={showNotifications}
                 onClose={() => setShowNotifications(false)}
-                onMarkAsRead={(id) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))}
+                onMarkAsRead={async (id) => {
+                    // Optimistic update
+                    setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+                    // DB update
+                    await supabase.from('notification_history').update({ read_at: new Date().toISOString() }).eq('id', id);
+                }}
                 onClearAll={() => setNotifications([])}
             />
 
