@@ -285,7 +285,8 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
             const newCall = client.newCall({
                 destinationNumber: cleanDest,
                 callerNumber: configuredCallerId,
-                audio: true
+                audio: true,
+                max_duration: 600 // 10 minutes maximum to prevent leaks
             });
 
             // Track this call ID globally to filter notifications correctly
