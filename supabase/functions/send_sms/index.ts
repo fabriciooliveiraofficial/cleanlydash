@@ -139,8 +139,20 @@ serve(async (req) => {
         }
 
     } catch (error: any) {
+        console.error("Error in send_sms:", error);
+
+        // Construct debug info
+        const debugInfo = {
+            message: error.message,
+            stack: error.stack,
+            timestamp: new Date().toISOString()
+        };
+
         return new Response(
-            JSON.stringify({ error: error.message }),
+            JSON.stringify({
+                error: error.message,
+                debug: debugInfo
+            }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
         )
     }

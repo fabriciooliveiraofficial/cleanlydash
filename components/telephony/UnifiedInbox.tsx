@@ -130,6 +130,12 @@ export const UnifiedInbox: React.FC = () => {
             return;
         }
 
+        // Validation for missing phone
+        if (!selectedConversation.customer_phone || selectedConversation.customer_phone === 'No Phone') {
+            toast.error('Este cliente não possui um número de telefone válido.');
+            return;
+        }
+
         const tempId = Date.now().toString();
         const newMessage: Message = {
             id: tempId,
@@ -159,19 +165,27 @@ export const UnifiedInbox: React.FC = () => {
             console.error('Error sending SMS:', error);
 
             // Try to extract useful message from Edge Function error
-            // Supabase FunctionsHttpError usually hides the body, but let's try to be helpful
             let friendlyError = 'Falha ao enviar SMS.';
+            let detailedError = '';
 
             // Check for common issues
             if (error.message && error.message.includes('non-2xx')) {
                 friendlyError = 'Erro no envio. Verifique se você possui um número ativo em Configurações > Telefonia.';
-            } else if (error.context && typeof error.context.json === 'function') {
+            }
+
+            if (error.context && typeof error.context.json === 'function') {
                 try {
                     const errorBody = await error.context.json();
-                    if (errorBody.error) friendlyError = errorBody.error;
-                } catch (e) { /* ignore */ }
+                    console.log('[UnifiedInbox] Edge Function Error Body:', errorBody);
+                    if (errorBody.error) {
+                        friendlyError = errorBody.error;
+                        detailedError = errorBody.error;
+                    }
+                } catch (e) {
+                    console.log('[UnifiedInbox] Failed to parse error context JSON');
+                }
             } else if (error.message) {
-                friendlyError = `Erro: ${error.message}`;
+                if (!detailedError) friendlyError = `Erro: ${error.message}`;
             }
 
             toast.error(friendlyError);
