@@ -12,6 +12,9 @@ serve(async (req) => {
         return new Response('ok', { headers: corsHeaders })
     }
 
+    let apiKeySource = 'Initial';
+    let redactedKey = 'None';
+
     try {
         const authHeader = req.headers.get('Authorization');
         if (!authHeader) throw new Error('Missing Authorization Header');
@@ -75,12 +78,15 @@ serve(async (req) => {
         } else {
             // Real Send Logic
             let telnyxApiKey = Deno.env.get('TELNYX_API_KEY');
+            let apiKeySource = 'Deno Env';
 
             // Try fetching from user settings first (if they BYOC)
             if (settings.api_key) {
                 telnyxApiKey = settings.api_key;
+                apiKeySource = 'User Settings (api_key)';
             } else if (settings.managed_api_key) {
                 telnyxApiKey = settings.managed_api_key;
+                apiKeySource = 'User Settings (managed_api_key)';
             }
 
             // Fallback to Platform Settings
@@ -90,10 +96,17 @@ serve(async (req) => {
                     .select('value')
                     .eq('key', 'TELNYX_API_KEY')
                     .maybeSingle();
-                if (data?.value) telnyxApiKey = data.value;
+                if (data?.value) {
+                    telnyxApiKey = data.value;
+                    apiKeySource = 'Platform Settings';
+                }
             }
 
             if (!telnyxApiKey) throw new Error("No API Key found for sending SMS.");
+
+            // Redacted preview for debug info
+            redactedKey = telnyxApiKey ? `${telnyxApiKey.substring(0, 5)}...${telnyxApiKey.slice(-4)}` : 'None';
+            console.log(`[send_sms] Using API Key from ${apiKeySource}: ${redactedKey}`);
 
             const telnyxUrl = 'https://api.telnyx.com/v2/messages';
             const body: any = {
@@ -145,6 +158,8 @@ serve(async (req) => {
         const debugInfo = {
             message: error.message,
             stack: error.stack,
+            apiKeySource: apiKeySource,
+            apiKeyPreview: redactedKey,
             timestamp: new Date().toISOString()
         };
 
