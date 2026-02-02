@@ -47,6 +47,7 @@ export const UnifiedInbox: React.FC = () => {
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const textInputRef = useRef<HTMLInputElement>(null);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
     const { makeCall } = useTelnyx();
     const supabase = createClient();
 
@@ -114,6 +115,11 @@ export const UnifiedInbox: React.FC = () => {
         }
     }, [selectedId]);
 
+    // Auto-scroll to bottom when messages change
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages]);
+
     const [isUploading, setIsUploading] = useState(false);
 
     const handleSend = async () => {
@@ -151,9 +157,26 @@ export const UnifiedInbox: React.FC = () => {
             setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'sent' } : m));
         } catch (error: any) {
             console.error('Error sending SMS:', error);
-            toast.error('Failed to send SMS');
+
+            // Try to extract useful message from Edge Function error
+            // Supabase FunctionsHttpError usually hides the body, but let's try to be helpful
+            let friendlyError = 'Falha ao enviar SMS.';
+
+            // Check for common issues
+            if (error.message && error.message.includes('non-2xx')) {
+                friendlyError = 'Erro no envio. Verifique se você possui um número ativo em Configurações > Telefonia.';
+            } else if (error.context && typeof error.context.json === 'function') {
+                try {
+                    const errorBody = await error.context.json();
+                    if (errorBody.error) friendlyError = errorBody.error;
+                } catch (e) { /* ignore */ }
+            } else if (error.message) {
+                friendlyError = `Erro: ${error.message}`;
+            }
+
+            toast.error(friendlyError);
             // Update status to 'failed' (or remove)
-            setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m)); // define failed status if needed or just error toast
+            setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
         }
     };
 
@@ -363,7 +386,7 @@ export const UnifiedInbox: React.FC = () => {
                             </div>
 
                             {/* Messages Area */}
-                            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                            <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
                                 {messages.length === 0 ? (
                                     <div className="h-full flex flex-col items-center justify-center text-slate-400">
                                         <div className="bg-indigo-50 p-4 rounded-full mb-4">
@@ -385,6 +408,7 @@ export const UnifiedInbox: React.FC = () => {
                                             </div>
                                         </div>
                                     )))}
+                                <div ref={messagesEndRef} />
                             </div>
 
                             {/* Input Area */}

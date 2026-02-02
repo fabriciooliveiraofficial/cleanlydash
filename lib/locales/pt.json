@@ -81,7 +81,8 @@
         "view_contact": "Ver Contato",
         "block_number": "Bloquear Número",
         "delete_conversion": "Excluir Conversa",
-        "attach": "Anexar Arquivo"
+        "attach": "Anexar Arquivo",
+        "send_sms": "Enviar SMS"
     },
     "team": {
         "title": "Gerenciar Equipe",
