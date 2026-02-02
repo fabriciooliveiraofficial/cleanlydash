@@ -204,8 +204,8 @@ export function DialerWidget() {
 
                   <Button
                     onClick={() => makeCall(destination)}
-                    disabled={!destination}
-                    className="w-full h-14 rounded-2xl bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 font-black gap-3 text-white transition-transform active:scale-95"
+                    disabled={!destination || callState !== 'idle'}
+                    className="w-full h-14 rounded-2xl bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 font-black gap-3 text-white transition-transform active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
                   >
                     <Phone size={20} className="fill-white/20" />
                     CHAMAR

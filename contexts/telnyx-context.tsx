@@ -34,6 +34,7 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
     const audioRef = useRef<HTMLAudioElement>(null)
     const ringtoneRef = useRef<HTMLAudioElement>(null)
     const startTimeRef = useRef<number | null>(null)
+    const isDialingRef = useRef(false)
     const { tenant_id } = useRole()
 
     // Handle Ringtone
@@ -270,13 +271,21 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
             return
         }
 
-        // 1. Prevent overlapping calls - CRITICAL GUARD
+        // 1. Synchronous Mutex for rapid clicks
+        if (isDialingRef.current) {
+            console.warn("Dialing already in progress (Mutex Locked). Ignoring click.");
+            return;
+        }
+
+        // 2. Global State Check
         if (callState !== 'idle' || (window as any)._telnyx_current_call_id || call) {
             console.warn("Call already in progress. Ignoring makeCall request.");
-            // If there's a ghost call, try to clean it up but don't start a new one yet
             if (call) call.hangup();
             return;
         }
+
+        // Lock Mutex
+        isDialingRef.current = true;
 
         try {
             // Normalize destination to E.164 if it looks like a US number
@@ -320,6 +329,18 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
         } catch (e) {
             console.error("Error making call", e)
             setCallState('error')
+        } finally {
+            // Release Mutex after some time or immediately? 
+            // Better to release it when callState changes to 'connecting' or on error
+            // But if we return early due to error, we must release.
+            // Since `client.newCall` is sync, we can release it here, BUT `setCallState` is async.
+            // We should rely on `callState` blocking future calls, so releasing this mutex is safe 
+            // once we've established the "next state" or failed.
+
+            // Keep it locked for a short buffer (500ms) to prevent bounce
+            setTimeout(() => {
+                isDialingRef.current = false;
+            }, 500);
         }
     }, [client, callerId, supabase, call])
 
@@ -349,7 +370,10 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
     useEffect(() => {
         const handleQuickCall = (e: CustomEvent<{ number: string }>) => {
             if (e.detail?.number) {
-                makeCall(e.detail.number);
+                // Check mutex here too
+                if (!isDialingRef.current) {
+                    makeCall(e.detail.number);
+                }
             }
         };
 
