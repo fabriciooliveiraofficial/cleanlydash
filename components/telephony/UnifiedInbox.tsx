@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Phone, Video, MoreVertical, Send, Paperclip, Mic, User, Settings as SettingsIcon, ArrowLeft } from 'lucide-react';
+import { Search, Phone, Video, MoreVertical, Send, Paperclip, Mic, User, Settings as SettingsIcon, ArrowLeft, MessageSquare, Loader2 } from 'lucide-react';
 import { createClient } from '../../lib/supabase/client.ts';
 import { Button } from '../ui/button.tsx';
 import { toast } from 'sonner';
@@ -46,6 +46,7 @@ export const UnifiedInbox: React.FC = () => {
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const textInputRef = useRef<HTMLInputElement>(null);
     const { makeCall } = useTelnyx();
     const supabase = createClient();
 
@@ -328,6 +329,9 @@ export const UnifiedInbox: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
+                                    <Button onClick={() => textInputRef.current?.focus()} variant="ghost" size="icon" className="hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 rounded-xl transition-colors" title={t('inbox.send_sms')}>
+                                        <MessageSquare size={20} />
+                                    </Button>
                                     <Button onClick={handleAudioCall} variant="ghost" size="icon" className="hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 rounded-xl transition-colors" title={t('inbox.calling')}>
                                         <Phone size={20} />
                                     </Button>
@@ -401,6 +405,7 @@ export const UnifiedInbox: React.FC = () => {
                                         onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                                         placeholder={t('inbox.type_message')}
                                         className="flex-1 bg-transparent border-none outline-none text-sm text-slate-700 placeholder:text-slate-400"
+                                        ref={textInputRef}
                                     />
                                     <Button
                                         onClick={handleSend}

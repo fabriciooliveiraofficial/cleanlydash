@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { createClient } from '../lib/supabase/client';
 import { createPlatformClient } from '../lib/supabase/platform-client';
 import { createCleanerClient } from '../lib/supabase/cleaner-client';
@@ -176,6 +176,30 @@ export function useSessionManager() {
             console.log('[SessionManager] ✅ Session migration completed');
         }
     }, [saveSessionForRoute]);
+
+    /**
+     * Automatic Session Sync: Listen to all clients and update manual storage
+     * This ensures manual-session-* keys are never stale when Supabase auto-refreshes tokens.
+     */
+    useEffect(() => {
+        const clients = [
+            { client: tenantClient, route: 'tenant' as RouteContext },
+            { client: platformClient, route: 'platform' as RouteContext },
+            { client: cleanerClient, route: 'cleaner' as RouteContext }
+        ];
+
+        const subs = clients.map(({ client, route }) => {
+            return client.auth.onAuthStateChange((event, session) => {
+                if (session && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED')) {
+                    saveSessionForRoute(route, session);
+                }
+            }).data.subscription;
+        });
+
+        return () => {
+            subs.forEach(sub => sub.unsubscribe());
+        };
+    }, [tenantClient, platformClient, cleanerClient, saveSessionForRoute]);
 
     return {
         loadSessionForRoute,

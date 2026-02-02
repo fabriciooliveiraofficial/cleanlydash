@@ -131,6 +131,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     const [crews, setCrews] = useState<any[]>([]);
     const [assignments, setAssignments] = useState<{ member_id: string, pay_rate: number, name: string }[]>([]);
     const [selectedCrewId, setSelectedCrewId] = useState<string>('');
+    const [dayBookings, setDayBookings] = useState<any[]>([]); // For conflict detection
 
     // UI State for Filters
     const [selectedCategory, setSelectedCategory] = useState<string>('');
@@ -566,6 +567,33 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             setRecurrenceInstances([]);
         }
     }, [isInitialized, formData.recurrence_type, formData.recurrence_count, formData.start_date, formData.start_time, formData.price]);
+
+    // Fetch bookings for conflict detection when date changes
+    useEffect(() => {
+        if (formData.start_date) {
+            fetchDayBookings(formData.start_date);
+        } else {
+            setDayBookings([]);
+        }
+    }, [formData.start_date]);
+
+    const fetchDayBookings = async (dateStr: string) => {
+        const start = new Date(dateStr);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(dateStr);
+        end.setHours(23, 59, 59, 999);
+
+        const { data, error } = await supabase
+            .from('bookings')
+            .select('id, start_date, end_date, assigned_to')
+            .gte('end_date', start.toISOString())
+            .lte('start_date', end.toISOString());
+
+        if (data) {
+            // Filter out current booking if in edit mode
+            setDayBookings(booking ? data.filter(b => b.id !== booking.id) : data);
+        }
+    };
 
     // Fetch addons whenever a service is selected
     useEffect(() => {
@@ -1389,7 +1417,32 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         if (!rule.is_available) return false;
 
         // Check time range
-        return timeToCheck >= rule.start_time && timeToCheck <= rule.end_time;
+        // Check time range
+        const shiftValid = timeToCheck >= rule.start_time && timeToCheck <= rule.end_time;
+        if (!shiftValid) return false;
+
+        // Check Conflicts (Double Bookings)
+        if (dayBookings.length > 0) {
+            const proposedStart = new Date(`${formData.start_date}T${timeToCheck}`);
+            // Estimate end based on duration (default 60 if not set yet, or current duration)
+            const duration = formData.duration_minutes || 60;
+            const proposedEnd = new Date(proposedStart.getTime() + duration * 60000);
+
+            // Check if this time slot overlaps with any booking for this staff
+            const hasConflict = dayBookings.some(b => {
+                if (b.assigned_to !== staffId) return false; // Not this staff
+
+                const existingStart = new Date(b.start_date);
+                const existingEnd = new Date(b.end_date);
+
+                // Overlap: (StartA < EndB) and (EndA > StartB)
+                return (proposedStart < existingEnd && proposedEnd > existingStart);
+            });
+
+            if (hasConflict) return false;
+        }
+
+        return true;
     };
 
     const availableStaff = staff.filter(s => isStaffAvailable(s.id));

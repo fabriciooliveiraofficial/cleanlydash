@@ -124,7 +124,10 @@ export const CommsSettings: React.FC = () => {
                                 <h3 className="text-3xl font-black mb-1">{usageStats.minutes_used}</h3>
                                 <p className="text-indigo-100 text-sm font-medium">Minutos de Voz (Mês)</p>
                                 <div className="mt-4 h-1.5 bg-black/20 rounded-full overflow-hidden">
-                                    <div className="h-full bg-white/90 w-[34%] rounded-full"></div>
+                                    <div
+                                        className="h-full bg-white/90 rounded-full transition-all duration-1000"
+                                        style={{ width: `${Math.min((usageStats.minutes_used / 1000) * 100, 100)}%` }}
+                                    ></div>
                                 </div>
                             </div>
 
@@ -137,7 +140,10 @@ export const CommsSettings: React.FC = () => {
                                 <h3 className="text-3xl font-black mb-1 text-slate-800">{usageStats.sms_sent}</h3>
                                 <p className="text-slate-500 text-sm font-medium">SMS Enviados (Mês)</p>
                                 <div className="mt-4 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                                    <div className="h-full bg-emerald-500 w-[25%] rounded-full"></div>
+                                    <div
+                                        className="h-full bg-emerald-500 rounded-full transition-all duration-1000"
+                                        style={{ width: `${Math.min((usageStats.sms_sent / 1000) * 100, 100)}%` }}
+                                    ></div>
                                 </div>
                             </div>
 

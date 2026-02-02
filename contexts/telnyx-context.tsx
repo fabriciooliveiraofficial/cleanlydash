@@ -5,6 +5,7 @@ import { TelnyxRTC } from '@telnyx/webrtc'
 import { createClient } from '@/lib/supabase/client'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { useRole } from '@/hooks/use-role'
+import { toast } from 'sonner'
 
 export type CallState = 'idle' | 'connecting' | 'ringing' | 'active' | 'on-hold' | 'error'
 
@@ -146,8 +147,16 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
             })
 
             rtcClient.on('telnyx.error', (error: any) => {
-                console.error('Telnyx Client Error:', error)
-                setCallState('error')
+                console.error('Telnyx Client Error:', error);
+                // Only set error state if we are trying to connect or in a call
+                // Otherwise it might be a background error we can ignore or retry
+                setCallState((prev) => {
+                    if (prev !== 'idle') {
+                        toast.error("Erro na conexão de voz. Tentando reconectar...");
+                        return 'error';
+                    }
+                    return prev;
+                });
             })
 
             rtcClient.on('telnyx.notification', (notification: any) => {
@@ -369,12 +378,23 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
     const hangup = useCallback(() => {
         console.log("Hangup requested manually");
         if (call) {
-            call.hangup();
-        } else {
-            console.log("No active call object found in state, force resetting UI");
-            setCallState('idle');
-            (window as any)._telnyx_current_call_id = null;
+            try {
+                call.hangup();
+            } catch (e) {
+                console.error("Error calling SDK hangup:", e);
+            }
         }
+
+        // Force UI Reset immediately to prevent freezing
+        // The SDK event 'hangup' will fire later, but we shouldn't wait for it if the user wants out.
+        console.log("Force resetting UI state for hangup");
+        setCallState('idle');
+        setCall(null);
+        if (timerRef.current) clearInterval(timerRef.current);
+        setDuration(0);
+        if (audioRef.current) audioRef.current.srcObject = null;
+        (window as any)._telnyx_current_call_id = null;
+
     }, [call])
 
     const toggleMute = useCallback(() => {
