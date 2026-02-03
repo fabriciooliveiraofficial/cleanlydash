@@ -82,9 +82,9 @@ serve(async (req) => {
         }
 
         if (sandbox) {
-            await supabaseAdmin.from('sms_logs').insert({
-                tenant_id: user.id, direction: 'outbound', from_number: settings.phone_number,
-                to_number: to, content: message, status: 'sent', cost: 0, price: 0
+            await supabaseAdmin.from('call_logs').insert({
+                tenant_id: user.id, direction: 'outbound', type: 'sms', from_number: settings.phone_number,
+                to_number: to, status: 'sent', cost: 0, notes: message
             });
             return new Response(JSON.stringify({ success: true, sandbox: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
@@ -106,10 +106,10 @@ serve(async (req) => {
         if (!response.ok) throw new Error(data.errors?.[0]?.detail || "Erro ao enviar SMS via Telnyx");
 
         // 5. Success Logging & Billing
-        await supabaseAdmin.from('sms_logs').insert({
-            tenant_id: user.id, direction: 'outbound', from_number: settings.phone_number,
-            to_number: to, content: message, status: 'sent', external_id: data.data?.id,
-            cost: messageCost, price: smsPrice
+        await supabaseAdmin.from('call_logs').insert({
+            tenant_id: user.id, direction: 'outbound', type: 'sms', from_number: settings.phone_number,
+            to_number: to, status: 'sent', telnyx_id: data.data?.id,
+            cost: messageCost, notes: message
         });
 
         await supabaseAdmin.rpc('increment_sms_spend', { t_id: user.id, amount: messageCost });

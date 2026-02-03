@@ -108,12 +108,39 @@ export const UnifiedInbox: React.FC = () => {
     }, [t]);
 
     useEffect(() => {
-        if (selectedId) {
-            // Mock messages to show "Clean Slate" for new customers or fetch real ones
-            // For now, we clear messages so it looks like a View to start chatting
-            setMessages([]);
+        async function fetchMessages() {
+            if (!selectedId) return;
+
+            setMessages([]); // Clear previous
+            // Find phone number
+            const convo = conversations.find(c => c.id === selectedId);
+            if (!convo || !convo.customer_phone) return;
+
+            const phone = convo.customer_phone;
+            // Clean phone for basic matching if needed, but best to match exact format if possible
+            // We assume call_logs stores it exactly as is (+1...)
+
+            const { data, error } = await supabase
+                .from('call_logs')
+                .select('*')
+                .or(`from_number.eq.${phone},to_number.eq.${phone}`)
+                .eq('type', 'sms')
+                .order('created_at', { ascending: true });
+
+            if (data) {
+                const loadedMessages: Message[] = data.map((log: any) => ({
+                    id: log.id,
+                    content: log.notes || '(No Content)',
+                    direction: log.direction, // 'inbound' or 'outbound'
+                    created_at: new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    status: log.status || 'sent'
+                }));
+                setMessages(loadedMessages);
+            }
         }
-    }, [selectedId]);
+
+        fetchMessages();
+    }, [selectedId, conversations]);
 
     // Auto-scroll to bottom when messages change
     useEffect(() => {
