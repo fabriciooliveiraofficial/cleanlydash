@@ -32,6 +32,7 @@ export function usePlatformSessionGuard(userId: string | undefined) {
                         session_id: sessionId,
                         context: 'platform',
                         last_seen: new Date().toISOString(),
+                        device_fingerprint: `fp_${sessionId.substring(0, 8)}` // Simple fingerprint based on session ID
                     }, {
                         onConflict: 'user_id,context'
                     });
@@ -58,7 +59,7 @@ export function usePlatformSessionGuard(userId: string | undefined) {
                     .select('session_id')
                     .eq('user_id', userId)
                     .eq('context', 'platform')
-                    .single();
+                    .maybeSingle();
 
                 if (error) {
                     console.warn('[PlatformSessionGuard] Failed to check session:', error);

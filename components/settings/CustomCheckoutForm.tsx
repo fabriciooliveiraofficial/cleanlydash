@@ -6,7 +6,12 @@ import { createClient } from '../../lib/supabase/client';
 import { toast } from 'sonner';
 import { Loader2, X, Check, ShieldCheck } from 'lucide-react';
 
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '');
+const stripeKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+const stripePromise = stripeKey ? loadStripe(stripeKey) : null;
+
+if (!stripeKey) {
+    console.warn("Stripe Publishable Key not found. Checkout disabled.");
+}
 
 interface Plan {
     id: string;
