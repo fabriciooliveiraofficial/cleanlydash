@@ -79,7 +79,7 @@ serve(async (req) => {
         } else {
             // Real Send Logic
             telnyxApiKey = Deno.env.get('TELNYX_API_KEY')?.trim() || null;
-            let apiKeySource = 'Deno Env';
+            apiKeySource = 'Deno Env';
 
             // Try fetching from user settings first (if they BYOC)
             if (settings.api_key) {
