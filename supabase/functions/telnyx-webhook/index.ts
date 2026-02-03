@@ -63,19 +63,30 @@ serve(async (req) => {
         } else if (eventType === 'call.initiated') {
             const callControlId = payload.call_control_id;
             const from = payload.from;
-            const to = payload.to; // This is the DID called
+            const to = payload.to; // This is the DID called (e.g. +1234567890)
 
             console.log(`[telnyx-webhook] Voice Call Initiated: ${callControlId} from ${from} to ${to}`);
 
-            // 1. Identify Tenant & SIP Username by "To" number
-            const { data: settings } = await supabase
+            // 1. Identify Tenant & SIP Username by "To" number (Normalizing for + prefix)
+            const cleanTo = to.startsWith('+') ? to : `+${to}`;
+            const simpleTo = to.replace('+', '');
+
+            const { data: settings, error: lookupError } = await supabase
                 .from('telnyx_settings')
                 .select('user_id, sip_username')
-                .eq('phone_number', to)
+                .or(`phone_number.eq.${cleanTo},phone_number.eq.${simpleTo}`)
                 .maybeSingle();
 
+            if (lookupError) {
+                console.error(`[telnyx-webhook] Database error during tenant lookup:`, lookupError.message);
+            }
+
             if (settings?.sip_username) {
-                console.log(`[telnyx-webhook] Routing inbound call to SIP User: ${settings.sip_username}`);
+                const sipTarget = settings.sip_username.includes('@')
+                    ? settings.sip_username
+                    : `${settings.sip_username}@sip.telnyx.com`;
+
+                console.log(`[telnyx-webhook] Routing inbound call for ${to} to SIP Target: ${sipTarget} (Tenant: ${settings.user_id})`);
 
                 // 2. Log Inbound Call (Status: ringing)
                 await supabase.from('call_logs').insert({
@@ -92,7 +103,7 @@ serve(async (req) => {
                 <Response>
                     <Record channels="dual" format="mp3" playBeep="true" />
                     <Dial>
-                        <Sip>sip:${settings.sip_username}@sip.telnyx.com</Sip>
+                        <Sip>sip:${sipTarget}</Sip>
                     </Dial>
                 </Response>`;
 
@@ -101,9 +112,9 @@ serve(async (req) => {
                     status: 200
                 });
             } else {
-                console.warn(`[telnyx-webhook] Inbound call to unknown number or missing SIP user: ${to}`);
-                // Fallback: Reject or just ignore? Best to return a clean XML that rejects.
-                return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Reject/></Response>`, {
+                console.warn(`[telnyx-webhook] Inbound call to unknown number or missing SIP user mapping: ${to}`);
+                // Return a clean Reject to avoid hanging or carrier timeouts
+                return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Reject reason="busy"/></Response>`, {
                     headers: { ...corsHeaders, 'Content-Type': 'application/xml' },
                     status: 200
                 });
