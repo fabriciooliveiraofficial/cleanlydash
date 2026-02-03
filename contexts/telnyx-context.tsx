@@ -32,6 +32,7 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
     const [isMuted, setIsMuted] = useState(false)
     const [duration, setDuration] = useState(0)
     const [callerId, setCallerId] = useState<string>('')
+    const [isAudioUnlocked, setIsAudioUnlocked] = useState(false)
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
     const audioRef = useRef<HTMLAudioElement>(null)
     const ringtoneRef = useRef<HTMLAudioElement>(null)
@@ -42,16 +43,23 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
 
     // Handle Ringtone
     useEffect(() => {
-        if (callState === 'ringing' && call?.direction === 'inbound') {
+        console.log(`[Telnyx Context] Ringtone Effect - State: ${callState}, Unlocked: ${isAudioUnlocked}`);
+
+        if (callState === 'ringing') {
             const playRingtone = async () => {
                 try {
                     if (ringtoneRef.current) {
+                        console.log("[Telnyx Context] 🎵 Initializing ringtone buffer...");
+                        ringtoneRef.current.load();
                         ringtoneRef.current.currentTime = 0;
+                        ringtoneRef.current.volume = 1.0;
+                        console.log("[Telnyx Context] 🎵 Attempting to play ringtone...");
                         const playPromise = ringtoneRef.current.play();
                         if (playPromise !== undefined) {
-                            playPromise.catch(error => {
-                                console.warn("[Telnyx Context] Ringtone play blocked by browser. Awaiting interaction.", error);
-                                // The interaction listener will handle it if it hasn't already.
+                            playPromise.then(() => {
+                                console.log("[Telnyx Context] 🎵 Ringtone playing successfully.");
+                            }).catch(error => {
+                                console.warn("[Telnyx Context] 🔇 Ringtone play blocked. Awaiting interaction or manual enable.", error);
                             });
                         }
                     }
@@ -62,47 +70,38 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
             playRingtone();
         } else {
             if (ringtoneRef.current) {
+                console.log("[Telnyx Context] 🔇 Stopping ringtone.");
                 ringtoneRef.current.pause();
                 ringtoneRef.current.currentTime = 0;
             }
         }
-    }, [callState, call]);
+    }, [callState, isAudioUnlocked]); // Re-run when unlocked!
 
     // Audio Autoplay Policy "Unlocker"
     useEffect(() => {
         const unlockAudio = () => {
-            if (!ringtoneRef.current) return;
+            if (!ringtoneRef.current || isAudioUnlocked) return;
 
-            console.log("[Telnyx Context] 👆 User interaction detected. Priming audio elements...");
+            console.log("[Telnyx Context] 👆 User interaction detected. Unlocking audio...");
 
             const ringtone = ringtoneRef.current;
 
-            // Prime with muted=true first for maximum compatibility
+            // Prime the audio
+            ringtone.load();
             ringtone.muted = true;
-
-            const playPromise = ringtone.play();
-
-            if (playPromise !== undefined) {
-                playPromise.then(() => {
-                    ringtone.pause();
-                    ringtone.muted = false;
-                    console.log("[Telnyx Context] ✅ Ringtone UNLOCKED successfully.");
-
-                    // Cleanup listeners only on SUCCESS
-                    window.removeEventListener('click', unlockAudio);
-                    window.removeEventListener('keydown', unlockAudio);
-                    window.removeEventListener('touchstart', unlockAudio);
-                }).catch(e => {
-                    console.warn("[Telnyx Context] ⚠️ Prime failed (retry on next interaction):", e);
-                });
-            } else {
-                // Older browsers
+            ringtone.play().then(() => {
                 ringtone.pause();
                 ringtone.muted = false;
+                setIsAudioUnlocked(true); // Trigger re-play in the other useEffect
+                console.log("[Telnyx Context] ✅ Audio context unlocked.");
+
+                // Remove listeners
                 window.removeEventListener('click', unlockAudio);
                 window.removeEventListener('keydown', unlockAudio);
                 window.removeEventListener('touchstart', unlockAudio);
-            }
+            }).catch(e => {
+                console.warn("[Telnyx Context] ⚠️ Unlock attempt failed (will retry):", e);
+            });
         };
 
         window.addEventListener('click', unlockAudio);
@@ -114,7 +113,7 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
             window.removeEventListener('keydown', unlockAudio);
             window.removeEventListener('touchstart', unlockAudio);
         }
-    }, []);
+    }, [isAudioUnlocked]);
 
     // Monitor Call Object for Remote Stream updates
     useEffect(() => {
@@ -496,15 +495,16 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
         if (ringtoneRef.current) {
             console.log("[Telnyx Context] 👆 Manually enabling audio...");
             const rt = ringtoneRef.current;
-            rt.muted = true;
+            rt.load();
+            rt.muted = false;
+            rt.volume = 1.0;
             rt.play().then(() => {
-                rt.pause();
-                rt.muted = false;
+                setIsAudioUnlocked(true);
                 console.log("[Telnyx Context] ✅ Audio enabled manually.");
                 toast.success("Áudio Ativado!");
             }).catch(e => {
                 console.error("[Telnyx Context] ❌ Manual enable failed:", e);
-                toast.error("Erro ao ativar áudio");
+                toast.error("Clique na tela antes de ativar");
             });
         }
     }, []);
