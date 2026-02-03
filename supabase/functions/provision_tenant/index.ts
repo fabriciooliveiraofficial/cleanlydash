@@ -212,6 +212,7 @@ serve(async (req) => {
 
             // 3. Fix Phone Number Linkages (SMS & Voice Routing)
             if (settings?.phone_number && (mpId || connId)) {
+                console.log(`[Master Engine] Patching number ${settings.phone_number} to MP: ${mpId} and Conn: ${connId}`);
                 const searchResp = await fetch(`https://api.telnyx.com/v2/phone_numbers?filter[phone_number]=${settings.phone_number.replace('+', '').trim()}`, {
                     headers: { 'Authorization': `Bearer ${effectiveMasterKey}` }
                 });
@@ -219,15 +220,24 @@ serve(async (req) => {
                 const telnyxId = searchData.data?.[0]?.id;
 
                 if (telnyxId) {
+                    console.log(`[Master Engine] Found Telnyx ID ${telnyxId} for number ${settings.phone_number}. Patching...`);
                     const patchBody: any = {};
                     if (mpId) patchBody.messaging_profile_id = mpId;
                     if (connId) patchBody.connection_id = connId;
 
-                    await fetch(`https://api.telnyx.com/v2/phone_numbers/${telnyxId}`, {
+                    const pResp = await fetch(`https://api.telnyx.com/v2/phone_numbers/${telnyxId}`, {
                         method: 'PATCH',
                         headers: { 'Authorization': `Bearer ${effectiveMasterKey}`, 'Content-Type': 'application/json' },
                         body: JSON.stringify(patchBody)
                     });
+                    const pData = await pResp.json();
+                    if (!pResp.ok) {
+                        console.error(`[Master Engine] Patch FAILED for ${telnyxId}:`, pData);
+                    } else {
+                        console.log(`[Master Engine] Patch SUCCESS for ${telnyxId}`);
+                    }
+                } else {
+                    console.warn(`[Master Engine] Could not find number ${settings.phone_number} on Telnyx account to patch.`);
                 }
             }
 
@@ -249,7 +259,34 @@ serve(async (req) => {
         }
 
         // Exec Action
-        if (action === 'repair_voice' || action === 'repair_all') {
+        if (action === 'diagnosis') {
+            const { data: current } = await supabaseAdmin.from('telnyx_settings').select('*').eq('user_id', user.id).maybeSingle();
+            if (!current?.phone_number) throw new Error("Inquilino não possui número configurado.");
+
+            const searchResp = await fetch(`https://api.telnyx.com/v2/phone_numbers?filter[phone_number]=${current.phone_number.replace('+', '').trim()}`, {
+                headers: { 'Authorization': `Bearer ${effectiveMasterKey}` }
+            });
+            const searchData = await searchResp.json();
+            const telnyxResource = searchData.data?.[0];
+
+            return new Response(JSON.stringify({
+                success: true,
+                diagnosis: {
+                    phone_number: current.phone_number,
+                    messaging_profile_id: current.messaging_profile_id,
+                    connection_id: current.telnyx_connection_id,
+                    telnyx_resource: telnyxResource ? {
+                        id: telnyxResource.id,
+                        messaging_profile_id: telnyxResource.messaging_profile_id,
+                        connection_id: telnyxResource.connection_id,
+                        status: telnyxResource.status,
+                        matches_db: telnyxResource.messaging_profile_id === current.messaging_profile_id
+                    } : 'Not found on Telnyx'
+                }
+            }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        if (action === 'repair_voice' || action === 'repair_all' || action === 'sync') {
             if (!isAdmin) throw new Error('Acesso negado.');
             const { data: all } = await supabaseAdmin.from('telnyx_settings').select('user_id');
             const results = [];

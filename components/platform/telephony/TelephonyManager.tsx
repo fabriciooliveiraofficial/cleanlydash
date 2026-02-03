@@ -9,7 +9,25 @@ export const TelephonyManager: React.FC = () => {
     const [logs, setLogs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [provisioning, setProvisioning] = useState(false);
+    const [diagnosis, setDiagnosis] = useState<any>(null);
     const supabase = createPlatformClient();
+
+    const handleDiagnosis = async () => {
+        setProvisioning(true);
+        setDiagnosis(null);
+        try {
+            const { data, error } = await supabase.functions.invoke('provision_tenant', {
+                body: { action: 'diagnosis' }
+            });
+            if (error) throw error;
+            setDiagnosis(data.diagnosis);
+            toast.success("Diagnóstico concluído!");
+        } catch (e: any) {
+            toast.error("Falha no Diagnóstico: " + e.message);
+        } finally {
+            setProvisioning(false);
+        }
+    };
 
     const handleResyncAll = async () => {
         if (!confirm("Isso iniciará uma auditoria inteligente em todos os recursos Telnyx. Continuar?")) return;
@@ -174,7 +192,39 @@ export const TelephonyManager: React.FC = () => {
                                     </div>
                                 )}
                             </Button>
+                            <Button
+                                onClick={handleDiagnosis}
+                                disabled={provisioning}
+                                variant="outline"
+                                className="flex-1 border-slate-700 hover:bg-slate-800 text-slate-300 h-11 rounded-xl font-bold text-[11px] uppercase tracking-wider"
+                            >
+                                {provisioning ? <Loader2 className="animate-spin" size={18} /> : (
+                                    <div className="flex items-center gap-2">
+                                        <Brain size={14} />
+                                        Run Self-Diagnosis
+                                    </div>
+                                )}
+                            </Button>
                         </div>
+
+                        {diagnosis && (
+                            <div className="p-4 rounded-xl bg-slate-900 border border-indigo-500/30 font-mono text-[9px] space-y-2">
+                                <p className="text-indigo-400 font-bold uppercase tracking-widest border-b border-indigo-500/20 pb-1 mb-2">Diagnostic Data</p>
+                                <div className="grid grid-cols-2 gap-x-4">
+                                    <span className="text-slate-500">Number:</span>
+                                    <span className="text-white">{diagnosis.phone_number}</span>
+                                    <span className="text-slate-500">DB MP:</span>
+                                    <span className="text-white truncate">{diagnosis.messaging_profile_id}</span>
+                                    <span className="text-slate-500">Telnyx MP:</span>
+                                    <span className={`truncate ${diagnosis.telnyx_resource?.messaging_profile_id === diagnosis.messaging_profile_id ? 'text-emerald-400' : 'text-red-400 font-bold'}`}>
+                                        {diagnosis.telnyx_resource?.messaging_profile_id || 'NOT LINKED'}
+                                    </span>
+                                </div>
+                                {diagnosis.telnyx_resource?.messaging_profile_id !== diagnosis.messaging_profile_id && (
+                                    <p className="text-red-400 animate-pulse mt-2 uppercase font-black">⚠️ ASSOCIATION MISMATCH DETECTED</p>
+                                )}
+                            </div>
+                        )}
 
                         <p className="text-[9px] text-center text-slate-500 font-mono">
                             SECURE SESSION ACTIVE • MASTER KEY RESOLVED FROM PLATFORM_SETTINGS

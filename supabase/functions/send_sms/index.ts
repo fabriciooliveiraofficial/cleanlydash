@@ -15,7 +15,9 @@ serve(async (req) => {
         const { data: pKey } = await supabaseAdmin.from('platform_settings').select('value').eq('key', 'TELNYX_API_KEY').maybeSingle();
         const key = pKey?.value || Deno.env.get('TELNYX_MASTER_KEY') || Deno.env.get('TELNYX_API_KEY');
         if (!key) throw new Error("Chave Mestra Telnyx não configurada.");
-        return key.trim();
+        const resolvedKey = key.trim();
+        console.log(`[Platform Settings] Master Key Resolved. Length: ${resolvedKey.length}`);
+        return resolvedKey;
     }
 
     try {
@@ -123,5 +125,4 @@ serve(async (req) => {
             status: 400
         });
     }
-})
 })
