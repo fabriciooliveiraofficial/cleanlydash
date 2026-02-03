@@ -273,7 +273,7 @@ export const UnifiedInbox: React.FC = () => {
     const selectedConversation = conversations.find(c => c.id === selectedId);
 
     return (
-        <div className="h-[calc(100vh-140px)] flex gap-6">
+        <div className="h-full flex gap-6">
             {/* LEFT PANEL: Conversation List */}
             <div className="w-[350px] glass-panel flex flex-col rounded-3xl overflow-hidden border-white/50 transition-all duration-300">
                 <div className="p-4 border-b border-slate-200/50 bg-white/30 backdrop-blur-md flex items-center justify-between">
@@ -352,7 +352,7 @@ export const UnifiedInbox: React.FC = () => {
                     {selectedId ? (
                         <>
                             {/* Thread Header */}
-                            <div className="min-h-[72px] shrink-0 border-b border-slate-200/50 flex items-center justify-between px-6 bg-white/30 backdrop-blur-md">
+                            <div className="h-20 shrink-0 border-b border-slate-200 flex items-center justify-between px-6 bg-slate-50 z-20">
                                 <div className="flex items-center gap-4">
                                     <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold shadow-sm ${selectedConversation?.avatar_color}`}>
                                         {selectedConversation?.customer_name.charAt(0)}
