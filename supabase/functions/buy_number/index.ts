@@ -55,64 +55,24 @@ serve(async (req) => {
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         )
 
-        // Resolve Key (Priority: Database Platform Settings -> System Env -> User Settings)
-        let telnyxApiKey: string | undefined = undefined;
-
-        // 1. FIRST: Try Platform Settings (Admin-configured key in DB)
-        const { data: platformKeyData, error: platformKeyError } = await supabaseAdmin
-            .from('platform_settings')
-            .select('value, created_at')
-            .eq('key', 'TELNYX_API_KEY')
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-        diag.platform_query_error = platformKeyError?.message;
-        diag.platform_key_found = !!platformKeyData?.value;
-
-        if (platformKeyData?.value && platformKeyData.value.length > 20) {
-            telnyxApiKey = platformKeyData.value.trim();
-            diag.resolved_from = "platform_settings_db";
+        // 1. Resolve Master Key Securely (Platform Priority)
+        async function getMasterKey() {
+            const { data: pKey } = await supabaseAdmin.from('platform_settings').select('value').eq('key', 'TELNYX_API_KEY').maybeSingle();
+            const key = pKey?.value || Deno.env.get('TELNYX_MASTER_KEY') || Deno.env.get('TELNYX_API_KEY');
+            if (!key) throw new Error("Plataforma não configurada: Chave Mestra Telnyx não encontrada.");
+            return key.trim();
         }
 
-        // 2. FALLBACK: Try Environment Variables
-        if (!telnyxApiKey || telnyxApiKey.length < 20) {
-            const envKey = Deno.env.get('TELNYX_MASTER_KEY') || Deno.env.get('TELNYX_API_KEY');
-            if (envKey && envKey.length > 20) {
-                telnyxApiKey = envKey;
-                diag.resolved_from = "environment_variable";
-            }
+        const telnyxApiKey = await getMasterKey();
+        diag.resolved_from = "master_engine_standard";
+
+        if (sandbox) {
+            return new Response(JSON.stringify({ success: true, message: "Purchase simulated (Sandbox)", debug: diag }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
-        // 2. Fallback to User Settings (Legacy/BYO)
-        if (!telnyxApiKey || telnyxApiKey.length < 20) {
-            const { data: settings } = await supabaseAdmin.from('telnyx_settings').select('*');
-            const myRow = settings?.find(s => s.user_id === user.id);
-            const fallbackRow = settings?.find(s => s.api_key || s.managed_api_key);
-            const targetRow = myRow || fallbackRow;
-
-            if (targetRow) {
-                if (targetRow.api_key && targetRow.api_key.length > 20) {
-                    telnyxApiKey = targetRow.api_key.trim();
-                    diag.resolved_from = "row_api_key";
-                } else if (targetRow.managed_api_key && targetRow.managed_api_key.length > 20) {
-                    telnyxApiKey = targetRow.managed_api_key.trim();
-                    diag.resolved_from = "row_managed_key";
-                }
-            }
-        }
-
-        if (telnyxApiKey) {
-            diag.key_fingerprint = telnyxApiKey.substring(0, 5) + "...";
-        }
-
-        if (sandbox || !telnyxApiKey || telnyxApiKey.length < 20) {
-            return new Response(JSON.stringify({ success: true, message: "Purchase simulated (Sandbox/No Key)", debug: diag }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-
-        // Step 1: Reserve the number first
-        diag.step = "reserving";
-        const reserveResponse = await fetch(`https://api.telnyx.com/v2/number_reservations`, {
+        // Step 1: Create Number Order (Directly, skip reservation for speed unless complex matching needed)
+        diag.step = "ordering";
+        const response = await fetch(`https://api.telnyx.com/v2/number_orders`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -123,168 +83,116 @@ serve(async (req) => {
             })
         });
 
-        const reserveData = await reserveResponse.json();
-        diag.reservation_response_status = reserveResponse.status;
-        let reservationId = reserveData?.data?.id;
-
-        // If reservation fails, log it
-        if (!reserveResponse.ok) {
-            const errorMsg = reserveData?.errors?.[0]?.detail || 'Reservation failed';
-            diag.reservation_failed = errorMsg;
-            diag.step = "direct_order_fallback";
-
-            // If 403 (Account Level Issue), abort immediately
-            if (reserveResponse.status === 403) {
-                return new Response(JSON.stringify({
-                    error: "Telnyx Account Error: " + errorMsg,
-                    debug: diag,
-                    telnyx_error: reserveData
-                }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 403 });
-            }
-        } else {
-            diag.reservation_id = reservationId;
-        }
-
-        // Step 2: Create Number Order
-        diag.step = "ordering";
-        const orderBody: any = {
-            phone_numbers: [{ phone_number: phone_number }]
-        };
-
-        if (reservationId) {
-            orderBody.phone_number_reservation_id = reservationId;
-        }
-
-        const response = await fetch(`https://api.telnyx.com/v2/number_orders`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${telnyxApiKey}`
-            },
-            body: JSON.stringify(orderBody)
-        });
-
         const resultData = await response.json();
-        diag.order_response_status = response.status;
-
         if (!response.ok) {
             return new Response(JSON.stringify({
-                error: resultData?.errors?.[0]?.detail || 'Purchase failed',
-                debug: diag,
+                error: resultData?.errors?.[0]?.detail || 'Falha na compra do número',
                 telnyx_error: resultData
             }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
         }
 
-        // --- PLAN B: ASSIGN TO MESSAGING PROFILE & VOICE CONNECTION ---
-        diag.step = "assigning_resources";
-        const { data: tenantSettings } = await supabaseAdmin
+        // --- SELF-HEALING LINKAGE ---
+        diag.step = "provisioning_linkage";
+
+        // A. Ensure Tenant has resources (MP/Connection)
+        // We call the internal logic by checking DB first
+        let { data: settings } = await supabaseAdmin
             .from('telnyx_settings')
-            .select('messaging_profile_id, telnyx_connection_id')
+            .select('*')
             .eq('user_id', user.id)
             .maybeSingle();
 
-        const messagingProfileId = tenantSettings?.messaging_profile_id;
-        const voiceConnectionId = tenantSettings?.telnyx_connection_id;
-        diag.messaging_profile_id = messagingProfileId;
-        diag.voice_connection_id = voiceConnectionId;
+        // If missing core IDs, we trigger a "Lazy Provision" right here using the Master Key
+        if (!settings?.messaging_profile_id || !settings?.telnyx_connection_id) {
+            console.log(`[buy_number] Missing tenant resources for ${user.id}. Provisioning now...`);
+            const webhookUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/telnyx-webhook`;
 
-        if ((messagingProfileId || voiceConnectionId) && !sandbox) {
-            const boughtNumberId = resultData.data?.phone_numbers?.[0]?.id;
-            if (boughtNumberId) {
-                console.log(`[buy_number] Patching ${phone_number} (ID: ${boughtNumberId}) with Profile: ${messagingProfileId}, Connection: ${voiceConnectionId}`);
+            let mpId = settings?.messaging_profile_id;
+            let connId = settings?.telnyx_connection_id;
+            let sipUser = settings?.sip_username;
+            let sipPass = settings?.sip_password;
 
-                const patchBody: any = {};
-                if (messagingProfileId) patchBody.messaging_profile_id = messagingProfileId;
-                if (voiceConnectionId) patchBody.connection_id = voiceConnectionId;
-
-                await fetch(`https://api.telnyx.com/v2/phone_numbers/${boughtNumberId}`, {
-                    method: 'PATCH',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${telnyxApiKey}`
-                    },
-                    body: JSON.stringify(patchBody)
-                });
-            }
-        }
-
-
-        // SUCCESS! 
-        // Step 3: Provision SIP Credentials if they don't exist
-        diag.step = "provisioning_sip";
-
-        let sipUsername = null;
-        let sipPassword = null;
-        let connectionId = null;
-
-        // 3.1 Get Connection ID from platform_settings
-        const { data: connData } = await supabaseAdmin
-            .from('platform_settings')
-            .select('value')
-            .eq('key', 'TELNYX_CONNECTION_ID')
-            .maybeSingle();
-
-        connectionId = connData?.value;
-        diag.connection_id_found = !!connectionId;
-
-        if (connectionId && !sandbox) {
-            try {
-                const credResponse = await fetch(`https://api.telnyx.com/v2/telephony_credentials`, {
+            if (!mpId) {
+                const mpResp = await fetch('https://api.telnyx.com/v2/messaging_profiles', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${telnyxApiKey}`
-                    },
+                    headers: { 'Authorization': `Bearer ${telnyxApiKey}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: `Cleanlydash - ${user.id.substring(0, 8)}`, enabled: true })
+                });
+                const mpData = await mpResp.json();
+                if (mpResp.ok) mpId = mpData.data.id;
+            }
+
+            if (!connId) {
+                const scResp = await fetch('https://api.telnyx.com/v2/credential_connections', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${telnyxApiKey}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        connection_id: connectionId,
-                        name: `Tenant_${user.id.substring(0, 8)}`,
-                        tag: user.id
+                        connection_name: `Cleanlydash - ${user.id.substring(0, 8)}`,
+                        active: true,
+                        webhook_event_url: webhookUrl,
+                        webhook_api_version: '2',
+                        inbound: { type: 'texml' }
                     })
                 });
-
-                const credData = await credResponse.json();
-                diag.cred_status = credResponse.status;
-
-                if (credResponse.ok) {
-                    sipUsername = credData.data.sip_username;
-                    sipPassword = credData.data.sip_password;
-                    diag.sip_provisioned = true;
-                } else {
-                    console.error("Failed to provision SIP credentials:", credData);
-                    diag.sip_error = credData?.errors?.[0]?.detail;
+                const scData = await scResp.json();
+                if (scResp.ok) {
+                    connId = scData.data.id;
+                    const credResp = await fetch(`https://api.telnyx.com/v2/telephony_credentials`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${telnyxApiKey}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ connection_id: connId })
+                    });
+                    const credData = await credResp.json();
+                    if (credResp.ok) {
+                        sipUser = credData.data.sip_username;
+                        sipPass = credData.data.sip_password;
+                    }
                 }
-            } catch (e: any) {
-                console.error("SIP Provisioning Exception:", e.message);
-                diag.sip_exception = e.message;
+            }
+
+            // Update/Create settings row
+            const { data: newSettings, error: upsertError } = await supabaseAdmin
+                .from('telnyx_settings')
+                .upsert({
+                    user_id: user.id,
+                    messaging_profile_id: mpId,
+                    telnyx_connection_id: connId,
+                    sip_username: sipUser,
+                    sip_password: sipPass,
+                    phone_number: phone_number, // Set the current number as primary
+                    is_active: true
+                }, { onConflict: 'user_id' }).select().single();
+
+            if (!upsertError) settings = newSettings;
+        }
+
+        // B. Link the Number to Resources
+        const boughtNumberId = resultData.data?.phone_numbers?.[0]?.id;
+        if (boughtNumberId && settings) {
+            const patchBody: any = {};
+            if (settings.messaging_profile_id) patchBody.messaging_profile_id = settings.messaging_profile_id;
+            if (settings.telnyx_connection_id) patchBody.connection_id = settings.telnyx_connection_id;
+
+            await fetch(`https://api.telnyx.com/v2/phone_numbers/${boughtNumberId}`, {
+                method: 'PATCH',
+                headers: { 'Authorization': `Bearer ${telnyxApiKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(patchBody)
+            });
+
+            // Also update DB if the row already existed but with a different phone number
+            if (settings.phone_number !== phone_number) {
+                await supabaseAdmin.from('telnyx_settings').update({ phone_number: phone_number }).eq('user_id', user.id);
             }
         }
 
-        // Step 4: Save everything to DB
-        diag.step = "saving_to_db";
-        const upsertData: any = {
-            user_id: user.id,
-            phone_number: phone_number,
-            is_active: true
-        };
-
-        if (sipUsername) upsertData.sip_username = sipUsername;
-        if (sipPassword) upsertData.sip_password = sipPassword;
-        if (connectionId) upsertData.telnyx_connection_id = connectionId;
-
-        const { error: dbError } = await supabaseAdmin
-            .from('telnyx_settings')
-            .upsert(upsertData, { onConflict: 'user_id' });
-
-        if (dbError) {
-            console.error("Failed to save number/creds to DB:", dbError);
-            diag.db_save_error = dbError.message;
-        } else {
-            diag.db_saved = true;
-        }
-
-        return new Response(JSON.stringify({ success: true, data: resultData, debug: diag }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ success: true, data: resultData }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     } catch (error: any) {
-        return new Response(JSON.stringify({ error: error.message, debug: diag }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+        return new Response(JSON.stringify({ error: error.message }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
     }
+})
+
+    } catch (error: any) {
+    return new Response(JSON.stringify({ error: error.message, debug: diag }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
+}
 })

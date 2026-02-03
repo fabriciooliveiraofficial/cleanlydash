@@ -132,206 +132,150 @@ serve(async (req) => {
             });
         }
 
-        // 3. Action: Repair Voice (Fix existing numbers)
-        if (action === 'repair_voice') {
-            if (!isAdmin) throw new Error('Apenas administradores podem executar o reparo.');
-
-            const masterKey = Deno.env.get('TELNYX_MASTER_KEY') || Deno.env.get('TELNYX_API_KEY');
-            let effectiveMasterKey = masterKey;
-            if (!effectiveMasterKey) {
-                const { data: pKey } = await supabaseAdmin.from('platform_settings').select('value').eq('key', 'TELNYX_API_KEY').maybeSingle();
-                effectiveMasterKey = pKey?.value;
-            }
-            if (!effectiveMasterKey) throw new Error("Master API Key not found for repair.");
-
-            const { data: allSettings } = await supabaseAdmin
-                .from('telnyx_settings')
-                .select('user_id, phone_number, telnyx_connection_id, messaging_profile_id')
-                .not('phone_number', 'is', null);
-
-            const results = [];
-            const webhookUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/telnyx-webhook`;
-
-            for (const s of (allSettings || [])) {
-                const tenantLog = { user_id: s.user_id, phone: s.phone_number, status: 'skipped' };
-                try {
-                    const listResp = await fetch(`https://api.telnyx.com/v2/phone_numbers?filter[phone_number]=${s.phone_number.replace('+', '')}`, {
-                        headers: { 'Authorization': `Bearer ${effectiveMasterKey}` }
-                    });
-                    const listData = await listResp.json();
-                    const numberId = listData.data?.[0]?.id;
-
-                    if (numberId) {
-                        const patchBody: any = {};
-                        if (s.messaging_profile_id) patchBody.messaging_profile_id = s.messaging_profile_id;
-                        if (s.telnyx_connection_id) patchBody.connection_id = s.telnyx_connection_id;
-
-                        if (Object.keys(patchBody).length > 0) {
-                            await fetch(`https://api.telnyx.com/v2/phone_numbers/${numberId}`, {
-                                method: 'PATCH',
-                                headers: {
-                                    'Authorization': `Bearer ${effectiveMasterKey}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify(patchBody)
-                            });
-                        }
-
-                        if (s.telnyx_connection_id) {
-                            await fetch(`https://api.telnyx.com/v2/credential_connections/${s.telnyx_connection_id}`, {
-                                method: 'PATCH',
-                                headers: {
-                                    'Authorization': `Bearer ${effectiveMasterKey}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    webhook_event_url: webhookUrl,
-                                    webhook_api_version: '2',
-                                    inbound: { type: 'texml' }
-                                })
-                            });
-                        }
-                        tenantLog.status = 'fixed';
-                    }
-                } catch (e: any) {
-                    tenantLog.status = 'error';
-                    (tenantLog as any).error = e.message;
-                }
-                results.push(tenantLog);
-            }
-
-            return new Response(JSON.stringify({ success: true, results }), {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                status: 200,
-            });
-        }
-
-        // 3. Action: Provision (Real Plan B Automation)
-        const masterKey = Deno.env.get('TELNYX_MASTER_KEY') || Deno.env.get('TELNYX_API_KEY');
-        let effectiveMasterKey = masterKey;
-        if (!effectiveMasterKey) {
+        // Standard Helper: Resolve Master Key Securely
+        async function getMasterKey() {
             const { data: pKey } = await supabaseAdmin.from('platform_settings').select('value').eq('key', 'TELNYX_API_KEY').maybeSingle();
-            effectiveMasterKey = pKey?.value;
+            const key = pKey?.value || Deno.env.get('TELNYX_MASTER_KEY') || Deno.env.get('TELNYX_API_KEY');
+            if (!key) throw new Error("Plataforma não configurada: Chave Mestra Telnyx não encontrada.");
+            return key.trim();
         }
 
-        if (!effectiveMasterKey) {
-            throw new Error("Configuração da plataforma incompleta: Chave Mestra Telnyx não encontrada.");
+        // Action: Save Key (Internal Admin Use Only)
+        if (action === 'save_key' && isAdmin) {
+            const { api_key, sip_id } = await req.json();
+            if (api_key) await supabaseAdmin.from('platform_settings').upsert({ key: 'TELNYX_API_KEY', value: api_key }, { onConflict: 'key' });
+            if (sip_id) await supabaseAdmin.from('platform_settings').upsert({ key: 'TELNYX_SIP_CREDENTIAL_ID', value: sip_id }, { onConflict: 'key' });
+            return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
-        // Check if already provisioned
-        const { data: existing } = await supabaseAdmin.from('telnyx_settings').select('*').eq('user_id', user.id).maybeSingle();
+        const effectiveMasterKey = await getMasterKey();
+        const webhookUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/telnyx-webhook`;
 
-        let messagingProfileId = existing?.messaging_profile_id;
-        let connectionId = existing?.telnyx_connection_id;
-        let sipUser = existing?.sip_username;
-        let sipPass = existing?.sip_password;
+        // ---------------------------------------------------------
+        // SELF-HEALING ENGINE (Provisioning Logic)
+        // ---------------------------------------------------------
+        async function provision(targetUserId: string) {
+            console.log(`[Master Engine] Provisioning user: ${targetUserId}`);
 
-        if (!sandbox) {
-            console.log(`[provision_tenant] Starting real provisioning for user ${user.id}`);
+            const { data: settings } = await supabaseAdmin
+                .from('telnyx_settings')
+                .select('*')
+                .eq('user_id', targetUserId)
+                .maybeSingle();
 
-            // A. Create Messaging Profile (if not exists)
-            if (!messagingProfileId) {
-                console.log("[provision_tenant] Creating Messaging Profile...");
-                const mpResponse = await fetch('https://api.telnyx.com/v2/messaging_profiles', {
+            let mpId = settings?.messaging_profile_id;
+            let connId = settings?.telnyx_connection_id;
+            let sipUser = settings?.sip_username;
+            let sipPass = settings?.sip_password;
+
+            // 1. Ensure Messaging Profile (SMS Isolation)
+            if (!mpId) {
+                const mpResp = await fetch('https://api.telnyx.com/v2/messaging_profiles', {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${effectiveMasterKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        name: `Cleanlydash - Tenant ${user.id.substring(0, 8)}`,
-                        enabled: true
-                    })
+                    headers: { 'Authorization': `Bearer ${effectiveMasterKey}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: `Cleanlydash - ${targetUserId.substring(0, 8)}`, enabled: true })
                 });
-                const mpData = await mpResponse.json();
-                if (!mpResponse.ok) throw new Error(`Telnyx MP Error: ${mpData.errors?.[0]?.detail || 'Unknown error'}`);
-                messagingProfileId = mpData.data.id;
+                const mpData = await mpResp.json();
+                if (mpResp.ok) mpId = mpData.data.id;
+                else console.error("[Master Engine] MP Creation Failed:", mpData);
             }
 
-            // B. Create SIP Connection / Credentials (if not exists)
-            if (!connectionId) {
-                const webhookUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/telnyx-webhook`;
-
-                console.log("[provision_tenant] Creating SIP Connection with Webhook...");
-                const scResponse = await fetch('https://api.telnyx.com/v2/credential_connections', {
+            // 2. Ensure SIP Connection (Voice Isolation)
+            if (!connId) {
+                const scResp = await fetch('https://api.telnyx.com/v2/credential_connections', {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${effectiveMasterKey}`,
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Authorization': `Bearer ${effectiveMasterKey}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        connection_name: `Cleanlydash - ${user.id.substring(0, 8)}`,
+                        connection_name: `Cleanlydash - ${targetUserId.substring(0, 8)}`,
                         active: true,
                         webhook_event_url: webhookUrl,
                         webhook_api_version: '2',
-                        inbound: {
-                            type: 'texml'
-                        }
+                        inbound: { type: 'texml' }
                     })
                 });
-                const scData = await scResponse.json();
-                if (!scResponse.ok) console.error(`[provision_tenant] SIP Connection Error:`, scData);
-                else {
-                    connectionId = scData.data.id;
-
-                    // Now Create Credentials for this Connection
-                    const credResponse = await fetch(`https://api.telnyx.com/v2/telephony_credentials`, {
+                const scData = await scResp.json();
+                if (scResp.ok) {
+                    connId = scData.data.id;
+                    // Immediately provision Telephony Credentials
+                    const credResp = await fetch(`https://api.telnyx.com/v2/telephony_credentials`, {
                         method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${effectiveMasterKey}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            connection_id: connectionId
-                        })
+                        headers: { 'Authorization': `Bearer ${effectiveMasterKey}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ connection_id: connId })
                     });
-                    const credData = await credResponse.json();
-                    if (credResponse.ok) {
+                    const credData = await credResp.json();
+                    if (credResp.ok) {
                         sipUser = credData.data.sip_username;
                         sipPass = credData.data.sip_password;
                     }
                 }
             }
-        }
 
-        // Simulated/Sandbox Fallback
-        if (sandbox || !messagingProfileId) {
-            messagingProfileId = messagingProfileId || `mp_${crypto.randomUUID().split('-')[0]}`;
-        }
+            // 3. Fix Phone Number Linkages (SMS & Voice Routing)
+            if (settings?.phone_number && (mpId || connId)) {
+                const searchResp = await fetch(`https://api.telnyx.com/v2/phone_numbers?filter[phone_number]=${settings.phone_number.replace('+', '').trim()}`, {
+                    headers: { 'Authorization': `Bearer ${effectiveMasterKey}` }
+                });
+                const searchData = await searchResp.json();
+                const telnyxId = searchData.data?.[0]?.id;
 
-        const { error: upsertError } = await supabaseAdmin
-            .from('telnyx_settings')
-            .upsert({
-                user_id: user.id,
-                messaging_profile_id: messagingProfileId,
-                telnyx_connection_id: connectionId,
-                sip_username: sipUser,
-                sip_password: sipPass,
-                is_active: true
-            }, { onConflict: 'user_id' })
+                if (telnyxId) {
+                    const patchBody: any = {};
+                    if (mpId) patchBody.messaging_profile_id = mpId;
+                    if (connId) patchBody.connection_id = connId;
 
-        if (upsertError) throw upsertError;
-
-        return new Response(
-            JSON.stringify({
-                success: true,
-                messaging_profile_id: messagingProfileId,
-                is_sandbox: !!sandbox
-            }),
-            {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                status: 200,
+                    await fetch(`https://api.telnyx.com/v2/phone_numbers/${telnyxId}`, {
+                        method: 'PATCH',
+                        headers: { 'Authorization': `Bearer ${effectiveMasterKey}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify(patchBody)
+                    });
+                }
             }
-        )
 
+            // 4. Update Database
+            const { error: upsertError } = await supabaseAdmin
+                .from('telnyx_settings')
+                .upsert({
+                    user_id: targetUserId,
+                    messaging_profile_id: mpId,
+                    telnyx_connection_id: connId,
+                    sip_username: sipUser,
+                    sip_password: sipPass,
+                    is_active: true
+                }, { onConflict: 'user_id' });
+
+            if (upsertError) throw upsertError;
+
+            return { mpId, connId, status: 'synced' };
+        }
+
+        // Exec Action
+        if (action === 'repair_voice' || action === 'repair_all') {
+            if (!isAdmin) throw new Error('Acesso negado.');
+            const { data: all } = await supabaseAdmin.from('telnyx_settings').select('user_id');
+            const results = [];
+            for (const row of (all || [])) {
+                try {
+                    const res = await provision(row.user_id);
+                    results.push({ user_id: row.user_id, ...res });
+                } catch (e: any) {
+                    results.push({ user_id: row.user_id, status: 'error', error: e.message });
+                }
+            }
+            return new Response(JSON.stringify({ success: true, results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        // Default: Provision current user
+        const result = await provision(user.id);
+        return new Response(JSON.stringify({ success: true, ...result }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 200,
+        });
 
     } catch (error: any) {
-        return new Response(
-            JSON.stringify({ error: error.message }),
-            {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                status: 400,
-            }
-        )
+        console.error("[Master Engine Error]", error);
+        return new Response(JSON.stringify({ error: error.message }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 400,
+        })
     }
 })
