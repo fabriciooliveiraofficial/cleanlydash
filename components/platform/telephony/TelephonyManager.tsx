@@ -34,12 +34,36 @@ export const TelephonyManager: React.FC = () => {
         setProvisioning(true);
         try {
             const { data, error } = await supabase.functions.invoke('provision_tenant', {
-                body: { action: 'sync' } // Standardized action
+                body: { action: 'sync' }
             });
-            if (error) throw error;
+
+            if (error) {
+                // Attempt to parse the body if it exists on the error object or context
+                // Note: database-js functions invoke error usually has a context, but valid 400 returns are in 'error' too.
+                // Let's rely on parsing the response if 'invoke' supports it, or just showing the detailed message.
+                // Actually, supabase-js verify 2xx. If not, it throws.
+                // We'll try to read the response text if available in the error context.
+                // For now, let's just log the full error to console and toast a generic + inspect instructions.
+                console.error("Resync Invoke Error:", error);
+                // Try to see if context has body
+                let msg = error.message;
+                if (error instanceof Error && 'context' in error) {
+                    // @ts-ignore
+                    const body = await error.context.json();
+                    if (body && body.error) msg = body.error;
+                }
+                throw new Error(msg);
+            }
             toast.success("Resync concluído com sucesso!");
         } catch (e: any) {
-            toast.error("Falha no Resync: " + e.message);
+            console.error("Full Resync Error:", e);
+            // Try to extract body from the error if possible or fallback
+            let displayMsg = e.message;
+            // Common Supabase Edge Function pattern:
+            if (e.message.includes("non-2xx")) {
+                displayMsg += " (Verifique os logs do console para detalhes do corpo da resposta)";
+            }
+            toast.error("Falha no Resync: " + displayMsg);
         } finally {
             setProvisioning(false);
         }
