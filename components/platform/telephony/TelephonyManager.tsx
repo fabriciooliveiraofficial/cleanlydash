@@ -1,6 +1,5 @@
-
 import React, { useEffect, useState } from 'react';
-import { Phone, PhoneIncoming, PhoneOutgoing, Clock, Play, Download, Brain, FileText, Smile, ShieldCheck, Globe, Loader2 } from 'lucide-react';
+import { Phone, PhoneIncoming, PhoneOutgoing, Clock, Play, Download, Brain, FileText, Smile, ShieldCheck, Globe, Loader2, Zap, Sparkles } from 'lucide-react';
 import { createPlatformClient } from '../../../lib/supabase/platform-client';
 import { toast } from 'sonner';
 import { Button } from '../../ui/button';
@@ -11,6 +10,49 @@ export const TelephonyManager: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [provisioning, setProvisioning] = useState(false);
     const supabase = createPlatformClient();
+
+    const handleRepairVoice = async () => {
+        setProvisioning(true);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            console.log("[TelephonyManager] Current session:", session?.user?.id);
+            if (!session) throw new Error("No active session found. Please login again.");
+
+            const { data, error } = await supabase.functions.invoke('provision_tenant', {
+                body: { action: 'repair_voice' },
+                headers: {
+                    Authorization: `Bearer ${session.access_token}`
+                }
+            });
+            if (error) {
+                console.error("[TelephonyManager] Repair Invoke Error:", error);
+                throw error;
+            }
+            toast.success("Voice Repair completed successfully!");
+            console.log("Repair results:", data.results);
+        } catch (e: any) {
+            console.error("[TelephonyManager] Repair catch:", e);
+            toast.error("Repair failed: " + e.message);
+        } finally {
+            setProvisioning(false);
+        }
+    };
+
+    const handleResyncAll = async () => {
+        if (!confirm("This will force an audit of all Telnyx resources. Continue?")) return;
+        setProvisioning(true);
+        try {
+            const { data, error } = await supabase.functions.invoke('provision_tenant', {
+                body: { action: 'repair_voice' }
+            });
+            if (error) throw error;
+            toast.success("Global Resync complete!");
+        } catch (e: any) {
+            toast.error("Resync failed: " + e.message);
+        } finally {
+            setProvisioning(false);
+        }
+    };
 
     const [plans, setPlans] = useState<any[]>([]);
     const [selectedPlanId, setSelectedPlanId] = useState<string>('');
@@ -80,9 +122,9 @@ export const TelephonyManager: React.FC = () => {
         const { data, error } = await supabase
             .from('call_logs')
             .select(`
-                *,
-                tenant_profiles (name)
-            `)
+    *,
+    tenant_profiles(name)
+        `)
             .order('created_at', { ascending: false })
             .limit(50);
 
@@ -147,12 +189,20 @@ export const TelephonyManager: React.FC = () => {
 
         setProvisioning(true);
         try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) throw new Error("Sessão expirada. Faça login novamente.");
+
+            console.log("[TelephonyManager] Saving platform config with user:", session.user.id);
+
             const { data, error } = await supabase.functions.invoke('provision_tenant', {
                 body: {
                     action: 'save_key',
                     is_platform_key: true,
                     api_key: key.trim(),
                     sip_id: sip.trim()
+                },
+                headers: {
+                    Authorization: `Bearer ${session.access_token}`
                 }
             });
 
@@ -209,26 +259,85 @@ export const TelephonyManager: React.FC = () => {
                             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Telnyx Master API Key</label>
                             <input
                                 type="password" id="p-api-key" placeholder="KEY..."
-                                className="w-full bg-slate-800 border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                                className="w-full bg-slate-800 border-slate-700 rounded-lg h-10 px-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none"
                                 onChange={(e) => { }} // Controlled by DOM for simplicity but fetched on mount
                             />
                         </div>
                         <div className="space-y-1">
                             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Master SIP Credential ID</label>
                             <input
-                                type="text" id="p-sip-id" placeholder="Ex: 278139..."
-                                className="w-full bg-slate-800 border-slate-700 rounded-lg px-4 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                                type="text" id="p-sip-id" placeholder="Credential ID..."
+                                className="w-full bg-slate-800 border-slate-700 rounded-lg h-10 px-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none"
                             />
+                        </div>
+                        <div className="flex gap-2">
+                            <Button
+                                onClick={handleSavePlatformConfig}
+                                disabled={provisioning}
+                                className="flex-1 bg-indigo-600 hover:bg-indigo-700 h-10 rounded-lg font-bold text-[11px] uppercase tracking-wider"
+                            >
+                                {provisioning ? "Saving..." : "Save Config"}
+                            </Button>
+                            <Button
+                                onClick={handleRepairVoice}
+                                disabled={provisioning}
+                                variant="outline"
+                                className="bg-slate-800 border-slate-700 hover:bg-slate-700 h-10 rounded-lg font-bold text-[11px] uppercase tracking-wider flex gap-2"
+                            >
+                                <Zap size={14} className="text-amber-400" />
+                                Repair
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* GLOBAL ACTIONS SECTION */}
+                <div className="bg-slate-900 rounded-2xl p-6 text-white shadow-xl flex flex-col border border-indigo-500/20">
+                    <div className="flex items-center gap-3 mb-6">
+                        <div className="h-10 w-10 rounded-xl bg-indigo-500/20 flex items-center justify-center">
+                            <Sparkles className="text-indigo-400" size={20} />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-black uppercase tracking-tight text-white">System Maintenance</h3>
+                            <p className="text-[10px] text-slate-400 font-bold">Resync & Bulk Operations</p>
                         </div>
                     </div>
 
-                    <Button
-                        disabled={provisioning}
-                        className="mt-6 bg-indigo-600 hover:bg-indigo-700 w-full px-10 transition-all active:scale-95"
-                        onClick={handleSavePlatformConfig}
-                    >
-                        {provisioning ? <Loader2 className="animate-spin" size={18} /> : "Save Master Settings"}
-                    </Button>
+                    <div className="space-y-4">
+                        <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/50 space-y-3">
+                            <div className="flex items-start gap-3">
+                                <Zap className="text-amber-400 h-4 w-4 mt-0.5" />
+                                <div>
+                                    <p className="text-[11px] font-bold text-slate-200 uppercase">Connectivity Repair</p>
+                                    <p className="text-[9px] text-slate-500 mt-1">Updates all phone numbers and SIP connections with the latest webhook and routing configuration.</p>
+                                </div>
+                            </div>
+                            <Button
+                                onClick={handleRepairVoice}
+                                disabled={provisioning}
+                                className="w-full bg-slate-700 hover:bg-emerald-600/20 hover:text-emerald-400 hover:border-emerald-500/30 border border-slate-600 h-9 rounded-lg font-black text-[10px] uppercase transition-all"
+                            >
+                                Run Connectivity Repair
+                            </Button>
+                        </div>
+
+                        <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/50 space-y-3">
+                            <div className="flex items-start gap-3">
+                                <Sparkles className="text-indigo-400 h-4 w-4 mt-0.5" />
+                                <div>
+                                    <p className="text-[11px] font-bold text-slate-200 uppercase">Platform Resync</p>
+                                    <p className="text-[9px] text-slate-500 mt-1">Full audit of account resources. Recommended after changing the Master API Key.</p>
+                                </div>
+                            </div>
+                            <Button
+                                onClick={handleResyncAll}
+                                disabled={provisioning}
+                                className="w-full bg-slate-700 hover:bg-indigo-600/20 hover:text-indigo-400 hover:border-indigo-500/30 border border-slate-600 h-9 rounded-lg font-black text-[10px] uppercase transition-all"
+                            >
+                                Force Platform Resync
+                            </Button>
+                        </div>
+                    </div>
                 </div>
 
                 {/* PRICE MANAGEMENT SECTION */}

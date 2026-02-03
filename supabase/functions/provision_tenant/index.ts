@@ -13,6 +13,7 @@ serve(async (req) => {
 
     try {
         const authHeader = req.headers.get('Authorization');
+        console.log("[provision_tenant] Auth Header present:", !!authHeader);
         if (!authHeader) throw new Error('Missing Authorization Header');
 
         const supabaseClient = createClient(
@@ -25,8 +26,10 @@ serve(async (req) => {
         const { data: { user }, error: userError } = await supabaseClient.auth.getUser(token)
 
         if (userError || !user) {
+            console.error("[provision_tenant] Auth Error:", userError?.message || "No user found for token");
             throw new Error('Unauthorized: ' + (userError?.message || 'No user'));
         }
+        console.log("[provision_tenant] Authenticated user:", user.id);
 
         const supabaseAdmin = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
@@ -129,6 +132,80 @@ serve(async (req) => {
             });
         }
 
+        // 3. Action: Repair Voice (Fix existing numbers)
+        if (action === 'repair_voice') {
+            if (!isAdmin) throw new Error('Apenas administradores podem executar o reparo.');
+
+            const masterKey = Deno.env.get('TELNYX_MASTER_KEY') || Deno.env.get('TELNYX_API_KEY');
+            let effectiveMasterKey = masterKey;
+            if (!effectiveMasterKey) {
+                const { data: pKey } = await supabaseAdmin.from('platform_settings').select('value').eq('key', 'TELNYX_API_KEY').maybeSingle();
+                effectiveMasterKey = pKey?.value;
+            }
+            if (!effectiveMasterKey) throw new Error("Master API Key not found for repair.");
+
+            const { data: allSettings } = await supabaseAdmin
+                .from('telnyx_settings')
+                .select('user_id, phone_number, telnyx_connection_id, messaging_profile_id')
+                .not('phone_number', 'is', null);
+
+            const results = [];
+            const webhookUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/telnyx-webhook`;
+
+            for (const s of (allSettings || [])) {
+                const tenantLog = { user_id: s.user_id, phone: s.phone_number, status: 'skipped' };
+                try {
+                    const listResp = await fetch(`https://api.telnyx.com/v2/phone_numbers?filter[phone_number]=${s.phone_number.replace('+', '')}`, {
+                        headers: { 'Authorization': `Bearer ${effectiveMasterKey}` }
+                    });
+                    const listData = await listResp.json();
+                    const numberId = listData.data?.[0]?.id;
+
+                    if (numberId) {
+                        const patchBody: any = {};
+                        if (s.messaging_profile_id) patchBody.messaging_profile_id = s.messaging_profile_id;
+                        if (s.telnyx_connection_id) patchBody.connection_id = s.telnyx_connection_id;
+
+                        if (Object.keys(patchBody).length > 0) {
+                            await fetch(`https://api.telnyx.com/v2/phone_numbers/${numberId}`, {
+                                method: 'PATCH',
+                                headers: {
+                                    'Authorization': `Bearer ${effectiveMasterKey}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify(patchBody)
+                            });
+                        }
+
+                        if (s.telnyx_connection_id) {
+                            await fetch(`https://api.telnyx.com/v2/credential_connections/${s.telnyx_connection_id}`, {
+                                method: 'PATCH',
+                                headers: {
+                                    'Authorization': `Bearer ${effectiveMasterKey}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    webhook_event_url: webhookUrl,
+                                    webhook_api_version: '2',
+                                    inbound: { type: 'texml' }
+                                })
+                            });
+                        }
+                        tenantLog.status = 'fixed';
+                    }
+                } catch (e: any) {
+                    tenantLog.status = 'error';
+                    (tenantLog as any).error = e.message;
+                }
+                results.push(tenantLog);
+            }
+
+            return new Response(JSON.stringify({ success: true, results }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 200,
+            });
+        }
+
         // 3. Action: Provision (Real Plan B Automation)
         const masterKey = Deno.env.get('TELNYX_MASTER_KEY') || Deno.env.get('TELNYX_API_KEY');
         let effectiveMasterKey = masterKey;
@@ -173,7 +250,9 @@ serve(async (req) => {
 
             // B. Create SIP Connection / Credentials (if not exists)
             if (!connectionId) {
-                console.log("[provision_tenant] Creating SIP Connection...");
+                const webhookUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/telnyx-webhook`;
+
+                console.log("[provision_tenant] Creating SIP Connection with Webhook...");
                 const scResponse = await fetch('https://api.telnyx.com/v2/credential_connections', {
                     method: 'POST',
                     headers: {
@@ -182,7 +261,12 @@ serve(async (req) => {
                     },
                     body: JSON.stringify({
                         connection_name: `Cleanlydash - ${user.id.substring(0, 8)}`,
-                        active: true
+                        active: true,
+                        webhook_event_url: webhookUrl,
+                        webhook_api_version: '2',
+                        inbound: {
+                            type: 'texml'
+                        }
                     })
                 });
                 const scData = await scResponse.json();

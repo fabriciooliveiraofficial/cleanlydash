@@ -107,7 +107,12 @@ serve(async (req) => {
                 apiKeySource = 'Deno Env';
             }
 
-            if (!telnyxApiKey) throw new Error("No API Key found for sending SMS.");
+            if (!telnyxApiKey) {
+                const isManaged = !!settings.managed_account_id;
+                throw new Error(isManaged
+                    ? "Erro: Chave Mestra da Plataforma não configurada. Vá em 'Telephony Manager' no Platform Admin e salve a 'Telnyx Master API Key'."
+                    : "Erro: API Key não encontrada para este usuário.");
+            }
 
             // --- BILLING & QUOTA LOGIC ---
             // 1. Get Tenant Plan & Subscriptions

@@ -175,30 +175,35 @@ serve(async (req) => {
             }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
         }
 
-        // --- PLAN B: ASSIGN TO MESSAGING PROFILE ---
-        diag.step = "assigning_to_profile";
+        // --- PLAN B: ASSIGN TO MESSAGING PROFILE & VOICE CONNECTION ---
+        diag.step = "assigning_resources";
         const { data: tenantSettings } = await supabaseAdmin
             .from('telnyx_settings')
-            .select('messaging_profile_id')
+            .select('messaging_profile_id, telnyx_connection_id')
             .eq('user_id', user.id)
             .maybeSingle();
 
         const messagingProfileId = tenantSettings?.messaging_profile_id;
+        const voiceConnectionId = tenantSettings?.telnyx_connection_id;
         diag.messaging_profile_id = messagingProfileId;
+        diag.voice_connection_id = voiceConnectionId;
 
-        if (messagingProfileId && !sandbox) {
+        if ((messagingProfileId || voiceConnectionId) && !sandbox) {
             const boughtNumberId = resultData.data?.phone_numbers?.[0]?.id;
             if (boughtNumberId) {
-                console.log(`[buy_number] Assigning ${phone_number} (${boughtNumberId}) to profile ${messagingProfileId}`);
+                console.log(`[buy_number] Patching ${phone_number} (ID: ${boughtNumberId}) with Profile: ${messagingProfileId}, Connection: ${voiceConnectionId}`);
+
+                const patchBody: any = {};
+                if (messagingProfileId) patchBody.messaging_profile_id = messagingProfileId;
+                if (voiceConnectionId) patchBody.connection_id = voiceConnectionId;
+
                 await fetch(`https://api.telnyx.com/v2/phone_numbers/${boughtNumberId}`, {
                     method: 'PATCH',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${telnyxApiKey}`
                     },
-                    body: JSON.stringify({
-                        messaging_profile_id: messagingProfileId
-                    })
+                    body: JSON.stringify(patchBody)
                 });
             }
         }

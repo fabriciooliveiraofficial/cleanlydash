@@ -61,40 +61,53 @@ serve(async (req) => {
             }
 
         } else if (eventType === 'call.initiated') {
-            console.log("Call initiated:", payload.call_control_id)
+            const callControlId = payload.call_control_id;
+            const from = payload.from;
+            const to = payload.to; // This is the DID called
 
-            // 1. Identify Tenant/User to dial
-            // For now, we dial the SIP User associated with the credential.
-            // In a multi-tenant setup, we ideally map 'To' number -> SIP Username.
-            // But since we use one global credential id, we can just dial the SIP Domain or a specific client if registered.
-            // A common pattern for WebRTC is to dial the SIP Username.
-            // If the client registers with a token, they are effectively 'sip:username@sip.telnyx.com'.
+            console.log(`[telnyx-webhook] Voice Call Initiated: ${callControlId} from ${from} to ${to}`);
 
-            // Simple Strategy: Dial the SIP connection. Telnyx handles ringing registered clients.
-            // We use TeXML to dial.
+            // 1. Identify Tenant & SIP Username by "To" number
+            const { data: settings } = await supabase
+                .from('telnyx_settings')
+                .select('user_id, sip_username')
+                .eq('phone_number', to)
+                .maybeSingle();
 
-            const xmlResponse = `<?xml version="1.0" encoding="UTF-8"?>
-            <Response>
-                <Record channels="dual" format="mp3" playBeep="true" />
-                <Dial>
-                    <Sip>sip:${payload.to}@sip.telnyx.com</Sip>
-                </Dial>
-            </Response>`;
+            if (settings?.sip_username) {
+                console.log(`[telnyx-webhook] Routing inbound call to SIP User: ${settings.sip_username}`);
 
-            // Note: The above assumes we want to ring the SIP URI matching the DID.
-            // If clients register as "user1", we need to dial "user1@sip.telnyx.com".
-            // Since we don't have user mapping yet, we will dial the SIP Domain with the DID as user.
-            // Clients must register as that DID or we use a fallback.
+                // 2. Log Inbound Call (Status: ringing)
+                await supabase.from('call_logs').insert({
+                    tenant_id: settings.user_id,
+                    direction: 'inbound',
+                    from_number: from,
+                    to_number: to,
+                    status: 'ringing',
+                    external_id: callControlId
+                });
 
-            // BETTER: Use <Client> if we are using the SDK client name.
-            // But our SDK init doesn't set client name.
-            // Let's stick to <Sip> routing or just <Dial> to the SIP interface.
+                // 3. Return TeXML to Dial the registered SIP client
+                const xmlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+                <Response>
+                    <Record channels="dual" format="mp3" playBeep="true" />
+                    <Dial>
+                        <Sip>sip:${settings.sip_username}@sip.telnyx.com</Sip>
+                    </Dial>
+                </Response>`;
 
-            // ALTERNATIVE: Just return the TeXML.
-            return new Response(xmlResponse, {
-                headers: { ...corsHeaders, 'Content-Type': 'application/xml' },
-                status: 200
-            });
+                return new Response(xmlResponse, {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/xml' },
+                    status: 200
+                });
+            } else {
+                console.warn(`[telnyx-webhook] Inbound call to unknown number or missing SIP user: ${to}`);
+                // Fallback: Reject or just ignore? Best to return a clean XML that rejects.
+                return new Response(`<?xml version="1.0" encoding="UTF-8"?><Response><Reject/></Response>`, {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/xml' },
+                    status: 200
+                });
+            }
 
         } else if (eventType === 'call.hangup') {
             const callId = payload.call_control_id;
