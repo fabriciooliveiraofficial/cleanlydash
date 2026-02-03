@@ -97,7 +97,66 @@ serve(async (req) => {
             });
 
         } else if (eventType === 'call.hangup') {
-            console.log("Call hangup:", payload.call_control_id)
+            const callId = payload.call_control_id;
+            const duration = payload.duration || 0;
+            const connectionId = payload.connection_id;
+
+            console.log(`Call hangup: ${callId}, Duration: ${duration}s, Connection: ${connectionId}`);
+
+            // 1. Identify Tenant
+            const { data: tenantSettings } = await supabase
+                .from('telnyx_settings')
+                .select('user_id')
+                .eq('telnyx_connection_id', connectionId)
+                .maybeSingle();
+
+            if (tenantSettings) {
+                const tenantId = tenantSettings.user_id;
+
+                // 2. Get Pricing
+                const { data: sub } = await supabase
+                    .from('tenant_subscriptions')
+                    .select('plan_id')
+                    .eq('tenant_id', tenantId)
+                    .maybeSingle();
+
+                const planId = sub?.plan_id || 'voice_starter';
+                const { data: priceSetting } = await supabase
+                    .from('platform_settings')
+                    .select('value')
+                    .eq('key', `TELEPHONY_PRICES:${planId}`)
+                    .maybeSingle();
+
+                let voicePrice = 0.08; // Fallback
+                if (priceSetting) {
+                    try {
+                        const parsed = JSON.parse(priceSetting.value);
+                        voicePrice = parseFloat(parsed.voice || '0.08');
+                    } catch (e) { }
+                }
+
+                // 3. Calculate Cost (Always ceil to full minute for telecom billing)
+                const minutes = Math.ceil(duration / 60);
+                const cost = minutes * voicePrice;
+
+                // 4. Update Call Log & Increment Spend
+                await supabase
+                    .from('call_logs')
+                    .update({
+                        status: 'completed',
+                        duration_seconds: duration,
+                        cost: cost
+                    })
+                    .eq('external_id', callId);
+
+                await supabase.rpc('increment_voice_spend', {
+                    t_id: tenantId,
+                    amount: cost
+                });
+
+                console.log(`Updated voice spend for tenant ${tenantId}: +$${cost}`);
+            }
+
         } else if (eventType === 'call.recording.saved') {
             // 1. Get Recording Data
             const recordingUrl = payload.recording_urls.mp3;

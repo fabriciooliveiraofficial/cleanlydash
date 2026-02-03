@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Toaster } from 'sonner';
 import { TelnyxProvider } from '../contexts/telnyx-context.tsx';
+import { RoleProvider } from '../contexts/RoleContext';
 import { createPlatformClient } from '../lib/supabase/platform-client';
 import { usePlatformSessionGuard } from '../hooks/use-platform-session-guard';
 import { PlatformLogin } from './platform/PlatformLogin';
@@ -95,22 +96,24 @@ export const PlatformApp: React.FC = () => {
     }
 
     return (
-        <TelnyxProvider supabaseClient={supabase}>
-            <SuperAdminLayout
-                activeModule={platformModule}
-                onNavigate={setPlatformModule}
-            >
-                {platformModule === 'dashboard' && <PlatformDashboard />}
-                {platformModule === 'tenants' && <TenantManager />}
-                {platformModule === 'finance' && <FinancialCommand />}
-                {platformModule === 'system' && <SystemTools />}
-                {platformModule === 'logs' && <AuditLogViewer />}
-                {platformModule === 'support' && <SupportInbox />}
-                {platformModule === 'broadcast' && <BroadcastCenter />}
-                {platformModule === 'telephony' && <TelephonyManager />}
-                <ReleaseGuard />
-                <Toaster position="top-right" richColors />
-            </SuperAdminLayout>
-        </TelnyxProvider>
+        <RoleProvider supabaseClient={supabase}>
+            <TelnyxProvider supabaseClient={supabase}>
+                <SuperAdminLayout
+                    activeModule={platformModule}
+                    onNavigate={setPlatformModule}
+                >
+                    {platformModule === 'dashboard' && <PlatformDashboard />}
+                    {platformModule === 'tenants' && <TenantManager />}
+                    {platformModule === 'finance' && <FinancialCommand />}
+                    {platformModule === 'system' && <SystemTools />}
+                    {platformModule === 'logs' && <AuditLogViewer />}
+                    {platformModule === 'support' && <SupportInbox />}
+                    {platformModule === 'broadcast' && <BroadcastCenter />}
+                    {platformModule === 'telephony' && <TelephonyManager />}
+                    <ReleaseGuard />
+                    <Toaster position="top-right" richColors />
+                </SuperAdminLayout>
+            </TelnyxProvider>
+        </RoleProvider>
     );
 };

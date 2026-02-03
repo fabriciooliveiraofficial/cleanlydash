@@ -45,6 +45,35 @@ serve(async (req) => {
         let password = userSettings?.sip_password;
         const callerId = userSettings?.phone_number;
 
+        // --- VOICE BUDGET CHECK ---
+        const { data: sub } = await supabaseAdmin
+            .from('tenant_subscriptions')
+            .select('plan_id, voice_usage_spend')
+            .eq('tenant_id', user.id)
+            .single();
+
+        const planId = sub?.plan_id || 'voice_starter';
+        const currentVoiceSpend = sub?.voice_usage_spend || 0;
+
+        // Get Plan Limits
+        const { data: plan } = await supabaseAdmin.from('plans').select('limits').eq('id', planId).single();
+        const limits = plan?.limits || {};
+
+        // Budget calculation: Use explicit voice_budget or the total plan price as the stop-limit
+        const voiceBudget = parseFloat(limits.voice_budget || limits.budget || '37.00');
+
+        if (currentVoiceSpend >= voiceBudget) {
+            console.warn(`[telnyx-token] Voice Quota Exceeded for ${user.id}: Spend ${currentVoiceSpend} >= Budget ${voiceBudget}`);
+            return new Response(JSON.stringify({
+                error: 'Cota de voz excedida',
+                details: 'Seu limite de chamadas para este ciclo foi atingido. Faça upgrade do seu plano para continuar ligando.'
+            }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                status: 403,
+            });
+        }
+        // --- END BUDGET CHECK ---
+
         // LAZY PROVISIONING: If we have a phone number but no SIP credentials, create them now.
         if (!login && callerId) {
             console.log(`Lazy provisioning SIP credentials for existing tenant: ${user.id}`);

@@ -99,6 +99,10 @@ const TelephonyDashboard: React.FC = () => {
         callsDuration: 0,
         smsCount: 0,
         totalCost: 0,
+        voiceSpend: 0,
+        smsSpend: 0,
+        voiceBudget: 37.00,
+        smsBudget: 10.00,
         chartData: [] as any[]
     });
     const [prices, setPrices] = useState({
@@ -115,15 +119,28 @@ const TelephonyDashboard: React.FC = () => {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
 
-            // 1. Fetch Prices
-            let currentPrices = { voice: 0.08, sms: 0.05 };
-            const { data: sub } = await supabase.from('tenant_subscriptions').select('plan_id').eq('tenant_id', user.id).maybeSingle();
-            const planId = sub?.plan_id || 'system_essentials';
+            // 1. Fetch Subscription & Budget Data
+            const { data: sub } = await supabase
+                .from('tenant_subscriptions')
+                .select('plan_id, voice_usage_spend, sms_usage_spend')
+                .eq('tenant_id', user.id)
+                .maybeSingle();
 
-            const { data: settings } = await supabase.from('platform_settings').select('value').eq('key', `TELEPHONY_PRICES:${planId}`).maybeSingle();
-            if (settings) {
+            const planId = sub?.plan_id || 'voice_starter';
+            const voiceSpend = sub?.voice_usage_spend || 0;
+            const smsSpend = sub?.sms_usage_spend || 0;
+
+            // 2. Fetch Plan Limits & Prices
+            const { data: plan } = await supabase.from('plans').select('limits').eq('id', planId).maybeSingle();
+            const limits = plan?.limits || {};
+            const voiceBudget = parseFloat(limits.voice_budget || limits.budget || '37.00');
+            const smsBudget = parseFloat(limits.sms_budget || '10.00');
+
+            const { data: priceSetting } = await supabase.from('platform_settings').select('value').eq('key', `TELEPHONY_PRICES:${planId}`).maybeSingle();
+            let currentPrices = { voice: 0.08, sms: 0.05 };
+            if (priceSetting) {
                 try {
-                    const parsed = JSON.parse(settings.value);
+                    const parsed = JSON.parse(priceSetting.value);
                     setPrices(parsed);
                     currentPrices = {
                         voice: parseFloat(parsed.voice || '0.08'),
@@ -132,7 +149,7 @@ const TelephonyDashboard: React.FC = () => {
                 } catch (e) { }
             }
 
-            // 2. Fetch Logs (Last 30 Days)
+            // 3. Fetch Logs for Chart (Last 7 Days)
             const thirtyDaysAgo = new Date();
             thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
             const isoDate = thirtyDaysAgo.toISOString();
@@ -149,20 +166,11 @@ const TelephonyDashboard: React.FC = () => {
                 .gte('created_at', isoDate)
                 .eq('tenant_id', user.id);
 
-            // 3. Process Stats
-            const calls = callLogs || [];
-            const sms = smsLogs || [];
+            const callsCount = callLogs?.length || 0;
+            const callsDuration = (callLogs || []).reduce((acc: number, c: any) => acc + (c.duration_seconds || 0), 0);
+            const smsCount = smsLogs?.length || 0;
 
-            const callsCount = calls.length;
-            const callsDuration = calls.reduce((acc: number, c: any) => acc + (c.duration_seconds || 0), 0);
-            const callsCost = (callsDuration / 60) * currentPrices.voice;
-
-            const smsCount = sms.length;
-            const smsCost = smsCount * currentPrices.sms;
-
-            const totalCost = callsCost + smsCost;
-
-            // 4. Generate Chart Data (Group by Day)
+            // 4. Generate Chart Data
             const dailyMap = new Map();
             for (let i = 6; i >= 0; i--) {
                 const d = new Date();
@@ -171,13 +179,13 @@ const TelephonyDashboard: React.FC = () => {
                 dailyMap.set(k, 0);
             }
 
-            [...calls, ...sms].forEach((item: any) => {
+            [...(callLogs || []), ...(smsLogs || [])].forEach((item: any) => {
                 const date = new Date(item.created_at);
                 const k = date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' });
                 if (dailyMap.has(k)) {
                     let cost = 0;
                     if ('duration_seconds' in item) {
-                        cost = (item.duration_seconds / 60) * currentPrices.voice;
+                        cost = Math.ceil(item.duration_seconds / 60) * currentPrices.voice;
                     } else {
                         cost = currentPrices.sms;
                     }
@@ -191,7 +199,11 @@ const TelephonyDashboard: React.FC = () => {
                 callsCount,
                 callsDuration,
                 smsCount,
-                totalCost,
+                totalCost: voiceSpend + smsSpend,
+                voiceSpend,
+                smsSpend,
+                voiceBudget,
+                smsBudget,
                 chartData
             });
 
@@ -229,15 +241,15 @@ const TelephonyDashboard: React.FC = () => {
                     trend="USD"
                     icon={DollarSign}
                     iconBg="bg-emerald-600 shadow-emerald-100"
-                    description="Este ciclo"
+                    description="Ciclo Atual"
                 />
                 <StatCard
-                    title="Sessões de Suporte"
-                    value="0"
-                    trend="--"
+                    title="Cota Restante"
+                    value={`$ ${(stats.voiceBudget + stats.smsBudget - stats.totalCost).toFixed(2)}`}
+                    trend="Disponível"
                     icon={Zap}
                     iconBg="bg-amber-500 shadow-amber-100"
-                    description="Tempo real"
+                    description="Até renovação"
                 />
             </div>
 
@@ -250,7 +262,7 @@ const TelephonyDashboard: React.FC = () => {
                                 <BarChart3 size={16} className="text-indigo-600" />
                                 Fluxo de Custos Operacionais
                             </h3>
-                            <p className="text-xs text-slate-400 mt-1 font-medium">Visualização diária (USD)</p>
+                            <p className="text-xs text-slate-400 mt-1 font-medium">Visualização diária do consumo (USD)</p>
                         </div>
                     </div>
                     <div className="p-8 h-[350px] w-full">
@@ -275,43 +287,37 @@ const TelephonyDashboard: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Sub-costs Pie */}
+                {/* Sub-costs Pie & Progress */}
                 <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-8 flex flex-col h-full">
                     <h3 className="font-black text-slate-800 flex items-center gap-2 uppercase tracking-widest text-xs mb-8">
                         <Zap size={16} className="text-amber-500" />
-                        Repartição por Serviço
+                        Utilização por Cota
                     </h3>
-                    {stats.totalCost > 0 ? (
-                        <div className="flex-1 flex flex-col">
-                            <div className="h-48 w-full mb-8">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                        <Pie
-                                            data={[
-                                                { name: 'Chamadas', value: (stats.callsDuration / 60) * parseFloat(prices.voice) },
-                                                { name: 'SMS', value: stats.smsCount * parseFloat(prices.sms) },
-                                            ]}
-                                            innerRadius={60}
-                                            outerRadius={80}
-                                            paddingAngle={5}
-                                            dataKey="value"
-                                        >
-                                            <Cell fill={COLORS[0]} />
-                                            <Cell fill={COLORS[1]} />
-                                        </Pie>
-                                    </PieChart>
-                                </ResponsiveContainer>
-                            </div>
-                            <div className="space-y-4">
-                                <CostProgressBar label="Chamadas" value={(stats.callsDuration / 60) * parseFloat(prices.voice)} percentage={50} color="bg-indigo-500" />
-                                <CostProgressBar label="SMS" value={stats.smsCount * parseFloat(prices.sms)} percentage={50} color="bg-purple-500" />
-                            </div>
+                    <div className="flex-1 flex flex-col justify-center">
+                        <div className="space-y-6">
+                            <CostProgressBar
+                                label="Voz (Minutos)"
+                                value={stats.voiceSpend}
+                                budget={stats.voiceBudget}
+                                percentage={Math.min(100, (stats.voiceSpend / stats.voiceBudget) * 100)}
+                                color="bg-indigo-500"
+                            />
+                            <CostProgressBar
+                                label="Mensagens (SMS/RCS)"
+                                value={stats.smsSpend}
+                                budget={stats.smsBudget}
+                                percentage={Math.min(100, (stats.smsSpend / stats.smsBudget) * 100)}
+                                color="bg-purple-500"
+                            />
                         </div>
-                    ) : (
-                        <div className="flex-1 flex items-center justify-center text-slate-400 text-xs">Sem dados recentes</div>
-                    )}
+
+                        <div className="mt-10 p-4 bg-slate-50 rounded-2xl border border-slate-100 italic text-[10px] text-slate-400 leading-relaxed">
+                            Note: O uso é interrompido automaticamente quando a cota de consumo atinge 100% do limite do plano.
+                        </div>
+                    </div>
                 </div>
             </div>
+
 
             {/* Bottom Section: Active Numbers & Rates */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -394,15 +400,15 @@ const StatCard = ({ title, value, trend, icon: Icon, iconBg, description }: any)
     </div>
 );
 
-const CostProgressBar = ({ label, value, percentage, color }: any) => (
+const CostProgressBar = ({ label, value, budget, percentage, color }: any) => (
     <div className="space-y-1.5">
-        <div className="flex justify-between text-sm">
-            <span className="font-bold text-slate-700">{label}</span>
-            <span className="font-black text-slate-900 text-xs">$ {value.toFixed(2)}</span>
+        <div className="flex justify-between text-[11px]">
+            <span className="font-black text-slate-700 uppercase tracking-tighter">{label}</span>
+            <span className="font-black text-slate-900">$ {value.toFixed(2)} / $ {budget.toFixed(2)}</span>
         </div>
-        <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden">
+        <div className="h-2.5 w-full bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
             <div
-                className={`h-full transition-all duration-1000 ${color}`}
+                className={`h-full transition-all duration-1000 ${color} shadow-[0_0_10px_rgba(0,0,0,0.05)]`}
                 style={{ width: `${percentage}%` }}
             />
         </div>

@@ -4,7 +4,7 @@ import { AppRole, UserRoleContext } from '../types';
 
 const RoleContext = createContext<UserRoleContext | undefined>(undefined);
 
-export function RoleProvider({ children }: { children: ReactNode }) {
+export function RoleProvider({ children, supabaseClient }: { children: ReactNode, supabaseClient?: any }) {
     const [user, setUser] = useState<any | null>(null);
     const [name, setName] = useState<string | null>(null);
     const [role, setRole] = useState<AppRole | null>(null);
@@ -12,7 +12,8 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     const [tenantId, setTenantId] = useState<string | null>(null);
     const [customRoleName, setCustomRoleName] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
-    const supabase = createClient();
+    const defaultSupabase = createClient();
+    const supabase = supabaseClient || defaultSupabase;
     const isFetching = useRef(false);
 
     useEffect(() => {

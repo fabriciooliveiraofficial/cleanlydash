@@ -129,41 +129,117 @@ serve(async (req) => {
             });
         }
 
-        // 3. Action: Provision (Existing logic)
+        // 3. Action: Provision (Real Plan B Automation)
         const masterKey = Deno.env.get('TELNYX_MASTER_KEY') || Deno.env.get('TELNYX_API_KEY');
-        // If not in env, check platform_settings
         let effectiveMasterKey = masterKey;
         if (!effectiveMasterKey) {
             const { data: pKey } = await supabaseAdmin.from('platform_settings').select('value').eq('key', 'TELNYX_API_KEY').maybeSingle();
             effectiveMasterKey = pKey?.value;
         }
 
-        let managedAccountId = `managed_${crypto.randomUUID().split('-')[0]}`;
-        let managedApiKey = `KEY${crypto.randomUUID().replace(/-/g, '').toUpperCase()}`;
+        if (!effectiveMasterKey) {
+            throw new Error("Configuração da plataforma incompleta: Chave Mestra Telnyx não encontrada.");
+        }
 
-        if (effectiveMasterKey && !sandbox) {
-            console.log("Calling Telnyx API (Production Simulation)...");
-            // In a real reseller flow, we'd use the platform key to create a Managed Account inside Telnyx here.
+        // Check if already provisioned
+        const { data: existing } = await supabaseAdmin.from('telnyx_settings').select('*').eq('user_id', user.id).maybeSingle();
+
+        let messagingProfileId = existing?.messaging_profile_id;
+        let connectionId = existing?.telnyx_connection_id;
+        let sipUser = existing?.sip_username;
+        let sipPass = existing?.sip_password;
+
+        if (!sandbox) {
+            console.log(`[provision_tenant] Starting real provisioning for user ${user.id}`);
+
+            // A. Create Messaging Profile (if not exists)
+            if (!messagingProfileId) {
+                console.log("[provision_tenant] Creating Messaging Profile...");
+                const mpResponse = await fetch('https://api.telnyx.com/v2/messaging_profiles', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${effectiveMasterKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        name: `Cleanlydash - Tenant ${user.id.substring(0, 8)}`,
+                        enabled: true
+                    })
+                });
+                const mpData = await mpResponse.json();
+                if (!mpResponse.ok) throw new Error(`Telnyx MP Error: ${mpData.errors?.[0]?.detail || 'Unknown error'}`);
+                messagingProfileId = mpData.data.id;
+            }
+
+            // B. Create SIP Connection / Credentials (if not exists)
+            if (!connectionId) {
+                console.log("[provision_tenant] Creating SIP Connection...");
+                const scResponse = await fetch('https://api.telnyx.com/v2/credential_connections', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${effectiveMasterKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        connection_name: `Cleanlydash - ${user.id.substring(0, 8)}`,
+                        active: true
+                    })
+                });
+                const scData = await scResponse.json();
+                if (!scResponse.ok) console.error(`[provision_tenant] SIP Connection Error:`, scData);
+                else {
+                    connectionId = scData.data.id;
+
+                    // Now Create Credentials for this Connection
+                    const credResponse = await fetch(`https://api.telnyx.com/v2/telephony_credentials`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${effectiveMasterKey}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            connection_id: connectionId
+                        })
+                    });
+                    const credData = await credResponse.json();
+                    if (credResponse.ok) {
+                        sipUser = credData.data.sip_username;
+                        sipPass = credData.data.sip_password;
+                    }
+                }
+            }
+        }
+
+        // Simulated/Sandbox Fallback
+        if (sandbox || !messagingProfileId) {
+            messagingProfileId = messagingProfileId || `mp_${crypto.randomUUID().split('-')[0]}`;
         }
 
         const { error: upsertError } = await supabaseAdmin
             .from('telnyx_settings')
             .upsert({
                 user_id: user.id,
-                managed_account_id: managedAccountId,
-                managed_api_key: managedApiKey,
+                messaging_profile_id: messagingProfileId,
+                telnyx_connection_id: connectionId,
+                sip_username: sipUser,
+                sip_password: sipPass,
                 is_active: true
             }, { onConflict: 'user_id' })
 
         if (upsertError) throw upsertError;
 
         return new Response(
-            JSON.stringify({ success: true, managed_account_id: managedAccountId }),
+            JSON.stringify({
+                success: true,
+                messaging_profile_id: messagingProfileId,
+                is_sandbox: !!sandbox
+            }),
             {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 status: 200,
             }
         )
+
 
     } catch (error: any) {
         return new Response(

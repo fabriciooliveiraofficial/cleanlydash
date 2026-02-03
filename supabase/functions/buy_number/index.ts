@@ -175,6 +175,35 @@ serve(async (req) => {
             }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
         }
 
+        // --- PLAN B: ASSIGN TO MESSAGING PROFILE ---
+        diag.step = "assigning_to_profile";
+        const { data: tenantSettings } = await supabaseAdmin
+            .from('telnyx_settings')
+            .select('messaging_profile_id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+        const messagingProfileId = tenantSettings?.messaging_profile_id;
+        diag.messaging_profile_id = messagingProfileId;
+
+        if (messagingProfileId && !sandbox) {
+            const boughtNumberId = resultData.data?.phone_numbers?.[0]?.id;
+            if (boughtNumberId) {
+                console.log(`[buy_number] Assigning ${phone_number} (${boughtNumberId}) to profile ${messagingProfileId}`);
+                await fetch(`https://api.telnyx.com/v2/phone_numbers/${boughtNumberId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${telnyxApiKey}`
+                    },
+                    body: JSON.stringify({
+                        messaging_profile_id: messagingProfileId
+                    })
+                });
+            }
+        }
+
+
         // SUCCESS! 
         // Step 3: Provision SIP Credentials if they don't exist
         diag.step = "provisioning_sip";

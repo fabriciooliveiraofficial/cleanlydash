@@ -6,7 +6,13 @@ import { Button } from '../ui/button';
 
 // Make sure to call loadStripe outside of a component’s render to avoid
 // recreating the Stripe object on every render.
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '');
+const stripeKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+const stripePromise = stripeKey ? loadStripe(stripeKey) : null;
+
+if (!stripeKey) {
+    console.warn("[Stripe] Missing VITE_STRIPE_PUBLISHABLE_KEY. Stripe features will be disabled.");
+}
+
 
 interface StripeCheckoutModalProps {
     isOpen: boolean;

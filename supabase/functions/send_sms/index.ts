@@ -105,10 +105,44 @@ serve(async (req) => {
 
             if (!telnyxApiKey) throw new Error("No API Key found for sending SMS.");
 
-            // Redacted preview for debug info
-            redactedKey = telnyxApiKey ? `${telnyxApiKey.substring(0, 5)}...${telnyxApiKey.slice(-4)}` : 'None';
-            const apiKeyLength = telnyxApiKey?.length || 0;
-            console.log(`[send_sms] Using API Key from ${apiKeySource}: ${redactedKey} (Length: ${apiKeyLength})`);
+            // --- BILLING & QUOTA LOGIC ---
+            // 1. Get Tenant Plan & Subscriptions
+            const { data: sub } = await supabaseAdmin
+                .from('tenant_subscriptions')
+                .select('plan_id, sms_usage_spend')
+                .eq('tenant_id', user.id)
+                .single();
+
+            const planId = sub?.plan_id || 'voice_starter';
+            const currentSpend = sub?.sms_usage_spend || 0;
+
+            // 2. Get Plan Limits & Prices
+            const { data: plan } = await supabaseAdmin.from('plans').select('limits').eq('id', planId).single();
+            const { data: priceSetting } = await supabaseAdmin.from('platform_settings').select('value').eq('key', `TELEPHONY_PRICES:${planId}`).maybeSingle();
+
+            let smsPrice = 0.05; // Fallback
+            if (priceSetting) {
+                try {
+                    const parsed = JSON.parse(priceSetting.value);
+                    smsPrice = parseFloat(parsed.sms || '0.05');
+                } catch (e) { }
+            }
+
+            // Calculate segments (basic estimation: 1 segment = 160 chars)
+            const segments = Math.ceil(message.length / 160);
+            const messageCost = smsPrice * segments;
+
+            // Get Budget from Plan Limits
+            // The user mentioned "minutes" in limits, we'll look for "sms_budget" or use the plan price as the limit
+            // Goal: Stop usage when spend reaches plan price (or defined limit)
+            const limits = plan?.limits || {};
+            const smsBudget = parseFloat(limits.sms_budget || limits.budget || '37.00');
+
+            if (currentSpend + messageCost > smsBudget) {
+                console.warn(`[send_sms] Quota Exceeded for ${user.id}: Spend ${currentSpend} + Cost ${messageCost} > Budget ${smsBudget}`);
+                throw new Error("Cota de SMS excedida para este plano. Por favor, faça um upgrade para continuar enviando.");
+            }
+            // --- END BILLING LOGIC ---
 
             const telnyxUrl = 'https://api.telnyx.com/v2/messages';
             const body: any = {
@@ -121,12 +155,18 @@ serve(async (req) => {
                 body.media_urls = media_urls;
             }
 
+            const fetchHeaders: any = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${telnyxApiKey}`
+            };
+
+            // White-Label Isolation (Plan B): Link to Messaging Profile (if set)
+            // Note: Telnyx uses Messaging Profiles to route webhooks.
+            // We already link the number to the profile in buy_number.
+
             const response = await fetch(telnyxUrl, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${telnyxApiKey}`
-                },
+                headers: fetchHeaders,
                 body: JSON.stringify(body)
             });
 
@@ -137,6 +177,7 @@ serve(async (req) => {
                 throw new Error(data.errors?.[0]?.detail || "Failed to send SMS");
             }
 
+            // 3. Update SMS Logs AND Increment Usage Spend
             await supabaseAdmin.from('sms_logs').insert({
                 tenant_id: user.id,
                 direction: 'outbound',
@@ -144,13 +185,27 @@ serve(async (req) => {
                 to_number: to,
                 content: message,
                 status: 'sent',
-                external_id: data.data?.id
+                external_id: data.data?.id,
+                cost: messageCost,
+                price: smsPrice
+            });
+
+            // Increment the ledger
+            await supabaseAdmin.rpc('increment_sms_spend', {
+                t_id: user.id,
+                amount: messageCost
             });
 
             return new Response(
-                JSON.stringify({ success: true, message: "SMS sent successfully", data: data, status: "sent" }),
+                JSON.stringify({
+                    success: true,
+                    message: "SMS sent successfully",
+                    cost: messageCost,
+                    remaining_budget: (smsBudget - (currentSpend + messageCost)).toFixed(2)
+                }),
                 { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
             );
+
         }
 
     } catch (error: any) {
