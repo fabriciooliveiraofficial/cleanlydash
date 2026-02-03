@@ -46,7 +46,13 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
                 try {
                     if (ringtoneRef.current) {
                         ringtoneRef.current.currentTime = 0;
-                        await ringtoneRef.current.play();
+                        const playPromise = ringtoneRef.current.play();
+                        if (playPromise !== undefined) {
+                            playPromise.catch(error => {
+                                console.warn("[Telnyx Context] Ringtone play blocked by browser. Awaiting interaction.", error);
+                                // The interaction listener will handle it if it hasn't already.
+                            });
+                        }
                     }
                 } catch (error) {
                     console.error("Error playing ringtone:", error);
@@ -60,6 +66,40 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
             }
         }
     }, [callState, call]);
+
+    // Audio Autoplay Policy "Unlocker"
+    useEffect(() => {
+        const unlockAudio = () => {
+            console.log("[Telnyx Context] User interaction detected. Unlocking audio elements.");
+            if (ringtoneRef.current) {
+                // Prime the audio element without playing audible sound
+                const ringtone = ringtoneRef.current;
+                const volume = ringtone.volume;
+                ringtone.volume = 0;
+                ringtone.play().then(() => {
+                    ringtone.pause();
+                    ringtone.volume = volume;
+                    console.log("[Telnyx Context] Audio unlocked.");
+                    // Remove listeners once unlocked
+                    window.removeEventListener('click', unlockAudio);
+                    window.removeEventListener('keydown', unlockAudio);
+                    window.removeEventListener('touchstart', unlockAudio);
+                }).catch(e => {
+                    console.error("[Telnyx Context] Failed to unlock audio:", e);
+                });
+            }
+        };
+
+        window.addEventListener('click', unlockAudio);
+        window.addEventListener('keydown', unlockAudio);
+        window.addEventListener('touchstart', unlockAudio);
+
+        return () => {
+            window.removeEventListener('click', unlockAudio);
+            window.removeEventListener('keydown', unlockAudio);
+            window.removeEventListener('touchstart', unlockAudio);
+        }
+    }, []);
 
     // Monitor Call Object for Remote Stream updates
     useEffect(() => {
