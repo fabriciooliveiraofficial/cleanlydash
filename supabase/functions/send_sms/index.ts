@@ -78,29 +78,33 @@ serve(async (req) => {
 
         } else {
             // Real Send Logic
-            telnyxApiKey = Deno.env.get('TELNYX_API_KEY')?.trim() || null;
-            apiKeySource = 'Deno Env';
+            // 1. Priority: Platform Settings (Plan B - Unified Account)
+            const { data: platformKeyData } = await supabaseAdmin
+                .from('platform_settings')
+                .select('value')
+                .eq('key', 'TELNYX_API_KEY')
+                .maybeSingle();
 
-            // Try fetching from user settings first (if they BYOC)
-            if (settings.api_key) {
-                telnyxApiKey = settings.api_key.trim();
-                apiKeySource = 'User Settings (api_key)';
-            } else if (settings.managed_api_key) {
-                telnyxApiKey = settings.managed_api_key.trim();
-                apiKeySource = 'User Settings (managed_api_key)';
+            if (platformKeyData?.value) {
+                telnyxApiKey = platformKeyData.value.trim();
+                apiKeySource = 'Platform Settings';
             }
 
-            // Fallback to Platform Settings
+            // 2. Fallback: User Settings (Plan A - BYOC)
             if (!telnyxApiKey) {
-                const { data } = await supabaseAdmin
-                    .from('platform_settings')
-                    .select('value')
-                    .eq('key', 'TELNYX_API_KEY')
-                    .maybeSingle();
-                if (data?.value) {
-                    telnyxApiKey = data.value.trim();
-                    apiKeySource = 'Platform Settings';
+                if (settings.api_key) {
+                    telnyxApiKey = settings.api_key.trim();
+                    apiKeySource = 'User Settings (api_key)';
+                } else if (settings.managed_api_key) {
+                    telnyxApiKey = settings.managed_api_key.trim();
+                    apiKeySource = 'User Settings (managed_api_key)';
                 }
+            }
+
+            // 3. Last Resort: Environment Variables
+            if (!telnyxApiKey) {
+                telnyxApiKey = Deno.env.get('TELNYX_API_KEY')?.trim() || Deno.env.get('TELNYX_MASTER_KEY')?.trim() || null;
+                apiKeySource = 'Deno Env';
             }
 
             if (!telnyxApiKey) throw new Error("No API Key found for sending SMS.");

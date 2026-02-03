@@ -48,11 +48,34 @@ serve(async (req) => {
             throw new Error("Telnyx settings not configured for this account.")
         }
 
-        const telnyxApiKey = settings.api_key;
+        // 4. Logic to Resolve API Key (Priority: Platform Settings -> User Settings)
+        let telnyxApiKey: string | null = null;
+        let apiKeySource = 'Initial';
+
+        // 1. Platform Settings (Plan B)
+        const { data: platformKeyData } = await supabase
+            .from('platform_settings')
+            .select('value')
+            .eq('key', 'TELNYX_API_KEY')
+            .maybeSingle();
+
+        if (platformKeyData?.value) {
+            telnyxApiKey = platformKeyData.value.trim();
+            apiKeySource = 'Platform Settings';
+        }
+
+        // 2. User Settings (Plan A / Legacy)
+        if (!telnyxApiKey) {
+            if (settings.api_key) {
+                telnyxApiKey = settings.api_key.trim();
+                apiKeySource = 'User Settings (api_key)';
+            }
+        }
+
         const fromNumber = settings.phone_number;
 
         if (!telnyxApiKey || !fromNumber) {
-            throw new Error("Invalid Telnyx configuration (Missing API Key or Number)")
+            throw new Error(`Invalid Telnyx configuration (Key Source: ${apiKeySource}, Missing API Key or Number)`)
         }
 
         // 4. Call Telnyx API
