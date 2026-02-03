@@ -16,7 +16,12 @@ import {
   Circle,
   Sparkles,
   Zap,
-  MessageSquare
+  MessageSquare,
+  User,
+  CheckCircle2,
+  AlertCircle,
+  Search,
+  Loader2
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button.tsx'
@@ -25,12 +30,20 @@ import { cn } from '@/lib/utils.ts'
 import { useTelnyx } from '@/hooks/use-telnyx.ts'
 import { useLiveCoach } from '@/hooks/use-live-coach.ts'
 import { useDtmf } from '@/hooks/use-dtmf.ts'
+import { createClient } from '@/lib/supabase/client.ts'
 
 export function DialerWidget() {
   const [isOpen, setIsOpen] = React.useState(false)
   const [isDragging, setIsDragging] = React.useState(false)
   const [destination, setDestination] = React.useState('')
   const { playTone } = useDtmf()
+  const supabase = createClient()
+
+  // Smart Dialer State
+  const [contact, setContact] = React.useState<any>(null)
+  const [isSearching, setIsSearching] = React.useState(false)
+  const [isValidating, setIsValidating] = React.useState(false)
+  const [validationResult, setValidationResult] = React.useState<'valid' | 'invalid' | null>(null)
 
   // Persist position
   const [position, setPosition] = React.useState(() => {
@@ -55,28 +68,55 @@ export function DialerWidget() {
     if (callState === 'ringing') setIsOpen(true)
   }, [callState])
 
+  // Debounced Search & Validation
+  React.useEffect(() => {
+    if (!destination || destination.length < 3) {
+      setContact(null)
+      setValidationResult(null)
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearching(true)
+
+      // 1. Search Customer
+      const { data } = await supabase
+        .from('customers')
+        .select('*')
+        .or(`phone.eq.${destination},phone.ilike.%${destination}%`)
+        .limit(1)
+        .maybeSingle()
+
+      if (data) {
+        setContact(data)
+        setValidationResult('valid') // Existing customers are valid
+      } else {
+        setContact(null)
+        // 2. Validate "New" Number (Mock logic for now, or regex)
+        // Basic E.164 check or length check
+        const isValid = /^\+?[1-9]\d{1,14}$/.test(destination) && destination.length > 8
+        setValidationResult(isValid ? 'valid' : 'invalid')
+      }
+      setIsSearching(false)
+    }, 600)
+
+    return () => clearTimeout(timer)
+  }, [destination])
+
   // Keyboard support
   React.useEffect(() => {
     if (!isOpen || callState !== 'idle') return
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Allow standard navigation keys
       if (e.metaKey || e.ctrlKey || e.altKey) return
-
       const key = e.key
-
-      // Numbers and symbols
       if (/^[0-9*#]$/.test(key)) {
         e.preventDefault()
         handleKeyClick(key)
-      }
-      // Backspace
-      else if (key === 'Backspace') {
+      } else if (key === 'Backspace') {
         e.preventDefault()
         setDestination(prev => prev.slice(0, -1))
-      }
-      // Enter
-      else if (key === 'Enter') {
+      } else if (key === 'Enter') {
         e.preventDefault()
         if (destination) makeCall(destination)
       }
@@ -103,6 +143,12 @@ export function DialerWidget() {
     localStorage.setItem('pwa_dialer_pos', JSON.stringify(newPos));
     setTimeout(() => setIsDragging(false), 100);
   };
+
+  const handleMessage = () => {
+    localStorage.setItem('compose_target', destination);
+    window.dispatchEvent(new Event('trigger_compose'));
+    setIsOpen(false);
+  }
 
   return (
     <motion.div
@@ -141,7 +187,7 @@ export function DialerWidget() {
             initial={{ y: 20, opacity: 0, scale: 0.95 }}
             animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ y: 20, opacity: 0, scale: 0.95 }}
-            className="glass-panel w-80 rounded-[32px] overflow-hidden flex flex-col border-white/60 shadow-[0_30px_60px_rgba(0,0,0,0.12)]"
+            className="glass-panel w-96 rounded-[32px] overflow-hidden flex flex-col border-white/60 shadow-[0_30px_60px_rgba(0,0,0,0.12)]"
           >
             {/* Header Glass */}
             <div className="p-4 border-b border-white/20 bg-white/10 backdrop-blur-md flex items-center justify-between cursor-grab active:cursor-grabbing">
@@ -152,9 +198,7 @@ export function DialerWidget() {
                     callState === 'error' ? "bg-rose-400" : "bg-emerald-400/50"
                 )} />
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">
-                  {callState === 'idle' ? 'Disponível' :
-                    callState === 'ringing' ? 'Recebendo...' :
-                      callState === 'active' ? 'Em Chamada' : 'Conectando'}
+                  {callState === 'idle' ? 'Supersônico' : callState}
                 </span>
               </div>
               <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-slate-700 transition-colors p-1 hover:bg-black/5 rounded-full">
@@ -173,12 +217,49 @@ export function DialerWidget() {
 
               {callState === 'idle' ? (
                 <div className="space-y-6">
+                  {/* Display Smart Contact Info */}
+                  <div className="h-20 flex flex-col justify-end">
+                    {isSearching ? (
+                      <div className="flex items-center gap-2 text-slate-400 text-xs justify-center animate-pulse">
+                        <Loader2 size={12} className="animate-spin" /> Buscando...
+                      </div>
+                    ) : contact ? (
+                      <div className="flex items-center gap-3 p-2 bg-indigo-50/50 rounded-2xl border border-indigo-100 animate-in slide-in-from-bottom-2">
+                        <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold">
+                          {contact.name?.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="font-bold text-slate-800 text-sm leading-tight">{contact.name}</p>
+                          <p className="text-[10px] text-slate-500">Cliente Cadastrado</p>
+                        </div>
+                        <CheckCircle2 size={16} className="ml-auto text-emerald-500" />
+                      </div>
+                    ) : destination.length > 3 ? (
+                      <div className="flex items-center gap-2 justify-center text-xs text-slate-400 animate-in fade-in">
+                        {validationResult === 'valid' ? (
+                          <span className="flex items-center gap-1 text-emerald-600 font-medium">
+                            <CheckCircle2 size={12} /> Número Válido
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 text-slate-400">
+                            <Search size={12} /> Desconhecido
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-center text-slate-300 text-xs font-medium">Digite para buscar...</div>
+                    )}
+                  </div>
+
                   <div className="relative group">
                     <Input
                       value={destination}
                       onChange={(e) => setDestination(e.target.value)}
                       placeholder="Discar..."
-                      className="h-14 text-center text-2xl font-black tracking-widest rounded-2xl border-white/40 bg-white/30 focus:bg-white/50 backdrop-blur-sm pr-10 shadow-inner placeholder:text-slate-300 placeholder:font-normal placeholder:tracking-normal outline-none ring-0 focus-visible:ring-indigo-100"
+                      className={cn(
+                        "h-14 text-center text-2xl font-black tracking-widest rounded-2xl border-white/40 bg-white/30 focus:bg-white/50 backdrop-blur-sm pr-10 shadow-inner outline-none ring-0 focus-visible:ring-indigo-100 transition-all",
+                        contact ? "text-indigo-600" : "text-slate-700"
+                      )}
                     />
                     {destination && (
                       <button
@@ -203,30 +284,30 @@ export function DialerWidget() {
                     ))}
                   </div>
 
-                  <div className="flex gap-3">
+                  {/* Smart Action Buttons */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <Button
+                      onClick={handleMessage}
+                      disabled={!destination}
+                      className="h-14 rounded-2xl bg-white/60 hover:bg-white text-indigo-600 border border-white/60 shadow-sm transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+                    >
+                      <MessageSquare size={20} className="mr-2" />
+                      Mensagem
+                    </Button>
+
                     <Button
                       onClick={() => makeCall(destination)}
                       disabled={!destination || callState !== 'idle'}
-                      className="flex-1 h-14 rounded-2xl bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 font-black gap-3 text-white transition-transform active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                      className={cn(
+                        "h-14 rounded-2xl shadow-lg font-black gap-2 transition-transform active:scale-95 disabled:opacity-50 disabled:pointer-events-none text-white",
+                        contact ? "bg-emerald-500 hover:bg-emerald-600 shadow-emerald-200" : "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200"
+                      )}
                     >
                       <Phone size={20} className="fill-white/20" />
                       CHAMAR
                     </Button>
-
-                    <Button
-                      onClick={() => {
-                        localStorage.setItem('compose_target', destination);
-                        window.dispatchEvent(new Event('trigger_compose'));
-                        setIsOpen(false);
-                        // Optional: Navigate to inbox if not there
-                        // window.location.hash = '#telephony'; 
-                      }}
-                      disabled={!destination}
-                      className="h-14 w-14 rounded-2xl bg-white/40 hover:bg-white text-indigo-600 border border-white/60 shadow-sm transition-transform active:scale-95 disabled:opacity-50"
-                    >
-                      <MessageSquare size={24} />
-                    </Button>
                   </div>
+
                 </div>
               ) : (
                 <div className="flex flex-col items-center py-4 space-y-8">
@@ -234,11 +315,16 @@ export function DialerWidget() {
                     <div className="relative">
                       <div className="absolute inset-0 bg-indigo-500/20 blur-xl rounded-full animate-pulse"></div>
                       <div className="relative h-24 w-24 rounded-[32px] bg-gradient-to-br from-slate-50 to-white flex items-center justify-center text-slate-400 mx-auto border border-white shadow-xl">
-                        <Volume2 size={36} className="text-indigo-500" />
+                        {contact ? (
+                          <div className="text-4xl font-bold text-indigo-600">{contact.name.charAt(0)}</div>
+                        ) : (
+                          <Volume2 size={36} className="text-indigo-500" />
+                        )}
                       </div>
                     </div>
                     <div>
-                      <h4 className="text-2xl font-black text-slate-800 tracking-tight">{remoteNumber || destination || 'Desconhecido'}</h4>
+                      <h4 className="text-2xl font-black text-slate-800 tracking-tight">{contact ? contact.name : (remoteNumber || destination || 'Desconhecido')}</h4>
+                      {contact && <p className="text-sm text-slate-500">{remoteNumber || destination}</p>}
                       <div className="flex items-center justify-center gap-2 text-indigo-500 font-mono font-bold text-sm bg-indigo-50/50 py-1 px-3 rounded-full mx-auto w-fit mt-2 border border-indigo-100/50">
                         <Clock size={12} />
                         {formatTime(duration)}
