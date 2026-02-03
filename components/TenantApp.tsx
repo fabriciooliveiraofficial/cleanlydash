@@ -57,6 +57,14 @@ const TenantAppInner: React.FC = () => {
     const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
 
     useEffect(() => {
+        const handleComposeTrigger = () => {
+            setActiveTab(TabType.TELEPHONY);
+        };
+        window.addEventListener('trigger_compose', handleComposeTrigger);
+        return () => window.removeEventListener('trigger_compose', handleComposeTrigger);
+    }, []);
+
+    useEffect(() => {
         // Only allow dashboard access if the role explicitly provides 'dashboard' access
         const hasDashboardAccess = user && roleContext.app_access === 'dashboard';
 

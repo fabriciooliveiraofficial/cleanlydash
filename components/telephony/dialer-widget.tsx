@@ -15,7 +15,8 @@ import {
   Clock,
   Circle,
   Sparkles,
-  Zap
+  Zap,
+  MessageSquare
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button.tsx'
@@ -202,14 +203,30 @@ export function DialerWidget() {
                     ))}
                   </div>
 
-                  <Button
-                    onClick={() => makeCall(destination)}
-                    disabled={!destination || callState !== 'idle'}
-                    className="w-full h-14 rounded-2xl bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 font-black gap-3 text-white transition-transform active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
-                  >
-                    <Phone size={20} className="fill-white/20" />
-                    CHAMAR
-                  </Button>
+                  <div className="flex gap-3">
+                    <Button
+                      onClick={() => makeCall(destination)}
+                      disabled={!destination || callState !== 'idle'}
+                      className="flex-1 h-14 rounded-2xl bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 font-black gap-3 text-white transition-transform active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                    >
+                      <Phone size={20} className="fill-white/20" />
+                      CHAMAR
+                    </Button>
+
+                    <Button
+                      onClick={() => {
+                        localStorage.setItem('compose_target', destination);
+                        window.dispatchEvent(new Event('trigger_compose'));
+                        setIsOpen(false);
+                        // Optional: Navigate to inbox if not there
+                        // window.location.hash = '#telephony'; 
+                      }}
+                      disabled={!destination}
+                      className="h-14 w-14 rounded-2xl bg-white/40 hover:bg-white text-indigo-600 border border-white/60 shadow-sm transition-transform active:scale-95 disabled:opacity-50"
+                    >
+                      <MessageSquare size={24} />
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col items-center py-4 space-y-8">

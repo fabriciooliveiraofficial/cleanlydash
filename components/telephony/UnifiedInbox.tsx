@@ -147,6 +147,42 @@ export const UnifiedInbox: React.FC = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
+    // Handle "Compose" from Dialer
+    useEffect(() => {
+        const handleCompose = () => {
+            const target = localStorage.getItem('compose_target');
+            if (target) {
+                localStorage.removeItem('compose_target');
+
+                // 1. Check if exists
+                const existing = conversations.find(c => c.customer_phone === target || c.customer_phone === target.replace(/\D/g, '')); // Simple check
+
+                if (existing) {
+                    setSelectedId(existing.id);
+                } else {
+                    // 2. Create Ad-Hoc
+                    const tempId = `temp_${Date.now()}`;
+                    const newConv: Conversation = {
+                        id: tempId,
+                        customer_name: target, // Use phone as name
+                        customer_phone: target,
+                        last_message: 'Drafting...',
+                        last_message_at: new Date().toLocaleTimeString(),
+                        unread_count: 0,
+                        avatar_color: getAvatarColor(target),
+                        channel: 'sms'
+                    };
+                    setConversations(prev => [newConv, ...prev]);
+                    setSelectedId(tempId);
+                }
+            }
+        };
+
+        window.addEventListener('trigger_compose', handleCompose);
+        handleCompose(); // Check on mount
+        return () => window.removeEventListener('trigger_compose', handleCompose);
+    }, [conversations]);
+
     const [isUploading, setIsUploading] = useState(false);
 
     const handleSend = async () => {
