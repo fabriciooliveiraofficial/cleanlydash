@@ -141,7 +141,7 @@ export const TelephonyManager: React.FC = () => {
         <div className="space-y-6 relative min-h-[500px]">
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-2xl font-bold text-slate-800">Telephony inspector [DIAGNOSTIC_MARKER_V1]</h2>
+                    <h2 className="text-2xl font-bold text-slate-800">Telephony inspector</h2>
                     <p className="text-slate-500">Supervisão e gestão de consumo da plataforma.</p>
                 </div>
                 <div className="flex gap-2">
