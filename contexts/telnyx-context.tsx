@@ -18,6 +18,7 @@ interface TelnyxContextType {
     isMuted: boolean
     duration: number
     remoteNumber: string
+    enableAudio: () => void
 }
 
 const TelnyxContext = createContext<TelnyxContextType | null>(null)
@@ -70,23 +71,37 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
     // Audio Autoplay Policy "Unlocker"
     useEffect(() => {
         const unlockAudio = () => {
-            console.log("[Telnyx Context] User interaction detected. Unlocking audio elements.");
-            if (ringtoneRef.current) {
-                // Prime the audio element without playing audible sound
-                const ringtone = ringtoneRef.current;
-                const volume = ringtone.volume;
-                ringtone.volume = 0;
-                ringtone.play().then(() => {
+            if (!ringtoneRef.current) return;
+
+            console.log("[Telnyx Context] 👆 User interaction detected. Priming audio elements...");
+
+            const ringtone = ringtoneRef.current;
+
+            // Prime with muted=true first for maximum compatibility
+            ringtone.muted = true;
+
+            const playPromise = ringtone.play();
+
+            if (playPromise !== undefined) {
+                playPromise.then(() => {
                     ringtone.pause();
-                    ringtone.volume = volume;
-                    console.log("[Telnyx Context] Audio unlocked.");
-                    // Remove listeners once unlocked
+                    ringtone.muted = false;
+                    console.log("[Telnyx Context] ✅ Ringtone UNLOCKED successfully.");
+
+                    // Cleanup listeners only on SUCCESS
                     window.removeEventListener('click', unlockAudio);
                     window.removeEventListener('keydown', unlockAudio);
                     window.removeEventListener('touchstart', unlockAudio);
                 }).catch(e => {
-                    console.error("[Telnyx Context] Failed to unlock audio:", e);
+                    console.warn("[Telnyx Context] ⚠️ Prime failed (retry on next interaction):", e);
                 });
+            } else {
+                // Older browsers
+                ringtone.pause();
+                ringtone.muted = false;
+                window.removeEventListener('click', unlockAudio);
+                window.removeEventListener('keydown', unlockAudio);
+                window.removeEventListener('touchstart', unlockAudio);
             }
         };
 
@@ -477,6 +492,23 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
         return () => window.removeEventListener('quick-call', handleQuickCall as EventListener);
     }, [makeCall]);
 
+    const enableAudio = useCallback(() => {
+        if (ringtoneRef.current) {
+            console.log("[Telnyx Context] 👆 Manually enabling audio...");
+            const rt = ringtoneRef.current;
+            rt.muted = true;
+            rt.play().then(() => {
+                rt.pause();
+                rt.muted = false;
+                console.log("[Telnyx Context] ✅ Audio enabled manually.");
+                toast.success("Áudio Ativado!");
+            }).catch(e => {
+                console.error("[Telnyx Context] ❌ Manual enable failed:", e);
+                toast.error("Erro ao ativar áudio");
+            });
+        }
+    }, []);
+
     const value = {
         callState,
         makeCall,
@@ -485,7 +517,8 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
         toggleMute,
         isMuted,
         duration,
-        remoteNumber: call?.remoteCallerNumber || ''
+        remoteNumber: call?.remoteCallerNumber || '',
+        enableAudio
     }
 
     return (
