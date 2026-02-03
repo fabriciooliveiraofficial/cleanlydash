@@ -169,6 +169,24 @@ serve(async (req) => {
             let sipPass = settings?.sip_password;
 
             // 1. Ensure Messaging Profile (SMS Isolation)
+            // Smart Adoption: If we have a phone number, check if it's already linked to an MP on Telnyx
+            if (!mpId && settings?.phone_number) {
+                try {
+                    console.log(`[Master Engine] Checking existing linkage for ${settings.phone_number}...`);
+                    const searchResp = await fetch(`https://api.telnyx.com/v2/phone_numbers?filter[phone_number]=${settings.phone_number.replace('+', '').trim()}`, {
+                        headers: { 'Authorization': `Bearer ${effectiveMasterKey}` }
+                    });
+                    const searchData = await searchResp.json();
+                    const existingMpId = searchData.data?.[0]?.messaging_profile_id;
+                    if (existingMpId) {
+                        console.log(`[Master Engine] Adopted Existing MP from Number: ${existingMpId}`);
+                        mpId = existingMpId;
+                    }
+                } catch (err) {
+                    console.warn("[Master Engine] Failed to check existing linkage:", err);
+                }
+            }
+
             if (!mpId) {
                 console.log(`[Master Engine] Creating MP for ${targetUserId}...`);
                 const mpResp = await fetch('https://api.telnyx.com/v2/messaging_profiles', {
