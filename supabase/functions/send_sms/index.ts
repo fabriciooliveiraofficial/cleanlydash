@@ -1,6 +1,5 @@
-
-import { serve } from "http/server.ts"
-import { createClient } from "@supabase/supabase-js"
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0"
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -39,7 +38,7 @@ serve(async (req) => {
         // 1. Get User's Phone Number
         const { data: settings } = await supabaseAdmin
             .from('telnyx_settings')
-            .select('phone_number, api_key, managed_account_id, managed_api_key')
+            .select('phone_number, api_key, managed_account_id, managed_api_key, messaging_profile_id')
             .eq('user_id', user.id)
             .single();
 
@@ -142,8 +141,6 @@ serve(async (req) => {
             const messageCost = smsPrice * segments;
 
             // Get Budget from Plan Limits
-            // The user mentioned "minutes" in limits, we'll look for "sms_budget" or use the plan price as the limit
-            // Goal: Stop usage when spend reaches plan price (or defined limit)
             const limits = plan?.limits || {};
             const smsBudget = parseFloat(limits.sms_budget || limits.budget || '37.00');
 
@@ -151,7 +148,6 @@ serve(async (req) => {
                 console.warn(`[send_sms] Quota Exceeded for ${user.id}: Spend ${currentSpend} + Cost ${messageCost} > Budget ${smsBudget}`);
                 throw new Error("Cota de SMS excedida para este plano. Por favor, faça um upgrade para continuar enviando.");
             }
-            // --- END BILLING LOGIC ---
 
             const telnyxUrl = 'https://api.telnyx.com/v2/messages';
             const body: any = {
@@ -159,6 +155,10 @@ serve(async (req) => {
                 to: to,
                 text: message
             };
+
+            if (settings.messaging_profile_id) {
+                body.messaging_profile_id = settings.messaging_profile_id;
+            }
 
             if (media_urls && Array.isArray(media_urls) && media_urls.length > 0) {
                 body.media_urls = media_urls;
