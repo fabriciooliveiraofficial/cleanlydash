@@ -352,7 +352,7 @@ export const UnifiedInbox: React.FC = () => {
                     {selectedId ? (
                         <>
                             {/* Thread Header */}
-                            <div className="h-20 border-b border-slate-200/50 flex items-center justify-between px-6 bg-white/30 backdrop-blur-md">
+                            <div className="min-h-[72px] shrink-0 border-b border-slate-200/50 flex items-center justify-between px-6 bg-white/30 backdrop-blur-md">
                                 <div className="flex items-center gap-4">
                                     <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold shadow-sm ${selectedConversation?.avatar_color}`}>
                                         {selectedConversation?.customer_name.charAt(0)}
@@ -400,7 +400,7 @@ export const UnifiedInbox: React.FC = () => {
                             </div>
 
                             {/* Messages Area */}
-                            <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+                            <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6" style={{ scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent' }}>
                                 {messages.length === 0 ? (
                                     <div className="h-full flex flex-col items-center justify-center text-slate-400">
                                         <div className="bg-indigo-50 p-4 rounded-full mb-4">
@@ -411,12 +411,12 @@ export const UnifiedInbox: React.FC = () => {
                                 ) : (
                                     messages.map(msg => (
                                         <div key={msg.id} className={`flex ${msg.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
-                                            <div className={`max-w-[70%] rounded-2xl px-5 py-3 shadow-sm relative ${msg.direction === 'outbound'
-                                                ? 'bg-indigo-600 text-white rounded-tr-none'
-                                                : 'bg-white text-slate-700 rounded-tl-none border border-slate-100'
+                                            <div className={`max-w-[75%] rounded-2xl px-4 py-3 pb-5 shadow-sm relative ${msg.direction === 'outbound'
+                                                ? 'bg-indigo-600 text-white rounded-tr-sm'
+                                                : 'bg-white text-slate-700 rounded-tl-sm border border-slate-100'
                                                 }`}>
-                                                <p className="text-sm leading-relaxed">{msg.content}</p>
-                                                <span className={`text-[10px] absolute bottom-1 right-3 ${msg.direction === 'outbound' ? 'text-indigo-200' : 'text-slate-400'}`}>
+                                                <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">{msg.content}</p>
+                                                <span className={`text-[10px] absolute bottom-1.5 right-3 ${msg.direction === 'outbound' ? 'text-indigo-200' : 'text-slate-400'}`}>
                                                     {msg.created_at}
                                                 </span>
                                             </div>
