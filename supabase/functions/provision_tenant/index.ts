@@ -170,14 +170,21 @@ serve(async (req) => {
 
             // 1. Ensure Messaging Profile (SMS Isolation)
             if (!mpId) {
+                console.log(`[Master Engine] Creating MP for ${targetUserId}...`);
                 const mpResp = await fetch('https://api.telnyx.com/v2/messaging_profiles', {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${effectiveMasterKey}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name: `Cleanlydash - ${targetUserId.substring(0, 8)}`, enabled: true })
                 });
                 const mpData = await mpResp.json();
-                if (mpResp.ok) mpId = mpData.data.id;
-                else console.error("[Master Engine] MP Creation Failed:", mpData);
+                if (mpResp.ok) {
+                    mpId = mpData.data.id;
+                    console.log(`[Master Engine] MP Created: ${mpId}`);
+                } else {
+                    console.error("[Master Engine] MP Creation Failed:", mpData);
+                    // Critical Failure: Return specifics
+                    throw new Error(`Telnyx MP Creation Error: ${mpData?.errors?.[0]?.detail || 'Unknown Error'}`);
+                }
             }
 
             // 2. Ensure SIP Connection (Voice Isolation)
