@@ -75,26 +75,32 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
     }, [call, callState]);
 
     // Inicializar Cliente Telnyx
+    const isInitializingRef = useRef(false);
+
     useEffect(() => {
         async function initTelnyx() {
-            setCallState('idle')
+            if (isInitializingRef.current) {
+                console.log("[Telnyx Context] Initialization already in progress. Skipping.");
+                return;
+            }
+            isInitializingRef.current = true;
+
+            setCallState('idle');
+            setCall(null);
 
             // Cleanup potential existing client from strict mode double-mount
             if (clientRef.current) {
-                console.log("Disconnecting existing client before re-init");
-                clientRef.current.disconnect();
+                console.log("[Telnyx Context] Disconnecting existing client before re-init");
+                try {
+                    clientRef.current.disconnect();
+                } catch (e) { }
                 clientRef.current = null;
             }
-            // ... (rest of the file remains same until return)
-            // I will start the replacement from timerRef line to include the new useEffect and Refs
-            // And I need to update the return statement too. This tool doesn't support multiple disjoint edits in 'replace_file_content' unless I use 'multi_replace'.
-            // But I can limit the scope.
-            // Let's use multi_replace for safety and clarity.
-
 
             const { data: { session } } = await supabase.auth.getSession()
             if (!session) {
                 console.log('Telnyx: No session')
+                isInitializingRef.current = false;
                 return
             }
 
@@ -111,6 +117,7 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
                         console.error('Could not parse Telnyx Error body');
                     }
                 }
+                isInitializingRef.current = false;
                 return
             }
 
@@ -138,6 +145,7 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
                 });
             } else {
                 console.error('No valid authentication credentials received');
+                isInitializingRef.current = false;
                 return;
             }
 
@@ -162,16 +170,15 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
             rtcClient.on('telnyx.notification', (notification: any) => {
                 if (notification.type === 'callUpdate') {
                     const { call: updatedCall } = notification;
+                    console.log(`[Telnyx Context] Notification: ${updatedCall.state} for ID: ${updatedCall.id}`);
 
                     // Support Singleton Call: 
-                    // 1. If we don't have a call state, accept this as the current call (e.g. inbound)
                     // 1. If we don't have a call state, accept this as the current call (e.g. inbound)
                     // 2. If we have a call state, only update if the IDs match
                     setCall((prevCall: any) => {
                         if (!prevCall || prevCall.id === updatedCall.id) {
                             // Vital: Preserve remoteStream if the update doesn't have it (JSON payload vs SDK Object)
                             if (prevCall?.remoteStream && !updatedCall.remoteStream) {
-                                console.log('Preserving remoteStream from previous state');
                                 updatedCall.remoteStream = prevCall.remoteStream;
                             }
                             return updatedCall;
@@ -181,18 +188,27 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
 
                     switch (updatedCall.state) {
                         case 'ringing':
-                            // Only set global callState if it's the call we are tracking
                             setCallState((prev: string) => {
-                                if (updatedCall.id === (window as any)._telnyx_current_call_id) return 'ringing';
+                                const currentGlobalId = (window as any)._telnyx_current_call_id;
+                                console.log(`[Telnyx Context] Ringing check - Prev state: ${prev}, Global ID: ${currentGlobalId}`);
+
+                                if (!currentGlobalId || currentGlobalId === updatedCall.id) {
+                                    if (!currentGlobalId) {
+                                        console.log(`[Telnyx Context] ADOPTING Inbound Call: ${updatedCall.id}`);
+                                        (window as any)._telnyx_current_call_id = updatedCall.id;
+                                    }
+                                    return 'ringing';
+                                }
+                                console.warn(`[Telnyx Context] Ignoring ringing for ${updatedCall.id} - Another call active: ${currentGlobalId}`);
                                 return prev as any;
                             });
                             break
                         case 'active':
                             setCallState((prev: string) => {
-                                // If IDs match OR if we are transitioning from connecting/ringing for the same call object
-                                if (updatedCall.id === (window as any)._telnyx_current_call_id) {
+                                const currentGlobalId = (window as any)._telnyx_current_call_id;
+                                if (updatedCall.id === currentGlobalId) {
                                     if (!startTimeRef.current) {
-                                        console.log('Call Active - Starting Timer');
+                                        console.log('[Telnyx Context] Call Active - Starting Timer');
                                         startTimeRef.current = Date.now();
                                         startTimer();
                                     }
@@ -202,8 +218,9 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
                             });
                             break
                         case 'hangup':
-                            if (updatedCall.id === (window as any)._telnyx_current_call_id) {
-                                console.log(`Active call ${updatedCall.id} hung up.`);
+                            const currentGlobalId = (window as any)._telnyx_current_call_id;
+                            if (updatedCall.id === currentGlobalId) {
+                                console.log(`[Telnyx Context] Active call ${updatedCall.id} hung up.`);
                                 setCallState('idle')
                                 setCall(null)
                                 stopTimer()
@@ -212,7 +229,6 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
                                 }
                                 (window as any)._telnyx_current_call_id = null;
 
-                                // Update log ... (logging logic remains)
                                 const endTime = Date.now()
                                 const start = startTimeRef.current || endTime
                                 const durationSecs = Math.round((endTime - start) / 1000)
@@ -232,7 +248,7 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
                                 });
                                 startTimeRef.current = null;
                             } else {
-                                console.log(`Background call ${updatedCall.id} hung up.`);
+                                console.log(`[Telnyx Context] Background call ${updatedCall.id} hung up. (Active was: ${currentGlobalId})`);
                             }
                             break
                     }
@@ -248,6 +264,8 @@ export function TelnyxProvider({ children, supabaseClient }: { children: React.R
                 clientRef.current = rtcClient; // Save specific instance to ref
             } catch (err) {
                 console.error("Connection failed", err)
+            } finally {
+                isInitializingRef.current = false;
             }
         }
 
