@@ -95,7 +95,15 @@ export const UnifiedInbox: React.FC = () => {
                         avatar_color: getAvatarColor(c.name || 'Unknown'),
                         channel: 'sms' // Default to SMS for now
                     }));
-                    setConversations(mappedConversations);
+
+                    // Preserve temporary conversations (Ad-Hoc) that might have been added while loading
+                    setConversations(current => {
+                        const temps = current.filter(c => c.id.startsWith('temp_'));
+                        // Avoid duplicates if the real customer is now found ?? 
+                        // For now just merge. If we found the real one, we might want to switch? 
+                        // Let's just prepend temps.
+                        return [...temps, ...mappedConversations];
+                    });
                 }
             } catch (err) {
                 console.error("Error loading inbox:", err);
