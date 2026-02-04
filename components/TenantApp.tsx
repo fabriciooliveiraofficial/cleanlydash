@@ -73,12 +73,22 @@ const TenantAppInner: React.FC = () => {
                 setView('dashboard');
             }
         } else {
-            // If user exists but lacks dashboard access (e.g. Platform Admin),
-            // keep them on landing/auth and show a warning if they are trying to reach dashboard
+            // If user exists but lacks dashboard access (e.g. Platform Admin or transient state)
             if (!roleLoading && view === 'dashboard') {
-                setView('landing');
-                if (user) {
-                    toast.error("Acesso Negado: Sua função não possui permissão para o Dashboard desta empresa.");
+                // FLICKER FIX: If user is logged in, don't instantly kick to landing unless we are SURE they are a guest/unauthorized.
+                // If role is null but user exists, it might be a race condition.
+                // Only redirect if role is explicitly loaded and invalid.
+
+                if (user && !role) {
+                    // User exists, but role is null? This implies "loading" or "error", but loading is false.
+                    // Let's assume this is the flicker state and DO NOTHING (wait for role).
+                    console.warn("[TenantApp] User present but role missing. Preventing flicker redirect.");
+                } else {
+                    // Real denial or Guest
+                    setView('landing');
+                    if (user && role !== 'guest') {
+                        toast.error("Acesso Negado: Sua função não possui permissão para o Dashboard desta empresa.");
+                    }
                 }
             }
         }

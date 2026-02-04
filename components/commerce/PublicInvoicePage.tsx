@@ -142,14 +142,14 @@ export const PublicInvoicePage: React.FC = () => {
     const isPaid = invoice.status === 'paid';
 
     return (
-        <div className="min-h-screen bg-slate-50 py-10 px-4 md:py-20">
-            <div className="max-w-4xl mx-auto grid md:grid-cols-5 gap-8">
+        <div className="min-h-screen bg-slate-50 py-6 px-4 md:py-20">
+            <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-5 gap-6 md:gap-8">
                 {/* Left Side: Invoice Details */}
                 <div className="md:col-span-3 space-y-6">
-                    <div className="bg-white rounded-[2.5rem] shadow-xl overflow-hidden animate-in slide-in-from-left duration-700">
+                    <div className="bg-white rounded-3xl md:rounded-[2.5rem] shadow-xl overflow-hidden animate-in slide-in-from-left duration-700">
                         {/* Header */}
-                        <div className="bg-gradient-to-br from-slate-900 to-indigo-950 p-10 text-white">
-                            <div className="flex justify-between items-start mb-10">
+                        <div className="bg-gradient-to-br from-slate-900 to-indigo-950 p-6 md:p-10 text-white">
+                            <div className="flex flex-col sm:flex-row justify-between items-start mb-6 md:mb-10 gap-4 sm:gap-0">
                                 <div>
                                     <div className="text-indigo-400 font-black text-[10px] uppercase tracking-[0.3em] mb-2">{tenant?.company_name || 'Cleanlydash'}</div>
                                     <h1 className="text-4xl font-black tracking-tight flex items-center gap-3">
@@ -167,7 +167,7 @@ export const PublicInvoicePage: React.FC = () => {
                                 )}
                             </div>
 
-                            <div className="grid grid-cols-2 gap-8 mt-10">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 md:gap-8 mt-6 md:mt-10">
                                 <div>
                                     <div className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">Para o Cliente</div>
                                     <div className="font-bold text-lg">{invoice.customers?.name}</div>
@@ -181,12 +181,12 @@ export const PublicInvoicePage: React.FC = () => {
                         </div>
 
                         {/* Summary */}
-                        <div className="p-10 space-y-10">
+                        <div className="p-6 md:p-10 space-y-8 md:space-y-10">
                             <div className="space-y-4">
                                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
                                     <Receipt size={14} /> Detalhes do Serviço
                                 </h3>
-                                <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 flex items-center justify-between">
+                                <div className="bg-slate-50 p-5 md:p-6 rounded-3xl border border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-0">
                                     <div className="flex items-center gap-4">
                                         <div className="h-14 w-14 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center text-indigo-600">
                                             <Calendar size={28} />
@@ -204,7 +204,7 @@ export const PublicInvoicePage: React.FC = () => {
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="text-right">
+                                    <div className="text-left sm:text-right w-full sm:w-auto pl-[4.5rem] sm:pl-0">
                                         <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Total</div>
                                         <div className="text-2xl font-black text-slate-900">R$ {invoice.amount?.toFixed(2)}</div>
                                     </div>
@@ -275,7 +275,7 @@ export const PublicInvoicePage: React.FC = () => {
                 {/* Right Side: Payment Methods */}
                 {!isPaid && (
                     <div className="md:col-span-2 space-y-6">
-                        <div className="bg-white rounded-[2.5rem] shadow-xl p-8 animate-in slide-in-from-right duration-700">
+                        <div className="bg-white rounded-3xl md:rounded-[2.5rem] shadow-xl p-6 md:p-8 animate-in slide-in-from-right duration-700">
                             <h2 className="text-2xl font-black text-slate-800 mb-2">Pagar Agora</h2>
                             <p className="text-sm text-slate-500 mb-8">Escolha sua forma de pagamento preferida para liquidar esta fatura.</p>
 
