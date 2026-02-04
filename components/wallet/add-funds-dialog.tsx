@@ -4,11 +4,13 @@ import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { createClient } from '../../lib/supabase/client';
 import { CreditCard, Sparkles } from 'lucide-react';
+import { useRole } from '../../hooks/use-role';
 
 export const AddFundsDialog = ({ onSuccess }: { onSuccess?: () => void }) => {
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const supabase = createClient();
+    const { tenant_id: tenantId } = useRole();
 
     const packs = [
         { tokens: 100, price: 10, label: 'Starter' },
@@ -19,12 +21,8 @@ export const AddFundsDialog = ({ onSuccess }: { onSuccess?: () => void }) => {
     const handlePurchase = async (pack: { tokens: number, price: number, label: string }) => {
         setLoading(true);
         try {
-            const user = (await supabase.auth.getUser()).data.user;
-            if (!user) return;
-
-            const tenantId = (user?.user_metadata as any)?.tenant_id;
             if (!tenantId) {
-                toast.error("Tenant ID not found");
+                toast.error("Tenant ID not found. Verify your session.");
                 return;
             }
 

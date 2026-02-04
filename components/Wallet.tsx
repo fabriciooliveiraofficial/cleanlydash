@@ -11,6 +11,7 @@ import {
 import { createClient } from '../lib/supabase/client.ts';
 import { AddFundsDialog } from './wallet/add-funds-dialog.tsx';
 import { Card } from './ui/card.tsx';
+import { useRole } from '../hooks/use-role';
 
 
 export const Wallet: React.FC = () => {
@@ -18,8 +19,10 @@ export const Wallet: React.FC = () => {
   const [balance, setBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
+  const { tenant_id: tenantId } = useRole();
 
   async function fetchWallet() {
+    if (!tenantId) return;
     setLoading(true);
     try {
       // 1. Fetch Ledger (limited)
@@ -32,15 +35,13 @@ export const Wallet: React.FC = () => {
       setLedger(ledgerData || []);
 
       // 2. Fetch Balance directly from tenant cache (much faster)
-      // We assume user profile contains tenant_id
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user.id).single();
-        if (profile?.tenant_id) {
-          const { data: tenant } = await supabase.from('tenants').select('wallet_balance').eq('id', profile.tenant_id).single();
-          setBalance(Number(tenant?.wallet_balance || 0));
-        }
-      }
+      const { data: tenant } = await supabase
+        .from('tenants')
+        .select('wallet_balance')
+        .eq('id', tenantId)
+        .single();
+
+      setBalance(Number(tenant?.wallet_balance || 0));
     } catch (err) {
       console.error("Error fetching wallet:", err);
     } finally {
@@ -50,7 +51,7 @@ export const Wallet: React.FC = () => {
 
   useEffect(() => {
     fetchWallet();
-  }, []);
+  }, [tenantId]);
 
   if (loading) return <div className="flex h-96 items-center justify-center"><Loader2 className="animate-spin text-indigo-600" /></div>;
 

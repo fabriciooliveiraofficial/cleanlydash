@@ -24,6 +24,7 @@ interface EarningEntry {
 
 export const EarningsTab: React.FC<EarningsTabProps> = ({ userId }) => {
     const [earnings, setEarnings] = useState<EarningEntry[]>([]);
+    const [payrollEntries, setPayrollEntries] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<'all' | 'pending' | 'paid'>('all');
     const supabase = createClient();
@@ -43,7 +44,8 @@ export const EarningsTab: React.FC<EarningsTabProps> = ({ userId }) => {
     const fetchEarnings = async () => {
         setLoading(true);
         try {
-            const { data, error } = await supabase
+            // 1. Fetch Bookings (Work History)
+            const { data: bookingsData, error: bookingsError } = await supabase
                 .from('bookings')
                 .select(`
                     id,
@@ -59,8 +61,28 @@ export const EarningsTab: React.FC<EarningsTabProps> = ({ userId }) => {
                 .not('cleaner_pay_rate', 'is', null)
                 .order('start_date', { ascending: false });
 
-            if (error) throw error;
-            setEarnings((data || []) as EarningEntry[]);
+            if (bookingsError) throw bookingsError;
+            setEarnings((bookingsData || []) as EarningEntry[]);
+
+            // 2. Fetch Payroll Entries (Adjustments/History)
+            // We need to find the member record for this user first
+            const { data: memberData } = await supabase
+                .from('team_members')
+                .select('id')
+                .eq('user_id', userId)
+                .single();
+
+            if (memberData) {
+                const { data: payrollData } = await supabase
+                    .from('payroll_entries')
+                    .select('*, payroll_periods(*)')
+                    .eq('member_id', memberData.id)
+                    .order('created_at', { ascending: false })
+                    .limit(5);
+
+                setPayrollEntries(payrollData || []);
+            }
+
         } catch (err) {
             console.error('Error fetching earnings:', err);
         } finally {
@@ -83,9 +105,12 @@ export const EarningsTab: React.FC<EarningsTabProps> = ({ userId }) => {
         .filter(e => e.pay_status === 'pending')
         .reduce((sum, e) => sum + (e.cleaner_pay_rate || 0), 0);
 
+    const totalBonuses = payrollEntries
+        .reduce((sum, p) => sum + (p.bonuses || 0), 0);
+
     const totalReceived = earnings
         .filter(e => e.pay_status === 'paid')
-        .reduce((sum, e) => sum + (e.cleaner_pay_rate || 0), 0);
+        .reduce((sum, e) => sum + (e.cleaner_pay_rate || 0), 0) + totalBonuses;
 
     const thisWeekEarnings = earnings
         .filter(e => {
@@ -156,8 +181,8 @@ export const EarningsTab: React.FC<EarningsTabProps> = ({ userId }) => {
                             key={f}
                             onClick={() => setFilter(f)}
                             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${filter === f
-                                    ? 'bg-indigo-600 text-white'
-                                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                                 }`}
                         >
                             {f === 'all' ? 'Todos' : f === 'pending' ? 'Pendentes' : 'Pagos'}
@@ -168,7 +193,7 @@ export const EarningsTab: React.FC<EarningsTabProps> = ({ userId }) => {
 
             {/* Earnings List */}
             <div className="space-y-4">
-                {Object.entries(groupedByDate).map(([dateKey, entries]) => (
+                {(Object.entries(groupedByDate) as [string, EarningEntry[]][]).map(([dateKey, entries]) => (
                     <div key={dateKey}>
                         <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
                             <Calendar size={12} />
@@ -196,8 +221,8 @@ export const EarningsTab: React.FC<EarningsTabProps> = ({ userId }) => {
                                                 ${entry.cleaner_pay_rate.toFixed(2)}
                                             </p>
                                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${entry.pay_status === 'paid'
-                                                    ? 'bg-emerald-100 text-emerald-700'
-                                                    : 'bg-amber-100 text-amber-700'
+                                                ? 'bg-emerald-100 text-emerald-700'
+                                                : 'bg-amber-100 text-amber-700'
                                                 }`}>
                                                 {entry.pay_status === 'paid' ? '✓ PAGO' : 'PENDENTE'}
                                             </span>
@@ -208,14 +233,40 @@ export const EarningsTab: React.FC<EarningsTabProps> = ({ userId }) => {
                         </div>
                     </div>
                 ))}
-
-                {filteredEarnings.length === 0 && (
-                    <div className="text-center py-12 text-slate-400">
-                        <DollarSign size={32} className="mx-auto mb-2 opacity-50" />
-                        <p>Nenhum registro encontrado</p>
-                    </div>
-                )}
             </div>
+
+            {/* Payroll history (Adjustments & Payouts) */}
+            {payrollEntries.length > 0 && (
+                <div className="space-y-3">
+                    <h3 className="font-bold text-slate-700 flex items-center gap-2 border-t pt-6">
+                        <TrendingUp size={16} className="text-indigo-600" />
+                        Histórico de Pagamentos e Ajustes
+                    </h3>
+                    <div className="space-y-2">
+                        {payrollEntries.map(entry => (
+                            <div key={entry.id} className="bg-indigo-50/50 rounded-xl p-4 border border-indigo-100/50">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <p className="text-xs font-bold text-indigo-600 uppercase">
+                                            {entry.status === 'paid' ? 'Recibo de Pagamento' : 'Ajuste de Salário'}
+                                        </p>
+                                        <p className="text-sm font-medium text-slate-700">
+                                            Período: {entry.payroll_periods?.period_start ? format(parseISO(entry.payroll_periods.period_start), 'dd/MM') : ''} -
+                                            {entry.payroll_periods?.period_end ? format(parseISO(entry.payroll_periods.period_end), 'dd/MM') : ''}
+                                        </p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="font-black text-indigo-700">
+                                            +${(entry.bonuses || 0).toFixed(2)}
+                                        </p>
+                                        <span className="text-[10px] font-bold text-indigo-400">BÔNUS / EXTRA</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

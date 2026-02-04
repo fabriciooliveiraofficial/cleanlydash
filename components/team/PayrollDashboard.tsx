@@ -22,10 +22,11 @@ import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth, add
 import { ptBR } from 'date-fns/locale';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { useRole } from '../../hooks/use-role';
 
 interface TeamMember {
     id: string;
-    user_id?: string; // The auth.users.id - used for matching bookings.assigned_to
+    user_id?: string;
     name: string;
     color: string;
     pay_type: string;
@@ -70,6 +71,8 @@ export const PayrollDashboard: React.FC = () => {
     const [periodType, setPeriodType] = useState<PeriodType>('biweekly');
     const [periodDate, setPeriodDate] = useState(new Date());
 
+    const { tenant_id: tenantId } = useRole();
+
     const [showAdjustModal, setShowAdjustModal] = useState(false);
     const [selectedEntry, setSelectedEntry] = useState<PayrollEntry | null>(null);
     const [adjustmentType, setAdjustmentType] = useState<'bonus' | 'deduction'>('bonus');
@@ -99,48 +102,44 @@ export const PayrollDashboard: React.FC = () => {
     };
 
     const fetchData = async () => {
+        if (!tenantId) return;
         setLoading(true);
         try {
-            const { data: { user } } = await supabase.auth.getUser();
-            console.log('[Payroll DEBUG] Current user:', user?.id);
-            if (!user) return;
+            console.log('[Payroll DEBUG] Fetching for tenantId:', tenantId);
 
-            // Fetch team members - include user_id for matching bookings.assigned_to
+            // Fetch team members
             const { data: membersData, error: membersError } = await supabase
                 .from('team_members')
                 .select('id, user_id, name, color, pay_type, pay_rate, commission_percent, status, tenant_id')
-                .eq('tenant_id', user.id)
+                .eq('tenant_id', tenantId)
                 .eq('status', 'active');
 
-            console.log('[Payroll DEBUG] Members query result:', membersData, 'Error:', membersError);
-
-            // Also try without status filter to see all members
-            const { data: allMembers } = await supabase
-                .from('team_members')
-                .select('id, name, tenant_id, status')
-                .eq('tenant_id', user.id);
-            console.log('[Payroll DEBUG] All members for tenant:', allMembers);
-
+            if (membersError) console.error('[Payroll ERROR] Fetch members:', membersError);
             setMembers((membersData || []) as TeamMember[]);
 
             // Fetch current period if exists
             const { start, end } = getPeriodRange();
-            const { data: periodData } = await supabase
+            const { data: periodData, error: periodFetchError } = await supabase
                 .from('payroll_periods')
                 .select('*')
-                .eq('tenant_id', user.id)
+                .eq('tenant_id', tenantId)
                 .gte('period_start', format(start, 'yyyy-MM-dd'))
                 .lte('period_end', format(end, 'yyyy-MM-dd'))
                 .maybeSingle();
 
+            if (periodFetchError) console.error('[Payroll ERROR] Fetch period:', periodFetchError);
+
             if (periodData) {
+                console.log('[Payroll DEBUG] Period found:', periodData.id);
                 setCurrentPeriod(periodData as PayrollPeriod);
 
                 // Fetch entries for this period
-                const { data: entriesData } = await supabase
+                const { data: entriesData, error: entriesFetchError } = await supabase
                     .from('payroll_entries')
                     .select('*')
                     .eq('period_id', periodData.id);
+
+                if (entriesFetchError) console.error('[Payroll ERROR] Fetch entries:', entriesFetchError);
 
                 // Enrich entries with member info
                 const enriched = ((entriesData || []) as PayrollEntry[]).map(entry => ({
@@ -149,12 +148,12 @@ export const PayrollDashboard: React.FC = () => {
                 }));
                 setEntries(enriched);
             } else {
+                console.log('[Payroll DEBUG] No period found, generating preview...');
                 setCurrentPeriod(null);
-                // Generate preview entries
                 await generatePreviewEntries(membersData as TeamMember[]);
             }
         } catch (err) {
-            console.error(err);
+            console.error('[Payroll CRITICAL ERROR]', err);
         } finally {
             setLoading(false);
         }
@@ -322,6 +321,7 @@ export const PayrollDashboard: React.FC = () => {
 
     const markAsPaid = async () => {
         if (!currentPeriod) return;
+        const toastId = toast.loading("Processando pagamentos em massa...");
 
         try {
             await supabase
@@ -334,21 +334,28 @@ export const PayrollDashboard: React.FC = () => {
                 .update({ status: 'paid' } as any)
                 .eq('period_id', currentPeriod.id);
 
-            // SYNC: Update all bookings in this period range to 'paid'
-            // This ensures the Cleaner App -> Earnings Tab shows green
-            const { start, end } = getPeriodRange(); // Note: this uses state date, strictly we should use currentPeriod dates if available.
-            // Better to use currentPeriod dates:
-            await supabase
-                .from('bookings')
-                .update({ pay_status: 'paid', paid_at: new Date().toISOString() } as any)
-                .gte('start_date', currentPeriod.period_start)
-                .lte('end_date', currentPeriod.period_end)
-                .in('status', ['completed', 'confirmed']); // Only pay completed work
+            // SYNC: Update all bookings for all members in this period
+            // We'll do this in batches per member to ensure cleaner_pay_rate is synced if missing
+            for (const entry of entries) {
+                const userIdToSync = entry.member?.user_id || entry.member_id;
+                await supabase
+                    .from('bookings')
+                    .update({
+                        pay_status: 'paid',
+                        paid_at: new Date().toISOString(),
+                        // Important: if the booking doesn't have a rate yet, stamp it now with what was calculated
+                        cleaner_pay_rate: entry.pay_rate // This ensures it shows up in cleaner app
+                    } as any)
+                    .or(`assigned_to.eq.${userIdToSync},assigned_to.eq.${entry.member_id}`)
+                    .gte('start_date', currentPeriod.period_start)
+                    .lte('end_date', currentPeriod.period_end)
+                    .in('status', ['completed', 'confirmed']);
+            }
 
-            toast.success('Marcado como pago!');
+            toast.success('Todos marcados como pagos!', { id: toastId });
             fetchData();
         } catch (err: any) {
-            toast.error(err.message);
+            toast.error(err.message, { id: toastId });
         }
     };
 
@@ -369,7 +376,11 @@ export const PayrollDashboard: React.FC = () => {
 
             await supabase
                 .from('bookings')
-                .update({ pay_status: 'paid', paid_at: new Date().toISOString() } as any)
+                .update({
+                    pay_status: 'paid',
+                    paid_at: new Date().toISOString(),
+                    cleaner_pay_rate: entry.pay_rate // Sync calculated rate back to booking
+                } as any)
                 .or(`assigned_to.eq.${userIdToSync},assigned_to.eq.${entry.member_id}`) // Match both IDs to be safe
                 .gte('start_date', currentPeriod.period_start)
                 .lte('end_date', currentPeriod.period_end)
