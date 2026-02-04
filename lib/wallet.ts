@@ -2,23 +2,24 @@
 import { createClient } from '@/lib/supabase/server'
 
 /**
- * Retorna o saldo total de um Tenant (Créditos - Débitos).
+ * Retorna o saldo total de um Tenant usando o cache da tabela tenants.
  */
 export async function checkBalance(tenantId: string): Promise<number> {
   const supabase = createClient()
 
   const { data, error } = await supabase
-    .from('wallet_ledger')
-    .select('amount')
-    .eq('tenant_id', tenantId)
+    .from('tenants')
+    .select('wallet_balance')
+    .eq('id', tenantId)
+    .single()
 
   if (error || !data) return 0
 
-  return (data as any[]).reduce((acc, curr) => acc + curr.amount, 0)
+  return Number(data.wallet_balance || 0)
 }
 
 /**
- * Realiza um débito na carteira do Tenant após validar saldo.
+ * Realiza um débito na carteira do Tenant de forma ATÔMICA via RPC.
  * @param amount Valor positivo (será convertido em negativo para o ledger)
  */
 export async function debitWallet(
@@ -29,25 +30,18 @@ export async function debitWallet(
 ) {
   const supabase = createClient()
 
-  // 1. Verificar saldo atual
-  const currentBalance = await checkBalance(tenantId)
+  // Chamar a função RPC atômica que garante que o saldo não fique negativo
+  const { data, error } = await supabase.rpc('process_wallet_transaction', {
+    p_tenant_id: tenantId,
+    p_amount: -Math.abs(amount),
+    p_description: description,
+    p_service_type: serviceType
+  })
 
-  if (currentBalance < amount) {
-    throw new Error("Saldo Insuficiente na Wallet do Cleanlydash.")
+  if (error || !data?.success) {
+    console.error("Erro ao debitar wallet via RPC:", error || data?.error)
+    throw new Error(data?.error || "Falha ao processar transação financeira ou saldo insuficiente.")
   }
 
-  // 2. Inserir registro de débito (Valor negativo)
-  const { error } = await (supabase.from('wallet_ledger') as any).insert({
-    tenant_id: tenantId,
-    amount: -Math.abs(amount),
-    description,
-    service_type: serviceType
-  } as any)
-
-  if (error) {
-    console.error("Erro ao debitar wallet:", error)
-    throw new Error("Falha ao processar transação financeira.")
-  }
-
-  return { success: true, newBalance: currentBalance - amount }
+  return { success: true, newBalance: data.new_balance }
 }

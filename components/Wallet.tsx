@@ -20,11 +20,32 @@ export const Wallet: React.FC = () => {
   const supabase = createClient();
 
   async function fetchWallet() {
-    const { data } = await supabase.from('wallet_ledger').select('*').order('created_at', { ascending: false });
-    const currentBalance = data?.reduce((acc: number, curr: any) => acc + Number(curr.amount), 0) || 0;
-    setLedger(data || []);
-    setBalance(currentBalance);
-    setLoading(false);
+    setLoading(true);
+    try {
+      // 1. Fetch Ledger (limited)
+      const { data: ledgerData } = await supabase
+        .from('wallet_ledger')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      setLedger(ledgerData || []);
+
+      // 2. Fetch Balance directly from tenant cache (much faster)
+      // We assume user profile contains tenant_id
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user.id).single();
+        if (profile?.tenant_id) {
+          const { data: tenant } = await supabase.from('tenants').select('wallet_balance').eq('id', profile.tenant_id).single();
+          setBalance(Number(tenant?.wallet_balance || 0));
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching wallet:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -34,18 +55,18 @@ export const Wallet: React.FC = () => {
   if (loading) return <div className="flex h-96 items-center justify-center"><Loader2 className="animate-spin text-indigo-600" /></div>;
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-6 animate-in fade-in duration-500 pb-10">
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Main Balance Card */}
-        <div className="lg:col-span-2 rounded-[2.5rem] bg-indigo-950 p-10 text-white shadow-2xl relative overflow-hidden">
+        <div className="lg:col-span-2 rounded-3xl md:rounded-[2.5rem] bg-indigo-950 p-6 md:p-10 text-white shadow-2xl relative overflow-hidden">
           <div className="absolute -right-10 -top-10 h-64 w-64 bg-indigo-500/10 rounded-full blur-3xl"></div>
           <div className="relative z-10">
             <div className="flex items-center gap-2 mb-10 text-indigo-300">
               <Sparkles size={18} />
               <span className="text-xs font-black uppercase tracking-widest">Saldo de Tokens</span>
             </div>
-            <h2 className="text-6xl font-black tracking-tighter mb-10 flex items-baseline gap-2">
-              {balance} <span className="text-2xl font-bold text-indigo-400">Tokens</span>
+            <h2 className="text-4xl md:text-6xl font-black tracking-tighter mb-8 md:mb-10 flex items-baseline gap-2">
+              {balance} <span className="text-xl md:text-2xl font-bold text-indigo-400">Tokens</span>
             </h2>
             <div className="flex gap-4">
               <AddFundsDialog onSuccess={fetchWallet} />
@@ -54,7 +75,7 @@ export const Wallet: React.FC = () => {
         </div>
 
         {/* Financial Summary */}
-        <Card className="rounded-[2.5rem] border-slate-100 shadow-xl p-8 flex flex-col justify-between">
+        <Card className="rounded-3xl md:rounded-[2.5rem] border-slate-100 shadow-xl p-6 md:p-8 flex flex-col justify-between">
           <div className="space-y-6">
             <h3 className="font-black text-slate-900 flex items-center gap-2"><DollarSign size={18} className="text-indigo-600" /> Valor Estimado</h3>
             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
@@ -73,8 +94,8 @@ export const Wallet: React.FC = () => {
       </div>
 
       {/* Transaction History */}
-      <div className="rounded-[2.5rem] border bg-white shadow-sm overflow-hidden">
-        <div className="p-8 border-b flex items-center justify-between bg-slate-50/50">
+      <div className="rounded-3xl md:rounded-[2.5rem] border bg-white shadow-sm overflow-hidden">
+        <div className="p-6 md:p-8 border-b flex items-center justify-between bg-slate-50/50">
           <h3 className="text-lg font-black text-slate-900 flex items-center gap-2"><History size={20} className="text-slate-400" /> Histórico de Transações</h3>
         </div>
         <div className="divide-y divide-slate-100">

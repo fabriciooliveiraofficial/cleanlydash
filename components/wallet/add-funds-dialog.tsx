@@ -18,27 +18,37 @@ export const AddFundsDialog = ({ onSuccess }: { onSuccess?: () => void }) => {
 
     const handlePurchase = async (pack: { tokens: number, price: number, label: string }) => {
         setLoading(true);
-        const user = (await supabase.auth.getUser()).data.user;
+        try {
+            const user = (await supabase.auth.getUser()).data.user;
+            if (!user) return;
 
-        if (!user) return;
+            const tenantId = (user?.user_metadata as any)?.tenant_id;
+            if (!tenantId) {
+                toast.error("Tenant ID not found");
+                return;
+            }
 
-        // Simulate Stripe
-        await new Promise(r => setTimeout(r, 1500));
+            // Simulate Network Delay
+            await new Promise(r => setTimeout(r, 1000));
 
-        const { error } = await supabase.from('wallet_ledger').insert({
-            tenant_id: (user?.user_metadata as any)?.tenant_id,
-            description: `Purchased ${pack.tokens} Tokens (${pack.label})`,
-            amount: pack.tokens
-        } as any);
+            // Use our new atomic RPC
+            const { data, error } = await (supabase as any).rpc('process_wallet_transaction', {
+                p_tenant_id: tenantId,
+                p_amount: pack.tokens,
+                p_description: `Purchased ${pack.tokens} Tokens (${pack.label})`,
+                p_service_type: 'deposit'
+            });
 
-        setLoading(false);
+            if (error || !data?.success) throw error || new Error(data?.error);
 
-        if (error) {
-            toast.error("Payment Failed");
-        } else {
             toast.success(`+${pack.tokens} Tokens Added!`);
             setOpen(false);
             if (onSuccess) onSuccess();
+        } catch (err: any) {
+            console.error(err);
+            toast.error("Payment Failed: " + (err.message || "Unknown error"));
+        } finally {
+            setLoading(false);
         }
     };
 

@@ -18,8 +18,10 @@ import {
     Edit
 } from 'lucide-react';
 import { Button } from '../ui/button';
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addWeeks, subWeeks, addMonths, subMonths } from 'date-fns';
+import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addWeeks, subWeeks, addMonths, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface TeamMember {
     id: string;
@@ -332,10 +334,149 @@ export const PayrollDashboard: React.FC = () => {
                 .update({ status: 'paid' } as any)
                 .eq('period_id', currentPeriod.id);
 
+            // SYNC: Update all bookings in this period range to 'paid'
+            // This ensures the Cleaner App -> Earnings Tab shows green
+            const { start, end } = getPeriodRange(); // Note: this uses state date, strictly we should use currentPeriod dates if available.
+            // Better to use currentPeriod dates:
+            await supabase
+                .from('bookings')
+                .update({ pay_status: 'paid', paid_at: new Date().toISOString() } as any)
+                .gte('start_date', currentPeriod.period_start)
+                .lte('end_date', currentPeriod.period_end)
+                .in('status', ['completed', 'confirmed']); // Only pay completed work
+
             toast.success('Marcado como pago!');
             fetchData();
         } catch (err: any) {
             toast.error(err.message);
+        }
+    };
+
+    const markMemberAsPaid = async (entry: PayrollEntry) => {
+        if (!currentPeriod) return;
+        const toastId = toast.loading("Processando pagamento individual...");
+
+        try {
+            // 1. Update Entry Status
+            await supabase
+                .from('payroll_entries')
+                .update({ status: 'paid' } as any)
+                .eq('id', entry.id);
+
+            // 2. SYNC: Update Bookings for this specific member
+            // We need to match bookings assigned to this user in this period
+            const userIdToSync = entry.member?.user_id || entry.member_id; // Fallback if user_id missing
+
+            await supabase
+                .from('bookings')
+                .update({ pay_status: 'paid', paid_at: new Date().toISOString() } as any)
+                .or(`assigned_to.eq.${userIdToSync},assigned_to.eq.${entry.member_id}`) // Match both IDs to be safe
+                .gte('start_date', currentPeriod.period_start)
+                .lte('end_date', currentPeriod.period_end)
+                .in('status', ['completed', 'confirmed']);
+
+            // 3. Notify Cleaner
+            if (entry.member?.user_id) {
+                await supabase.from('notification_history').insert({
+                    user_id: entry.member.user_id,
+                    category: 'payment',
+                    title: 'Pagamento Recebido! 💸',
+                    body: `Você recebeu um pagamento de R$ ${entry.net_amount.toFixed(2)} referente ao período ${format(parseISO(currentPeriod.period_start), 'dd/MM')} a ${format(parseISO(currentPeriod.period_end), 'dd/MM')}.`,
+                    created_at: new Date().toISOString()
+                });
+            }
+
+            toast.success(`Pagamento registrado para ${entry.member?.name}!`, { id: toastId });
+            fetchData();
+        } catch (err: any) {
+            console.error(err);
+            toast.error("Erro ao registrar pagamento.", { id: toastId });
+        }
+    };
+
+    const generatePayStub = (entry: PayrollEntry) => {
+        try {
+            const doc = new jsPDF();
+
+            // Header
+            doc.setFillColor(30, 41, 59); // Slate 900
+            doc.rect(0, 0, 210, 40, 'F');
+
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(22);
+            doc.setFont('helvetica', 'bold');
+            doc.text("HOLERITE DE PAGAMENTO", 105, 20, { align: 'center' });
+
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.text("Cleanlydash Operations", 105, 28, { align: 'center' });
+
+            // Info Grid
+            doc.setTextColor(0, 0, 0);
+            doc.setFontSize(10);
+
+            const startY = 50;
+
+            doc.setFont('helvetica', 'bold');
+            doc.text("FUNCIONÁRIO:", 14, startY);
+            doc.setFont('helvetica', 'normal');
+            doc.text(entry.member?.name || "N/A", 14, startY + 5);
+
+            doc.setFont('helvetica', 'bold');
+            doc.text("PERÍODO:", 80, startY);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`${format(currentPeriod ? parseISO(currentPeriod.period_start) : start, 'dd/MM/yyyy')} - ${format(currentPeriod ? parseISO(currentPeriod.period_end) : end, 'dd/MM/yyyy')}`, 80, startY + 5);
+
+            doc.setFont('helvetica', 'bold');
+            doc.text("DATA DO PAGAMENTO:", 150, startY);
+            doc.setFont('helvetica', 'normal');
+            doc.text(format(new Date(), 'dd/MM/yyyy'), 150, startY + 5);
+
+            // Financial Table
+            const columns = ["DESCRIÇÃO", "QTD/REF", "VENCIMENTOS", "DESCONTOS"];
+            const data = [
+                ["Salário Base / Serviços", `${entry.jobs_completed} jobs / ${entry.hours_worked}h`, `R$ ${entry.gross_amount.toFixed(2)}`, ""],
+                ["Bônus / Adicionais", "-", `R$ ${entry.bonuses.toFixed(2)}`, ""],
+                ["Deduções", "-", "", `R$ ${entry.deductions.toFixed(2)}`],
+            ];
+
+            // Add Total Row
+            data.push(["", "", "", ""]); // Spacer
+
+            autoTable(doc, {
+                startY: startY + 15,
+                head: [columns],
+                body: data,
+                theme: 'striped',
+                headStyles: { fillColor: [79, 70, 229] }, // Indigo 600
+                styles: { fontSize: 10, cellPadding: 3 }
+            });
+
+            // Totals Box
+            const finalY = (doc as any).lastAutoTable.finalY + 10;
+
+            doc.setDrawColor(200, 200, 200);
+            doc.line(14, finalY, 196, finalY);
+
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'bold');
+            doc.text("VALOR LÍQUIDO A RECEBER:", 120, finalY + 10);
+
+            doc.setFontSize(16);
+            doc.setTextColor(79, 70, 229); // Indigo 600
+            doc.text(`R$ ${entry.net_amount.toFixed(2)}`, 196, finalY + 10, { align: 'right' });
+
+            // Footer
+            doc.setFontSize(8);
+            doc.setTextColor(150, 150, 150);
+            doc.text("Documento gerado eletronicamente pela plataforma Cleanlydash.", 105, 280, { align: 'center' });
+
+            doc.save(`holerite_${entry.member?.name.replace(/\s+/g, '_')}_${format(new Date(), 'yyyyMMdd')}.pdf`);
+            toast.success("PDF gerado com sucesso!");
+
+        } catch (err) {
+            console.error("PDF generation failed:", err);
+            toast.error("Erro ao gerar PDF.");
         }
     };
 
@@ -576,18 +717,47 @@ export const PayrollDashboard: React.FC = () => {
                                         <span className="font-bold text-indigo-600">R$ {entry.net_amount.toFixed(2)}</span>
                                     </td>
                                     <td className="py-4 px-6 text-center">
-                                        {currentPeriod && currentPeriod.status === 'open' && (
+                                        <div className="flex items-center justify-center gap-2">
+                                            {currentPeriod && currentPeriod.status === 'open' && (
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedEntry(entry);
+                                                        setShowAdjustModal(true);
+                                                    }}
+                                                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                                    title="Ajustar Valores"
+                                                >
+                                                    <Edit size={16} />
+                                                </button>
+                                            )}
+
+                                            {/* Report Button (Always Visible) */}
                                             <button
-                                                onClick={() => {
-                                                    setSelectedEntry(entry);
-                                                    setShowAdjustModal(true);
-                                                }}
-                                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg"
-                                                title="Ajustar"
+                                                onClick={() => generatePayStub(entry)}
+                                                className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+                                                title="Baixar Holerite (PDF)"
                                             >
-                                                <Edit size={16} />
+                                                <FileText size={16} />
                                             </button>
-                                        )}
+
+                                            {/* Individual Pay Button */}
+                                            {currentPeriod && currentPeriod.status !== 'paid' && entry.status !== 'paid' && (
+                                                <button
+                                                    onClick={() => markMemberAsPaid(entry)}
+                                                    className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                                    title="Pagar Individualmente"
+                                                >
+                                                    <DollarSign size={16} />
+                                                </button>
+                                            )}
+
+                                            {/* Paid Indicator */}
+                                            {(entry.status === 'paid') && (
+                                                <span className="text-emerald-500" title="Pago">
+                                                    <CheckCircle size={16} />
+                                                </span>
+                                            )}
+                                        </div>
                                     </td>
                                 </tr>
                             ))}

@@ -20,6 +20,7 @@ export interface Database {
           stripe_customer_id: string | null
           telnyx_api_key: string | null
           telnyx_connection_id: string | null
+          wallet_balance: number | null
           created_at: string
         }
         Insert: {
@@ -30,6 +31,7 @@ export interface Database {
           stripe_customer_id?: string | null
           telnyx_api_key?: string | null
           telnyx_connection_id?: string | null
+          wallet_balance?: number | null
           created_at?: string
         }
         Update: {
@@ -40,6 +42,7 @@ export interface Database {
           stripe_customer_id?: string | null
           telnyx_api_key?: string | null
           telnyx_connection_id?: string | null
+          wallet_balance?: number | null
           created_at?: string
         }
       }
