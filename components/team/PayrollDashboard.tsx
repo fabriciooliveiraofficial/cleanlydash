@@ -125,6 +125,8 @@ export const PayrollDashboard: React.FC = () => {
                 .eq('tenant_id', tenantId)
                 .gte('period_start', format(start, 'yyyy-MM-dd'))
                 .lte('period_end', format(end, 'yyyy-MM-dd'))
+                .order('created_at', { ascending: false })
+                .limit(1)
                 .maybeSingle();
 
             if (periodFetchError) console.error('[Payroll ERROR] Fetch period:', periodFetchError);
@@ -254,15 +256,15 @@ export const PayrollDashboard: React.FC = () => {
 
     const createPeriod = async () => {
         const { start, end } = getPeriodRange();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+        if (!tenantId) return;
 
+        const toastId = toast.loading("Criando período...");
         try {
             // Create period
             const { data: periodData, error: periodError } = await supabase
                 .from('payroll_periods')
                 .insert({
-                    tenant_id: user.id,
+                    tenant_id: tenantId,
                     period_type: periodType,
                     period_start: format(start, 'yyyy-MM-dd'),
                     period_end: format(end, 'yyyy-MM-dd'),
