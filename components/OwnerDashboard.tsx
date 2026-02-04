@@ -1,22 +1,38 @@
-ï»¿import React from 'react';
-import { Building, DollarSign, CalendarCheck } from 'lucide-react';
+import React from 'react';
+import { Building, DollarSign, CalendarCheck, Clock, MapPin } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
 
 import { createClient } from '../lib/supabase/client.ts';
 import { useRole } from '../hooks/use-role.ts';
+import { cn } from '../lib/utils.ts';
 import { useEffect, useState, useRef } from 'react';
+import { format, parseISO, isSameDay, startOfMonth, endOfMonth, differenceInDays } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import { useTimezone } from '../contexts/TimezoneContext';
+import { toZonedTime, formatInTimeZone } from 'date-fns-tz';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "./ui/table";
+import { Badge } from "./ui/badge";
 
 export const OwnerDashboard: React.FC = () => {
     const [stats, setStats] = useState([
         { label: 'Minhas Propriedades', value: '0', icon: Building, color: 'text-indigo-500' },
-        { label: 'OcupaÃ§Ã£o (MÃªs)', value: '0%', icon: CalendarCheck, color: 'text-emerald-500' },
+        { label: 'Ocupação (Mês)', value: '0%', icon: CalendarCheck, color: 'text-emerald-500' },
         { label: 'Repasse Estimado', value: 'R$ 0,00', icon: DollarSign, color: 'text-amber-500' },
     ]);
     const [chartData, setChartData] = useState<any[]>([]);
+    const [todayBookings, setTodayBookings] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
     const containerRef = useRef<HTMLDivElement>(null);
     const supabase = createClient();
+    const { timezone, now: zonedNow, formatTime } = useTimezone();
 
     useEffect(() => {
         if (!containerRef.current) return;
@@ -36,9 +52,11 @@ export const OwnerDashboard: React.FC = () => {
     useEffect(() => {
         async function fetchOwnerData() {
             try {
-                const now = new Date();
-                const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-                const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
+                const monthStart = startOfMonth(zonedNow);
+                const monthEnd = endOfMonth(zonedNow);
+
+                const startOfMonthISO = monthStart.toISOString();
+                const endOfMonthISO = monthEnd.toISOString();
 
                 // 1. Fetch My Properties (RLS Filtered)
                 const { data: properties } = await supabase
@@ -51,8 +69,8 @@ export const OwnerDashboard: React.FC = () => {
                 const { data: bookings } = await supabase
                     .from('bookings')
                     .select('price, start_date, end_date')
-                    .gte('start_date', startOfMonth)
-                    .lte('start_date', endOfMonth);
+                    .gte('start_date', startOfMonthISO)
+                    .lte('start_date', endOfMonthISO);
 
                 const validBookings = (bookings || []) as any[];
 
@@ -62,7 +80,7 @@ export const OwnerDashboard: React.FC = () => {
                 // 4. Calculate Occupancy
                 let occupancyRate = 0;
                 if (propertyCount > 0) {
-                    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+                    const daysInMonth = differenceInDays(monthEnd, monthStart) + 1;
                     const totalCapacityDays = propertyCount * daysInMonth;
 
                     const totalBookedDays = validBookings.reduce((acc, b) => {
@@ -78,14 +96,14 @@ export const OwnerDashboard: React.FC = () => {
 
                 setStats([
                     { label: 'Minhas Propriedades', value: propertyCount.toString(), icon: Building, color: 'text-indigo-500' },
-                    { label: 'OcupaÃ§Ã£o (MÃªs)', value: `${occupancyRate}%`, icon: CalendarCheck, color: 'text-emerald-500' },
+                    { label: 'Ocupação (Mês)', value: `${occupancyRate}%`, icon: CalendarCheck, color: 'text-emerald-500' },
                     { label: 'Repasse Estimado', value: `R$ ${revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, icon: DollarSign, color: 'text-amber-500' },
                 ]);
 
                 // 5. Build Chart Data (Weekly)
                 const weeks = [0, 0, 0, 0];
                 validBookings.forEach(b => {
-                    const day = new Date(b.start_date).getDate();
+                    const day = toZonedTime(parseISO(b.start_date), timezone).getDate();
                     const weekIndex = Math.min(Math.floor((day - 1) / 7), 3);
                     weeks[weekIndex] += Number(b.price) || 0;
                 });
@@ -96,6 +114,11 @@ export const OwnerDashboard: React.FC = () => {
                     { name: 'Sem 3', value: weeks[2] },
                     { name: 'Sem 4', value: weeks[3] },
                 ]);
+
+                // 6. Filter Today's Bookings
+                const today = new Date();
+                const todayList = validBookings.filter(b => isSameDay(toZonedTime(parseISO(b.start_date), timezone), zonedNow));
+                setTodayBookings(todayList);
 
             } catch (err) {
                 console.error('Owner Dashboard Error:', err);
@@ -110,7 +133,7 @@ export const OwnerDashboard: React.FC = () => {
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <div>
                 <h2 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">Portal do Investidor</h2>
-                <p className="text-[var(--text-secondary)] text-sm">VisÃ£o consolidada do seu portfÃ³lio.</p>
+                <p className="text-[var(--text-secondary)] text-sm">Visão consolidada do seu portfólio.</p>
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">
@@ -126,7 +149,7 @@ export const OwnerDashboard: React.FC = () => {
             </div>
 
             <div className="glass-panel p-6 rounded-3xl">
-                <h3 className="text-sm font-bold text-[var(--text-primary)] mb-6">TendÃªncia de Receita</h3>
+                <h3 className="text-sm font-bold text-[var(--text-primary)] mb-6">Tendência de Receita</h3>
                 <div ref={containerRef} className="h-64 w-full min-w-0 bg-slate-50/50 rounded-2xl overflow-hidden relative"
                     style={{ minHeight: '256px' }}>
                     {(dimensions.width > 0 && chartData.length > 0) ? (
@@ -148,9 +171,95 @@ export const OwnerDashboard: React.FC = () => {
                         </ResponsiveContainer>
                     ) : (
                         <div className="flex h-full items-center justify-center text-sm text-slate-400 font-medium h-64">
-                            {loading ? 'Carregando dados...' : 'Sem dados para o perÃ­odo'}
+                            {loading ? 'Carregando dados...' : 'Sem dados para o período'}
                         </div>
                     )}
+                </div>
+            </div>
+
+            {/* Today's Bookings Table */}
+            <div className="glass-panel p-6 rounded-3xl animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
+                <div className="flex items-center justify-between mb-6">
+                    <div>
+                        <h3 className="text-sm font-bold text-[var(--text-primary)]">Agendamentos de Hoje</h3>
+                        <p className="text-[10px] text-[var(--text-secondary)] uppercase tracking-widest mt-1">
+                            {formatInTimeZone(zonedNow, timezone, "EEEE, d 'de' MMMM", { locale: ptBR })}
+                        </p>
+                    </div>
+                    <Badge variant="outline" className="bg-indigo-50/50 text-indigo-600 border-indigo-100">
+                        {todayBookings.length} Ativo(s)
+                    </Badge>
+                </div>
+
+                <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white/40">
+                    <Table>
+                        <TableHeader>
+                            <TableRow className="bg-slate-50/50 border-none">
+                                <TableHead className="text-[10px] font-bold uppercase tracking-wider h-10">Propriedade</TableHead>
+                                <TableHead className="text-[10px] font-bold uppercase tracking-wider h-10 text-center">Horário</TableHead>
+                                <TableHead className="text-[10px] font-bold uppercase tracking-wider h-10 text-center">Status</TableHead>
+                                <TableHead className="text-[10px] font-bold uppercase tracking-wider h-10 text-right">Valor</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {todayBookings.length > 0 ? (
+                                todayBookings.map((booking) => (
+                                    <TableRow key={booking.id} className="hover:bg-slate-50/50 transition-colors border-slate-100">
+                                        <TableCell>
+                                            <div className="flex items-center gap-3">
+                                                <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600">
+                                                    <Building size={14} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-bold text-slate-900">{booking.summary || 'Residência'}</p>
+                                                    <div className="flex items-center gap-1 text-[10px] text-slate-400">
+                                                        <MapPin size={10} />
+                                                        <span className="truncate max-w-[150px]">Check-in/out hoje</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-center">
+                                            <div className="flex flex-col items-center gap-1">
+                                                <div className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                                                    <Clock size={10} />
+                                                    {format(parseISO(booking.start_date), 'HH:mm')}
+                                                </div>
+                                                <span className="text-[9px] text-slate-400">até {format(parseISO(booking.end_date), 'HH:mm')}</span>
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-center">
+                                            <Badge
+                                                variant="secondary"
+                                                className={cn(
+                                                    "text-[9px] px-2 py-0.5",
+                                                    booking.status === 'confirmed' && "bg-blue-100 text-blue-700",
+                                                    booking.status === 'in_progress' && "bg-amber-100 text-amber-700",
+                                                    booking.status === 'completed' && "bg-emerald-100 text-emerald-700"
+                                                )}
+                                            >
+                                                {booking.status === 'confirmed' && 'Confirmado'}
+                                                {booking.status === 'in_progress' && 'Em Andamento'}
+                                                {booking.status === 'completed' && 'Concluído'}
+                                                {booking.status !== 'confirmed' && booking.status !== 'in_progress' && booking.status !== 'completed' && booking.status}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <span className="text-xs font-black text-slate-900">
+                                                R$ {Number(booking.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                            </span>
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            ) : (
+                                <TableRow>
+                                    <TableCell colSpan={4} className="h-32 text-center text-slate-400 text-xs font-medium italic">
+                                        Nenhum agendamento para hoje.
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
                 </div>
             </div>
         </div>

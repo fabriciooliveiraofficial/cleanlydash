@@ -78,9 +78,9 @@ export const NotificationInbox: React.FC = () => {
 
     const getIcon = (category: string) => {
         switch (category) {
-            case 'booking': return <Calendar size={18} className="text-blue-500" />;
-            case 'payment': return <CheckCircle size={18} className="text-green-500" />;
-            case 'alert': return <AlertTriangle size={18} className="text-amber-500" />;
+            case 'booking': return <Calendar size={18} className="text-indigo-600" />;
+            case 'payment': return <CheckCircle size={18} className="text-emerald-600" />;
+            case 'alert': return <AlertTriangle size={18} className="text-rose-500" />;
             default: return <Info size={18} className="text-slate-400" />;
         }
     };
@@ -93,41 +93,41 @@ export const NotificationInbox: React.FC = () => {
     );
 
     return (
-        <div className="space-y-4">
-            <div className="flex items-center justify-between mb-6">
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-widest flex items-center gap-2">
-                    <Bell size={16} /> Central de Mensagens
+        <div className="flex flex-col h-[500px] max-h-[80vh]">
+            <div className="flex items-center justify-between mb-4 px-1">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <Bell size={14} /> Central de Mensagens
                 </h3>
-                <span className="text-[10px] font-black bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full uppercase">
+                <span className="text-[10px] font-black bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-full uppercase border border-indigo-100">
                     {notifications.length} registros
                 </span>
             </div>
 
-            <div className="grid gap-3">
+            <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
                 <AnimatePresence mode="popLayout">
                     {notifications.map((notif) => (
                         <motion.div
                             key={notif.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, x: -20 }}
-                            className={`group relative flex items-start gap-4 p-4 rounded-xl border transition-all duration-200 ${notif.read_at ? 'bg-white border-slate-100' : 'bg-indigo-50/30 border-indigo-100/50 shadow-sm'
+                            className={`group relative flex items-start gap-4 p-4 rounded-2xl border transition-all duration-200 ${notif.read_at ? 'bg-white border-slate-100' : 'bg-indigo-50/40 border-indigo-100 shadow-sm'
                                 }`}
                         >
-                            <div className={`mt-1 p-2 rounded-lg ${notif.read_at ? 'bg-slate-50' : 'bg-white shadow-sm'}`}>
+                            <div className={`mt-1 p-2 rounded-xl shrink-0 ${notif.read_at ? 'bg-slate-50 text-slate-400' : 'bg-white shadow-sm ring-1 ring-black/5'}`}>
                                 {getIcon(notif.category)}
                             </div>
 
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-start justify-between gap-4 mb-1">
-                                    <h4 className={`text-sm font-bold truncate ${notif.read_at ? 'text-slate-700' : 'text-slate-900'}`}>
+                                    <h4 className={`text-sm font-bold truncate ${notif.read_at ? 'text-slate-600' : 'text-slate-900'}`}>
                                         {notif.title}
                                     </h4>
-                                    <span className="text-[10px] font-medium text-slate-400 whitespace-nowrap">
-                                        {format(new Date(notif.created_at), "d 'de' MMM, HH:mm", { locale: ptBR })}
+                                    <span className="text-[10px] font-bold text-slate-400 whitespace-nowrap">
+                                        {format(new Date(notif.created_at), "HH:mm", { locale: ptBR })}
                                     </span>
                                 </div>
-                                <p className={`text-xs leading-relaxed line-clamp-2 ${notif.read_at ? 'text-slate-500' : 'text-slate-600'}`}>
+                                <p className={`text-xs leading-relaxed line-clamp-2 ${notif.read_at ? 'text-slate-400' : 'text-slate-600'}`}>
                                     {notif.body}
                                 </p>
 
@@ -136,18 +136,18 @@ export const NotificationInbox: React.FC = () => {
                                         href={notif.data.url}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-1.5 mt-3 text-[10px] font-bold text-indigo-600 uppercase tracking-wider hover:underline"
+                                        className="inline-flex items-center gap-1.5 mt-3 text-[10px] font-black text-indigo-600 uppercase tracking-wider hover:underline"
                                     >
                                         <ExternalLink size={10} /> Ver Detalhes
                                     </a>
                                 )}
                             </div>
 
-                            <div className="flex flex-col gap-2 self-start pt-1">
+                            <div className="flex flex-col gap-2 self-start pt-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                 {!notif.read_at && (
                                     <button
                                         onClick={() => markAsRead(notif.id)}
-                                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-white rounded-lg transition-colors shadow-sm bg-slate-50/50"
+                                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-white rounded-lg transition-all shadow-sm bg-slate-50 border border-transparent hover:border-slate-100"
                                         title="Marcar como lida"
                                     >
                                         <CheckCircle size={14} />
@@ -155,7 +155,7 @@ export const NotificationInbox: React.FC = () => {
                                 )}
                                 <button
                                     onClick={() => deleteNotification(notif.id)}
-                                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-white rounded-lg transition-colors shadow-sm bg-slate-50/50"
+                                    className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-white rounded-lg transition-all shadow-sm bg-slate-50 border border-transparent hover:border-slate-100"
                                     title="Excluir"
                                 >
                                     <Trash2 size={14} />
@@ -166,11 +166,11 @@ export const NotificationInbox: React.FC = () => {
                 </AnimatePresence>
 
                 {notifications.length === 0 && (
-                    <div className="p-12 text-center border-2 border-dashed border-slate-100 rounded-2xl">
-                        <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
-                            <Bell size={24} />
+                    <div className="h-full flex flex-col items-center justify-center p-8 text-center border-2 border-dashed border-slate-100 rounded-3xl opacity-60">
+                        <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-slate-300">
+                            <Bell size={20} />
                         </div>
-                        <p className="text-sm font-medium text-slate-400 italic">Nenhuma notificação encontrada</p>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Nada por aqui</p>
                     </div>
                 )}
             </div>

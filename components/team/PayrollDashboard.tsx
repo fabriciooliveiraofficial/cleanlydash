@@ -19,10 +19,13 @@ import {
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addWeeks, subWeeks, addMonths, subMonths } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useRole } from '../../hooks/use-role';
+import { useTranslation } from 'react-i18next';
+import { enUS, ptBR, es } from 'date-fns/locale';
+import { useTimezone } from '../../contexts/TimezoneContext';
+import { formatInTimeZone } from 'date-fns-tz';
 
 interface TeamMember {
     id: string;
@@ -68,10 +71,19 @@ export const PayrollDashboard: React.FC = () => {
     const [currentPeriod, setCurrentPeriod] = useState<PayrollPeriod | null>(null);
     const [loading, setLoading] = useState(true);
 
+    const { timezone, now, formatTime } = useTimezone();
     const [periodType, setPeriodType] = useState<PeriodType>('biweekly');
-    const [periodDate, setPeriodDate] = useState(new Date());
+    const [periodDate, setPeriodDate] = useState(now);
 
+    const { t, i18n } = useTranslation();
     const { tenant_id: tenantId } = useRole();
+
+    const getDateLocale = () => {
+        const lang = i18n.language;
+        if (lang.includes('pt')) return ptBR;
+        if (lang.includes('es')) return es;
+        return enUS;
+    };
 
     const [showAdjustModal, setShowAdjustModal] = useState(false);
     const [selectedEntry, setSelectedEntry] = useState<PayrollEntry | null>(null);
@@ -82,16 +94,17 @@ export const PayrollDashboard: React.FC = () => {
     const supabase = createClient();
 
     const getPeriodRange = () => {
+        const locale = getDateLocale();
         if (periodType === 'weekly') {
             return {
-                start: startOfWeek(periodDate, { locale: ptBR }),
-                end: endOfWeek(periodDate, { locale: ptBR })
+                start: startOfWeek(periodDate, { locale }),
+                end: endOfWeek(periodDate, { locale })
             };
         } else if (periodType === 'biweekly') {
-            const weekStart = startOfWeek(periodDate, { locale: ptBR });
+            const weekStart = startOfWeek(periodDate, { locale });
             return {
                 start: weekStart,
-                end: endOfWeek(addWeeks(weekStart, 1), { locale: ptBR })
+                end: endOfWeek(addWeeks(weekStart, 1), { locale })
             };
         } else {
             return {
@@ -167,7 +180,7 @@ export const PayrollDashboard: React.FC = () => {
         if (!user) return;
 
         console.log('[Payroll DEBUG] generatePreviewEntries called with', membersList?.length, 'members');
-        console.log('[Payroll DEBUG] Period range:', format(start, 'yyyy-MM-dd'), 'to', format(end, 'yyyy-MM-dd'));
+        console.log('[Payroll DEBUG] Period range:', formatInTimeZone(start, timezone, 'yyyy-MM-dd'), 'to', formatInTimeZone(end, timezone, 'yyyy-MM-dd'));
 
         // Fetch bookings in this period to calculate work
         const { data: bookings, error: bookingsError } = await supabase
@@ -190,7 +203,7 @@ export const PayrollDashboard: React.FC = () => {
 
             // Calculate hours (estimate 2hrs per job if not tracked)
             const hoursWorked = jobCount * 2;
-            const daysWorked = new Set(memberBookings.map((b: any) => format(new Date(b.start_date), 'yyyy-MM-dd'))).size;
+            const daysWorked = new Set(memberBookings.map((b: any) => formatInTimeZone(new Date(b.start_date), timezone, 'yyyy-MM-dd'))).size;
 
             // Calculate gross based on pay type
             let grossAmount = 0;
@@ -293,10 +306,10 @@ export const PayrollDashboard: React.FC = () => {
 
             await supabase.from('payroll_entries').insert(entriesToInsert as any);
 
-            toast.success('Período criado com sucesso!');
+            toast.success(t('payroll.notifications.period_created', 'Period created successfully!'));
             fetchData();
         } catch (err: any) {
-            toast.error(err.message || 'Erro ao criar período');
+            toast.error(err.message || t('payroll.errors.create_period', 'Error creating period'));
         }
     };
 
@@ -306,7 +319,7 @@ export const PayrollDashboard: React.FC = () => {
         try {
             await supabase
                 .from('payroll_periods')
-                .update({ status: 'approved', approved_at: new Date().toISOString() } as any)
+                .update({ status: 'approved', approved_at: now.toISOString() } as any)
                 .eq('id', currentPeriod.id);
 
             await supabase
@@ -314,7 +327,7 @@ export const PayrollDashboard: React.FC = () => {
                 .update({ status: 'approved' } as any)
                 .eq('period_id', currentPeriod.id);
 
-            toast.success('Período aprovado!');
+            toast.success(t('payroll.notifications.period_approved', 'Period approved!'));
             fetchData();
         } catch (err: any) {
             toast.error(err.message);
@@ -323,7 +336,7 @@ export const PayrollDashboard: React.FC = () => {
 
     const markAsPaid = async () => {
         if (!currentPeriod) return;
-        const toastId = toast.loading("Processando pagamentos em massa...");
+        const toastId = toast.loading("Processing bulk payments...");
 
         try {
             await supabase
@@ -354,7 +367,7 @@ export const PayrollDashboard: React.FC = () => {
                     .in('status', ['completed', 'confirmed']);
             }
 
-            toast.success('Todos marcados como pagos!', { id: toastId });
+            toast.success(t('payroll.notifications.bulk_payment_processed', 'All marked as paid!'), { id: toastId });
             fetchData();
         } catch (err: any) {
             toast.error(err.message, { id: toastId });
@@ -363,7 +376,7 @@ export const PayrollDashboard: React.FC = () => {
 
     const markMemberAsPaid = async (entry: PayrollEntry) => {
         if (!currentPeriod) return;
-        const toastId = toast.loading("Processando pagamento individual...");
+        const toastId = toast.loading("Processing individual payment...");
 
         try {
             // 1. Update Entry Status
@@ -393,17 +406,21 @@ export const PayrollDashboard: React.FC = () => {
                 await supabase.from('notification_history').insert({
                     user_id: entry.member.user_id,
                     category: 'payment',
-                    title: 'Pagamento Recebido! 💸',
-                    body: `Você recebeu um pagamento de R$ ${entry.net_amount.toFixed(2)} referente ao período ${format(parseISO(currentPeriod.period_start), 'dd/MM')} a ${format(parseISO(currentPeriod.period_end), 'dd/MM')}.`,
-                    created_at: new Date().toISOString()
+                    title: t('payroll.notifications.received_title', 'Payment Received! 💸'),
+                    body: t('payroll.notifications.received_body', 'You received a payment of $ {{amount}} for the period from {{start}} to {{end}}.', {
+                        amount: entry.net_amount.toFixed(2),
+                        start: format(parseISO(currentPeriod.period_start), 'MM/dd'),
+                        end: format(parseISO(currentPeriod.period_end), 'MM/dd')
+                    }),
+                    created_at: now.toISOString()
                 });
             }
 
-            toast.success(`Pagamento registrado para ${entry.member?.name}!`, { id: toastId });
+            toast.success(t('payroll.notifications.individual_payment_processed', 'Payment registered for {{name}}!', { name: entry.member?.name }), { id: toastId });
             fetchData();
         } catch (err: any) {
             console.error(err);
-            toast.error("Erro ao registrar pagamento.", { id: toastId });
+            toast.error("Error registering payment.", { id: toastId });
         }
     };
 
@@ -418,7 +435,7 @@ export const PayrollDashboard: React.FC = () => {
             doc.setTextColor(255, 255, 255);
             doc.setFontSize(22);
             doc.setFont('helvetica', 'bold');
-            doc.text("HOLERITE DE PAGAMENTO", 105, 20, { align: 'center' });
+            doc.text("PAYROLL RECEIPT", 105, 20, { align: 'center' });
 
             doc.setFontSize(10);
             doc.setFont('helvetica', 'normal');
@@ -431,26 +448,26 @@ export const PayrollDashboard: React.FC = () => {
             const startY = 50;
 
             doc.setFont('helvetica', 'bold');
-            doc.text("FUNCIONÁRIO:", 14, startY);
+            doc.text("EMPLOYEE:", 14, startY);
             doc.setFont('helvetica', 'normal');
             doc.text(entry.member?.name || "N/A", 14, startY + 5);
 
             doc.setFont('helvetica', 'bold');
-            doc.text("PERÍODO:", 80, startY);
+            doc.text("PERIOD:", 80, startY);
             doc.setFont('helvetica', 'normal');
-            doc.text(`${format(currentPeriod ? parseISO(currentPeriod.period_start) : start, 'dd/MM/yyyy')} - ${format(currentPeriod ? parseISO(currentPeriod.period_end) : end, 'dd/MM/yyyy')}`, 80, startY + 5);
+            doc.text(`${format(currentPeriod ? parseISO(currentPeriod.period_start) : new Date(), 'MM/dd/yyyy')} - ${format(currentPeriod ? parseISO(currentPeriod.period_end) : new Date(), 'MM/dd/yyyy')}`, 80, startY + 5);
 
             doc.setFont('helvetica', 'bold');
-            doc.text("DATA DO PAGAMENTO:", 150, startY);
+            doc.text("PAYMENT DATE:", 150, startY);
             doc.setFont('helvetica', 'normal');
-            doc.text(format(new Date(), 'dd/MM/yyyy'), 150, startY + 5);
+            doc.text(formatInTimeZone(now, timezone, 'MM/dd/yyyy'), 150, startY + 5);
 
             // Financial Table
-            const columns = ["DESCRIÇÃO", "QTD/REF", "VENCIMENTOS", "DESCONTOS"];
+            const columns = ["DESCRIPTION", "QTY/REF", "EARNINGS", "DEDUCTIONS"];
             const data = [
-                ["Salário Base / Serviços", `${entry.jobs_completed} jobs / ${entry.hours_worked}h`, `R$ ${entry.gross_amount.toFixed(2)}`, ""],
-                ["Bônus / Adicionais", "-", `R$ ${entry.bonuses.toFixed(2)}`, ""],
-                ["Deduções", "-", "", `R$ ${entry.deductions.toFixed(2)}`],
+                ["Base Salary / Services", `${entry.jobs_completed} jobs / ${entry.hours_worked}h`, `$ ${entry.gross_amount.toFixed(2)}`, ""],
+                ["Bonus / Additional", "-", `$ ${entry.bonuses.toFixed(2)}`, ""],
+                ["Deductions", "-", "", `$ ${entry.deductions.toFixed(2)}`],
             ];
 
             // Add Total Row
@@ -466,26 +483,26 @@ export const PayrollDashboard: React.FC = () => {
             });
 
             // Totals Box
-            const finalY = (doc as any).lastAutoTable.finalY + 10;
+            const finalY = (doc as any).lastAutoTable.finalY + 15;
 
             doc.setDrawColor(200, 200, 200);
             doc.line(14, finalY, 196, finalY);
 
             doc.setFontSize(12);
             doc.setFont('helvetica', 'bold');
-            doc.text("VALOR LÍQUIDO A RECEBER:", 120, finalY + 10);
+            doc.text("NET PAYABLE AMOUNT:", 14, finalY + 10); // Moved to left to avoid overlap
 
             doc.setFontSize(16);
             doc.setTextColor(79, 70, 229); // Indigo 600
-            doc.text(`R$ ${entry.net_amount.toFixed(2)}`, 196, finalY + 10, { align: 'right' });
+            doc.text(`$ ${entry.net_amount.toFixed(2)}`, 196, finalY + 10, { align: 'right' });
 
             // Footer
             doc.setFontSize(8);
             doc.setTextColor(150, 150, 150);
-            doc.text("Documento gerado eletronicamente pela plataforma Cleanlydash.", 105, 280, { align: 'center' });
+            doc.text("Document generated electronically by Cleanlydash platform.", 105, 280, { align: 'center' });
 
-            doc.save(`holerite_${entry.member?.name.replace(/\s+/g, '_')}_${format(new Date(), 'yyyyMMdd')}.pdf`);
-            toast.success("PDF gerado com sucesso!");
+            doc.save(`paystub_${entry.member?.name.replace(/\s+/g, '_')}_${formatInTimeZone(now, timezone, 'yyyyMMdd')}.pdf`);
+            toast.success("PDF generated successfully!");
 
         } catch (err) {
             console.error("PDF generation failed:", err);
@@ -511,7 +528,7 @@ export const PayrollDashboard: React.FC = () => {
                 .update(update)
                 .eq('id', selectedEntry.id);
 
-            toast.success('Ajuste aplicado!');
+            toast.success('Adjustment applied!');
             setShowAdjustModal(false);
             fetchData();
         } catch (err: any) {
@@ -521,7 +538,7 @@ export const PayrollDashboard: React.FC = () => {
 
     const exportCSV = () => {
         const { start, end } = getPeriodRange();
-        const headers = ['Nome', 'Tipo Pagamento', 'Horas', 'Dias', 'Jobs', 'Taxa', 'Bruto', 'Bônus', 'Deduções', 'Líquido'];
+        const headers = ['Name', 'Pay Type', 'Hours', 'Days', 'Jobs', 'Rate', 'Gross', 'Bonuses', 'Deductions', 'Net'];
         const rows = entries.map(e => [
             e.member?.name || '',
             e.pay_type,
@@ -542,7 +559,7 @@ export const PayrollDashboard: React.FC = () => {
         link.href = url;
         link.download = `payroll_${format(start, 'yyyy-MM-dd')}_${format(end, 'yyyy-MM-dd')}.csv`;
         link.click();
-        toast.success('CSV exportado!');
+        toast.success('CSV exported!');
     };
 
     const { start, end } = getPeriodRange();
@@ -556,18 +573,18 @@ export const PayrollDashboard: React.FC = () => {
             {/* Header */}
             <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900">Folha de Pagamento</h1>
-                    <p className="text-slate-500">Gerencie pagamentos da sua equipe</p>
+                    <h1 className="text-2xl font-bold text-slate-900">{t('payroll.title', 'Payroll Dashboard')}</h1>
+                    <p className="text-slate-500">{t('payroll.subtitle', 'Manage your team payments')}</p>
                 </div>
                 <div className="flex gap-2">
                     <Button variant="outline" onClick={exportCSV} className="gap-2">
                         <Download size={16} />
-                        <span className="hidden sm:inline">Exportar CSV</span>
+                        <span className="hidden sm:inline">{t('common.export_csv', 'Export CSV')}</span>
                     </Button>
                     {currentPeriod?.status === 'approved' && (
                         <Button onClick={markAsPaid} className="gap-2 bg-emerald-600 hover:bg-emerald-700">
                             <CheckCircle size={16} />
-                            Marcar Pago
+                            {t('payroll.actions.mark_as_paid', 'Mark as Paid')}
                         </Button>
                     )}
                 </div>
@@ -587,9 +604,9 @@ export const PayrollDashboard: React.FC = () => {
                                     : 'text-slate-500 hover:text-slate-700'
                                     }`}
                             >
-                                {type === 'weekly' && 'Semanal'}
-                                {type === 'biweekly' && 'Quinzenal'}
-                                {type === 'monthly' && 'Mensal'}
+                                {type === 'weekly' && t('payroll.period.weekly', 'Weekly')}
+                                {type === 'biweekly' && t('payroll.period.biweekly', 'Bi-weekly')}
+                                {type === 'monthly' && t('payroll.period.monthly', 'Monthly')}
                             </button>
                         ))}
                     </div>
@@ -601,16 +618,16 @@ export const PayrollDashboard: React.FC = () => {
                         </button>
                         <div className="text-center min-w-[200px]">
                             <p className="text-sm font-semibold text-slate-900">
-                                {format(start, 'd MMM', { locale: ptBR })} - {format(end, 'd MMM yyyy', { locale: ptBR })}
+                                {format(start, 'd MMM')} - {format(end, 'd MMM yyyy')}
                             </p>
                             {currentPeriod && (
                                 <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${currentPeriod.status === 'paid' ? 'bg-emerald-100 text-emerald-700' :
                                     currentPeriod.status === 'approved' ? 'bg-blue-100 text-blue-700' :
                                         'bg-amber-100 text-amber-700'
                                     }`}>
-                                    {currentPeriod.status === 'paid' && 'Pago'}
-                                    {currentPeriod.status === 'approved' && 'Aprovado'}
-                                    {currentPeriod.status === 'open' && 'Aberto'}
+                                    {currentPeriod.status === 'paid' && t('payroll.status.paid', 'Paid')}
+                                    {currentPeriod.status === 'approved' && t('payroll.status.approved', 'Approved')}
+                                    {currentPeriod.status === 'open' && t('payroll.status.open', 'Open')}
                                 </span>
                             )}
                         </div>
@@ -629,7 +646,7 @@ export const PayrollDashboard: React.FC = () => {
                             <Users size={20} />
                         </div>
                         <div>
-                            <p className="text-xs text-slate-500">Funcionários</p>
+                            <p className="text-xs text-slate-500">{t('payroll.summary.employees', 'Employees')}</p>
                             <p className="text-xl font-bold text-slate-900">{entries.length}</p>
                         </div>
                     </div>
@@ -640,8 +657,8 @@ export const PayrollDashboard: React.FC = () => {
                             <DollarSign size={20} />
                         </div>
                         <div>
-                            <p className="text-xs text-slate-500">Total Bruto</p>
-                            <p className="text-xl font-bold text-slate-900">R$ {totalGross.toFixed(2)}</p>
+                            <p className="text-xs text-slate-500">{t('payroll.summary.total_gross', 'Total Gross')}</p>
+                            <p className="text-xl font-bold text-slate-900">$ {totalGross.toFixed(2)}</p>
                         </div>
                     </div>
                 </div>
@@ -651,8 +668,8 @@ export const PayrollDashboard: React.FC = () => {
                             <Plus size={20} />
                         </div>
                         <div>
-                            <p className="text-xs text-slate-500">Bônus</p>
-                            <p className="text-xl font-bold text-emerald-600">+R$ {totalBonuses.toFixed(2)}</p>
+                            <p className="text-xs text-slate-500">{t('payroll.summary.bonuses', 'Bonuses')}</p>
+                            <p className="text-xl font-bold text-emerald-600">+$ {totalBonuses.toFixed(2)}</p>
                         </div>
                     </div>
                 </div>
@@ -662,8 +679,8 @@ export const PayrollDashboard: React.FC = () => {
                             <CheckCircle size={20} />
                         </div>
                         <div>
-                            <p className="text-xs text-slate-500">Total Líquido</p>
-                            <p className="text-xl font-bold text-indigo-600">R$ {totalNet.toFixed(2)}</p>
+                            <p className="text-xs text-slate-500">{t('payroll.summary.total_net', 'Total Net')}</p>
+                            <p className="text-xl font-bold text-indigo-600">$ {totalNet.toFixed(2)}</p>
                         </div>
                     </div>
                 </div>
@@ -675,13 +692,13 @@ export const PayrollDashboard: React.FC = () => {
                     <table className="w-full">
                         <thead className="bg-slate-50 border-b border-slate-100">
                             <tr>
-                                <th className="text-left py-4 px-6 text-xs font-bold text-slate-400 uppercase">Funcionário</th>
-                                <th className="text-left py-4 px-6 text-xs font-bold text-slate-400 uppercase hidden md:table-cell">Tipo</th>
-                                <th className="text-right py-4 px-6 text-xs font-bold text-slate-400 uppercase hidden lg:table-cell">Trabalho</th>
-                                <th className="text-right py-4 px-6 text-xs font-bold text-slate-400 uppercase">Bruto</th>
-                                <th className="text-right py-4 px-6 text-xs font-bold text-slate-400 uppercase hidden sm:table-cell">Ajustes</th>
-                                <th className="text-right py-4 px-6 text-xs font-bold text-slate-400 uppercase">Líquido</th>
-                                <th className="text-center py-4 px-6 text-xs font-bold text-slate-400 uppercase">Ações</th>
+                                <th className="text-left py-4 px-6 text-xs font-bold text-slate-400 uppercase">{t('payroll.table.employee', 'Employee')}</th>
+                                <th className="text-left py-4 px-6 text-xs font-bold text-slate-400 uppercase hidden md:table-cell">{t('payroll.table.type', 'Type')}</th>
+                                <th className="text-right py-4 px-6 text-xs font-bold text-slate-400 uppercase hidden lg:table-cell">{t('payroll.table.work', 'Work')}</th>
+                                <th className="text-right py-4 px-6 text-xs font-bold text-slate-400 uppercase">{t('payroll.table.gross', 'Gross')}</th>
+                                <th className="text-right py-4 px-6 text-xs font-bold text-slate-400 uppercase hidden sm:table-cell">{t('payroll.table.adjustments', 'Adjustments')}</th>
+                                <th className="text-right py-4 px-6 text-xs font-bold text-slate-400 uppercase">{t('payroll.table.net', 'Net')}</th>
+                                <th className="text-center py-4 px-6 text-xs font-bold text-slate-400 uppercase">{t('payroll.table.actions', 'Actions')}</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -704,22 +721,22 @@ export const PayrollDashboard: React.FC = () => {
                                     <td className="py-4 px-6 text-right hidden lg:table-cell">
                                         <div className="text-xs text-slate-500 space-y-0.5">
                                             {entry.pay_type === 'hourly' && <div>{entry.hours_worked}h</div>}
-                                            {entry.pay_type === 'daily' && <div>{entry.days_worked} dias</div>}
-                                            {entry.pay_type === 'per_job' && <div>{entry.jobs_completed} jobs</div>}
-                                            {entry.pay_type === 'commission' && <div>R$ {entry.booking_value_total.toFixed(0)}</div>}
-                                            {entry.pay_type === 'salary' && <div>Fixo</div>}
+                                            {entry.pay_type === 'daily' && <div>{t('payroll.work.days', '{{count}} days', { count: entry.days_worked })}</div>}
+                                            {entry.pay_type === 'per_job' && <div>{t('payroll.work.jobs', '{{count}} jobs', { count: entry.jobs_completed })}</div>}
+                                            {entry.pay_type === 'commission' && <div>$ {entry.booking_value_total.toFixed(0)}</div>}
+                                            {entry.pay_type === 'salary' && <div>{t('payroll.work.salary', 'Salary')}</div>}
                                         </div>
                                     </td>
                                     <td className="py-4 px-6 text-right">
-                                        <span className="font-medium text-slate-900">R$ {entry.gross_amount.toFixed(2)}</span>
+                                        <span className="font-medium text-slate-900">$ {entry.gross_amount.toFixed(2)}</span>
                                     </td>
                                     <td className="py-4 px-6 text-right hidden sm:table-cell">
                                         <div className="space-y-0.5">
                                             {entry.bonuses > 0 && (
-                                                <div className="text-xs text-emerald-600">+R$ {entry.bonuses.toFixed(2)}</div>
+                                                <div className="text-xs text-emerald-600">+$ {entry.bonuses.toFixed(2)}</div>
                                             )}
                                             {entry.deductions > 0 && (
-                                                <div className="text-xs text-red-600">-R$ {entry.deductions.toFixed(2)}</div>
+                                                <div className="text-xs text-red-600">-$ {entry.deductions.toFixed(2)}</div>
                                             )}
                                             {entry.bonuses === 0 && entry.deductions === 0 && (
                                                 <span className="text-xs text-slate-400">—</span>
@@ -727,7 +744,7 @@ export const PayrollDashboard: React.FC = () => {
                                         </div>
                                     </td>
                                     <td className="py-4 px-6 text-right">
-                                        <span className="font-bold text-indigo-600">R$ {entry.net_amount.toFixed(2)}</span>
+                                        <span className="font-bold text-indigo-600">$ {entry.net_amount.toFixed(2)}</span>
                                     </td>
                                     <td className="py-4 px-6 text-center">
                                         <div className="flex items-center justify-center gap-2">
@@ -758,7 +775,7 @@ export const PayrollDashboard: React.FC = () => {
                                                 <button
                                                     onClick={() => markMemberAsPaid(entry)}
                                                     className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                                    title="Pagar Individualmente"
+                                                    title={t('payroll.tooltips.pay_individually', 'Pay Individually')}
                                                 >
                                                     <DollarSign size={16} />
                                                 </button>
@@ -766,7 +783,7 @@ export const PayrollDashboard: React.FC = () => {
 
                                             {/* Paid Indicator */}
                                             {(entry.status === 'paid') && (
-                                                <span className="text-emerald-500" title="Pago">
+                                                <span className="text-emerald-500" title={t('payroll.status.paid', 'Paid')}>
                                                     <CheckCircle size={16} />
                                                 </span>
                                             )}
@@ -784,13 +801,13 @@ export const PayrollDashboard: React.FC = () => {
                 {!currentPeriod && entries.length > 0 && (
                     <Button onClick={createPeriod} className="gap-2 bg-indigo-600 hover:bg-indigo-700">
                         <FileText size={16} />
-                        Criar Período
+                        {t('payroll.actions.create_period', 'Create Period')}
                     </Button>
                 )}
                 {currentPeriod?.status === 'open' && (
                     <Button onClick={approvePeriod} className="gap-2 bg-blue-600 hover:bg-blue-700">
                         <CheckCircle size={16} />
-                        Aprovar Período
+                        {t('payroll.actions.approve_period', 'Approve Period')}
                     </Button>
                 )}
             </div>
@@ -799,8 +816,8 @@ export const PayrollDashboard: React.FC = () => {
             {showAdjustModal && selectedEntry && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in fade-in zoom-in-95">
-                        <h2 className="text-lg font-bold text-slate-900 mb-4">Ajustar Pagamento</h2>
-                        <p className="text-sm text-slate-500 mb-4">Funcionário: <strong>{selectedEntry.member?.name}</strong></p>
+                        <h2 className="text-lg font-bold text-slate-900 mb-4">{t('payroll.adjust.title', 'Adjust Payment')}</h2>
+                        <p className="text-sm text-slate-500 mb-4">{t('payroll.adjust.employee', 'Employee')}: <strong>{selectedEntry.member?.name}</strong></p>
 
                         <div className="grid grid-cols-2 gap-3 mb-4">
                             <button
@@ -811,7 +828,7 @@ export const PayrollDashboard: React.FC = () => {
                                     }`}
                             >
                                 <Plus size={18} className="mx-auto mb-1" />
-                                Bônus
+                                {t('payroll.adjust.bonus', 'Bonus')}
                             </button>
                             <button
                                 onClick={() => setAdjustmentType('deduction')}
@@ -821,13 +838,13 @@ export const PayrollDashboard: React.FC = () => {
                                     }`}
                             >
                                 <Minus size={18} className="mx-auto mb-1" />
-                                Dedução
+                                {t('payroll.adjust.deduction', 'Deduction')}
                             </button>
                         </div>
 
                         <div className="space-y-3 mb-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Valor (R$)</label>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">{t('payroll.adjust.amount', 'Amount')} ($)</label>
                                 <input
                                     type="number"
                                     value={adjustmentAmount}
@@ -837,23 +854,23 @@ export const PayrollDashboard: React.FC = () => {
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Motivo/Notas</label>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">{t('payroll.adjust.reason', 'Reason/Notes')}</label>
                                 <input
                                     type="text"
                                     value={adjustmentNotes}
                                     onChange={e => setAdjustmentNotes(e.target.value)}
                                     className="w-full px-4 py-3 rounded-xl border border-slate-200"
-                                    placeholder="Ex: Hora extra, Adiantamento..."
+                                    placeholder={t('payroll.adjust.reason_placeholder', 'Ex: Overtime, Advance...')}
                                 />
                             </div>
                         </div>
 
                         <div className="flex gap-3">
                             <Button variant="outline" onClick={() => setShowAdjustModal(false)} className="flex-1">
-                                Cancelar
+                                {t('common.cancel', 'Cancel')}
                             </Button>
                             <Button onClick={handleAdjustment} className="flex-1 bg-indigo-600 hover:bg-indigo-700">
-                                Aplicar
+                                {t('payroll.adjust.apply', 'Apply')}
                             </Button>
                         </div>
                     </div>

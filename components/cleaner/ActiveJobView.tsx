@@ -154,10 +154,26 @@ export const ActiveJobView: React.FC<ActiveJobViewProps> = ({ job, onBack }) => 
         fetchInventory();
     }, [job?.id, job?.service_id]);
 
-    const notifyClient = (type: string, payload?: any) => {
-        // Simulação de Gatilho de Notificação (Webhooks)
-        console.log(`[Notification Trigger] Sending ${type} to owner/client for booking ${job.id}`, payload);
-        toast.info(t('notify.sent', { defaultValue: "Notification sent to client." }));
+    const notifyClient = async (type: string, payload?: any) => {
+        // Map internal types to Edge Function event_types
+        let eventType = 'custom';
+        if (type === 'CHECK_IN' || type === 'CHECK_IN_BYPASS') eventType = 'check_in';
+        if (type === 'JOB_COMPLETED') eventType = 'completed';
+
+        console.log(`[Notification Trigger] Sending ${eventType} to owner/client for booking ${job.id}`, payload);
+
+        try {
+            await supabase.functions.invoke('send_booking_notification', {
+                body: {
+                    booking_id: job.id,
+                    event_type: eventType,
+                    ...(payload || {})
+                }
+            });
+            // We don't block UI for this, it runs in background
+        } catch (err) {
+            console.error('[Notification Trigger] Failed to invoke edge function:', err);
+        }
     };
 
     const handleReportDamage = () => {
@@ -290,6 +306,9 @@ export const ActiveJobView: React.FC<ActiveJobViewProps> = ({ job, onBack }) => 
             }
 
             console.log('[Finish] Success! Status updated to completed');
+
+            // Optional: If we had a photo captured during finish, we'd pass { image_url: '...' }
+            // For now, simple finish.
             notifyClient('JOB_COMPLETED');
             toast.success(t('cleaner.active_job.completed_success', { defaultValue: 'Tarefa finalizada com sucesso!' }));
 

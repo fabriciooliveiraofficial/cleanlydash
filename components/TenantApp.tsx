@@ -340,10 +340,14 @@ const TenantAppInner: React.FC = () => {
     );
 };
 
+import { TimezoneProvider } from '../contexts/TimezoneContext';
+
 export const TenantApp = () => {
     return (
         <RoleProvider>
-            <TenantAppInner />
+            <TimezoneProvider>
+                <TenantAppInner />
+            </TimezoneProvider>
         </RoleProvider>
     );
 }

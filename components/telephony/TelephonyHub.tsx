@@ -18,6 +18,9 @@ import { CommsSettings } from './CommsSettings';
 import { Button } from '../ui/button';
 import { createClient } from '../../lib/supabase/client';
 import { useEffect } from 'react';
+import { useTimezone } from '../../contexts/TimezoneContext';
+import { startOfDay, subDays } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
 
 import {
     ResponsiveContainer,
@@ -112,6 +115,7 @@ const TelephonyDashboard: React.FC = () => {
         rcs: '0.07'
     });
     const [activeNumber, setActiveNumber] = useState<string | null>(null);
+    const { timezone, now: zonedNow, formatTime } = useTimezone();
 
     useEffect(() => {
         const fetchData = async () => {
@@ -149,9 +153,8 @@ const TelephonyDashboard: React.FC = () => {
                 } catch (e) { }
             }
 
-            // 3. Fetch Logs for Chart (Last 7 Days)
-            const thirtyDaysAgo = new Date();
-            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            // 3. Fetch Logs for Chart (Last 30 Days)
+            const thirtyDaysAgo = subDays(zonedNow, 30);
             const isoDate = thirtyDaysAgo.toISOString();
 
             const { data: callLogs } = await supabase
@@ -172,16 +175,14 @@ const TelephonyDashboard: React.FC = () => {
 
             // 4. Generate Chart Data
             const dailyMap = new Map();
-            for (let i = 6; i >= 0; i--) {
-                const d = new Date();
-                d.setDate(d.getDate() - i);
-                const k = d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' });
+            for (let i = 29; i >= 0; i--) {
+                const d = subDays(zonedNow, i);
+                const k = formatInTimeZone(d, timezone, 'MM/dd');
                 dailyMap.set(k, 0);
             }
 
             [...(callLogs || []), ...(smsLogs || [])].forEach((item: any) => {
-                const date = new Date(item.created_at);
-                const k = date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' });
+                const k = formatInTimeZone(new Date(item.created_at), timezone, 'MM/dd');
                 if (dailyMap.has(k)) {
                     let cost = 0;
                     if ('duration_seconds' in item) {
@@ -441,6 +442,7 @@ const TelephonyLogs: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [smsModalOpen, setSmsModalOpen] = useState(false);
     const [smsTargetNumber, setSmsTargetNumber] = useState('');
+    const { formatTime } = useTimezone();
 
     // Listen for quick-sms events
     useEffect(() => {
@@ -548,7 +550,7 @@ const TelephonyLogs: React.FC = () => {
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <span className="text-xs font-medium text-slate-400 tracking-tight">
-                                                        {new Date(log.created_at).toLocaleString('pt-BR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                        {formatTime(log.created_at, "d 'de' MMM, HH:mm")}
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4 text-right">

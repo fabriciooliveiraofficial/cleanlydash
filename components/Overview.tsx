@@ -21,6 +21,9 @@ import {
 import { createClient } from '../lib/supabase/client.ts';
 import { useRole } from '../hooks/use-role.ts';
 import { OwnerDashboard } from './OwnerDashboard.tsx';
+import { useTimezone } from '../contexts/TimezoneContext';
+import { startOfMonth as dateFnsStartOfMonth } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
 
 export const Overview: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -29,6 +32,7 @@ export const Overview: React.FC = () => {
   const [aiInsight, setAiInsight] = useState<{ summary: string; sentiment: number } | null>(null);
   const supabase = createClient();
   const { role, isOwner, isStaff, isAdmin } = useRole();
+  const { now: zonedNow, timezone } = useTimezone();
   console.log('Overview Debug:', { role, isOwner });
 
   useEffect(() => {
@@ -39,8 +43,7 @@ export const Overview: React.FC = () => {
           return;
         }
 
-        const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+        const startOfMonth = dateFnsStartOfMonth(zonedNow).toISOString();
 
         // 1. Fetch MTD Bookings (Revenue & Turnovers)
         const { data: bookings } = await supabase
@@ -107,7 +110,7 @@ export const Overview: React.FC = () => {
         // Build Chart Data (Weekly Aggregation)
         const weeks = [0, 0, 0, 0]; // 4 weeks
         validBookings.forEach(b => {
-          const day = new Date(b.start_date).getDate();
+          const day = parseInt(formatInTimeZone(new Date(b.start_date), timezone, 'd'));
           const weekIndex = Math.min(Math.floor((day - 1) / 7), 3);
           weeks[weekIndex] += Number(b.price) || 0;
         });

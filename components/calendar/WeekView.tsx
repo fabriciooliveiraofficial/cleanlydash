@@ -1,6 +1,8 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, isBefore, addHours, addMinutes } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useTimezone } from '../../contexts/TimezoneContext';
+import { toZonedTime } from 'date-fns-tz';
 import { AlertCircle, Clock, ClipboardList } from 'lucide-react';
 import { Badge } from '../ui/badge';
 
@@ -33,9 +35,8 @@ const HOURS = Array.from({ length: 24 }, (_, i) => i); // 0 to 23
  * This fixes the issue where parseISO interprets strings without 'Z' suffix
  * inconsistently, causing timezone offset issues.
  */
-const parseLocalDate = (dateString: string): Date => {
-    // new Date() interprets ISO strings without Z as local time
-    return new Date(dateString);
+const parseLocalDate = (dateString: string, timezone: string): Date => {
+    return toZonedTime(new Date(dateString), timezone);
 };
 
 const HOUR_HEIGHT = 60; // pixels per hour
@@ -49,6 +50,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
     onBookingMove,
     onBookingResize
 }) => {
+    const { timezone, now: zonedNow, formatTime } = useTimezone();
     const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 });
     const weekEnd = endOfWeek(currentDate, { weekStartsOn: 0 });
     const days = eachDayOfInterval({ start: weekStart, end: weekEnd });
@@ -88,8 +90,8 @@ export const WeekView: React.FC<WeekViewProps> = ({
             if (b.id === bookingId) return false;
             if (b.assigned_to !== assignedTo) return false;
 
-            const existingStart = parseLocalDate(b.start_date);
-            const existingEnd = parseLocalDate(b.end_date);
+            const existingStart = parseLocalDate(b.start_date, timezone);
+            const existingEnd = parseLocalDate(b.end_date, timezone);
 
             return (newStart < existingEnd && newEnd > existingStart);
         });
@@ -97,31 +99,31 @@ export const WeekView: React.FC<WeekViewProps> = ({
 
     const getBookingsStartingAt = (day: Date, hour: number) => {
         return bookings.filter(booking => {
-            const start = parseLocalDate(booking.start_date);
+            const start = parseLocalDate(booking.start_date, timezone);
             return isSameDay(start, day) && start.getHours() === hour;
         });
     };
 
     const getBookingCoveringSlot = (day: Date, hour: number): Booking | null => {
         return bookings.find(booking => {
-            const start = parseLocalDate(booking.start_date);
-            const end = parseLocalDate(booking.end_date);
+            const start = parseLocalDate(booking.start_date, timezone);
+            const end = parseLocalDate(booking.end_date, timezone);
             return isSameDay(start, day) && start.getHours() <= hour && end.getHours() > hour;
         }) || null;
     };
 
     const getBookingSpan = (booking: Booking) => {
-        const start = parseLocalDate(booking.start_date);
-        const end = parseLocalDate(booking.end_date);
+        const start = parseLocalDate(booking.start_date, timezone);
+        const end = parseLocalDate(booking.end_date, timezone);
         const hours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
         return Math.max(1, hours);
     };
 
-    const isToday = (day: Date) => isSameDay(day, new Date());
+    const isToday = (day: Date) => isSameDay(day, zonedNow);
     const isPast = (day: Date, hour: number) => {
         const slotTime = new Date(day);
         slotTime.setHours(hour, 0, 0, 0);
-        return isBefore(slotTime, new Date());
+        return isBefore(slotTime, zonedNow);
     };
 
     const getCellFromTouch = (clientX: number, clientY: number): { day: Date; hour: number; minute?: number } | null => {
@@ -188,8 +190,8 @@ export const WeekView: React.FC<WeekViewProps> = ({
         const snappedMinutes = Math.round(rawMinutes / 1); // 1-min precision
 
         if (draggedBooking) {
-            const originalStart = parseLocalDate(draggedBooking.start_date);
-            const originalEnd = parseLocalDate(draggedBooking.end_date);
+            const originalStart = parseLocalDate(draggedBooking.start_date, timezone);
+            const originalEnd = parseLocalDate(draggedBooking.end_date, timezone);
             const duration = originalEnd.getTime() - originalStart.getTime();
 
             const newStart = new Date(day);
@@ -224,8 +226,8 @@ export const WeekView: React.FC<WeekViewProps> = ({
         setDragOverCell(null);
 
         if (draggedBooking && onBookingMove) {
-            const originalStart = parseLocalDate(draggedBooking.start_date);
-            const originalEnd = parseLocalDate(draggedBooking.end_date);
+            const originalStart = parseLocalDate(draggedBooking.start_date, timezone);
+            const originalEnd = parseLocalDate(draggedBooking.end_date, timezone);
             const duration = originalEnd.getTime() - originalStart.getTime();
 
             const rect = e.currentTarget.getBoundingClientRect();
@@ -292,8 +294,8 @@ export const WeekView: React.FC<WeekViewProps> = ({
             if (cell) {
                 setDragOverCell(cell);
 
-                const originalStart = parseLocalDate(touchDragBooking.start_date);
-                const originalEnd = parseLocalDate(touchDragBooking.end_date);
+                const originalStart = parseLocalDate(touchDragBooking.start_date, timezone);
+                const originalEnd = parseLocalDate(touchDragBooking.end_date, timezone);
                 const duration = originalEnd.getTime() - originalStart.getTime();
 
                 const newStart = new Date(cell.day);
@@ -316,8 +318,8 @@ export const WeekView: React.FC<WeekViewProps> = ({
         }
 
         if (touchDragBooking && dragOverCell && onBookingMove) {
-            const originalStart = parseLocalDate(touchDragBooking.start_date);
-            const originalEnd = parseLocalDate(touchDragBooking.end_date);
+            const originalStart = parseLocalDate(touchDragBooking.start_date, timezone);
+            const originalEnd = parseLocalDate(touchDragBooking.end_date, timezone);
             const duration = originalEnd.getTime() - originalStart.getTime();
 
             const newStart = new Date(dragOverCell.day);
@@ -369,8 +371,8 @@ export const WeekView: React.FC<WeekViewProps> = ({
             setResizeDelta(deltaY);
 
             if (deltaMinutes !== 0) {
-                const originalEnd = parseLocalDate(booking.end_date);
-                const originalStart = parseLocalDate(booking.start_date);
+                const originalEnd = parseLocalDate(booking.end_date, timezone);
+                const originalStart = parseLocalDate(booking.start_date, timezone);
 
                 let newStart = originalStart;
                 let newEnd = originalEnd;
@@ -409,8 +411,8 @@ export const WeekView: React.FC<WeekViewProps> = ({
             const deltaMinutes = Math.round((finalDelta / HOUR_HEIGHT) * 60 / 10) * 10;
 
             if (deltaMinutes !== 0 && onBookingResize) {
-                const originalEnd = parseLocalDate(booking.end_date);
-                const originalStart = parseLocalDate(booking.start_date);
+                const originalEnd = parseLocalDate(booking.end_date, timezone);
+                const originalStart = parseLocalDate(booking.start_date, timezone);
 
                 let newStart = originalStart;
                 let newEnd = originalEnd;
@@ -547,7 +549,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
                                             className="absolute left-0.5 right-0.5 rounded-md pointer-events-none z-[100] border-2 border-indigo-400 bg-indigo-500/10 shadow-xl overflow-hidden flex flex-col p-1.5"
                                             style={{
                                                 top: `${(dragOverCell.minute || 0) / 60 * HOUR_HEIGHT}px`,
-                                                height: `${(parseLocalDate(draggedBooking.end_date).getTime() - parseLocalDate(draggedBooking.start_date).getTime()) / (1000 * 60 * 60) * HOUR_HEIGHT}px`
+                                                height: `${(parseLocalDate(draggedBooking.end_date, timezone).getTime() - parseLocalDate(draggedBooking.start_date, timezone).getTime()) / (1000 * 60 * 60) * HOUR_HEIGHT}px`
                                             }}
                                         >
                                             <div className="flex items-center gap-1 mb-1">
@@ -587,7 +589,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
                                         const isBeingDragged = (draggedBooking?.id === booking.id) || (touchDragBooking?.id === booking.id);
                                         const isBeingResized = resizingBooking?.id === booking.id;
 
-                                        const startMin = parseLocalDate(booking.start_date).getMinutes();
+                                        const startMin = parseLocalDate(booking.start_date, timezone).getMinutes();
                                         let topOffset = (startMin / 60) * HOUR_HEIGHT + 2;
 
                                         let heightPx = span * HOUR_HEIGHT - 4;
@@ -648,7 +650,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
                                                 <div className="px-2 py-1 h-full flex flex-col pointer-events-none select-none mt-1">
                                                     <div className="flex items-center justify-between gap-1 overflow-hidden">
                                                         <div className="text-[10px] font-bold truncate" style={{ color: bgColor }}>
-                                                            {format(parseLocalDate(booking.start_date), 'HH:mm')}
+                                                            {formatTime(booking.start_date, 'HH:mm')}
                                                         </div>
                                                         <Badge
                                                             className="h-3 px-1 text-[7px] uppercase font-bold bg-white/50"

@@ -1,23 +1,44 @@
+import { formatInTimeZone, toZonedTime } from 'date-fns-tz';
+
 /**
  * Timezone Utilities
  * Provides functions for timezone detection and date formatting per tenant timezone
  */
 
-// Common timezone data with UTC offsets
-const TIMEZONE_OFFSETS: Record<string, { offset: number; label: string }> = {
-    'America/Sao_Paulo': { offset: -3, label: 'Brasília (UTC-03:00)' },
-    'America/New_York': { offset: -5, label: 'New York (UTC-05:00)' },
-    'America/Chicago': { offset: -6, label: 'Chicago (UTC-06:00)' },
-    'America/Denver': { offset: -7, label: 'Denver (UTC-07:00)' },
-    'America/Los_Angeles': { offset: -8, label: 'Los Angeles (UTC-08:00)' },
-    'America/Anchorage': { offset: -9, label: 'Alaska (UTC-09:00)' },
-    'Pacific/Honolulu': { offset: -10, label: 'Hawaii (UTC-10:00)' },
-    'Europe/London': { offset: 0, label: 'London (UTC+00:00)' },
-    'Europe/Paris': { offset: 1, label: 'Paris (UTC+01:00)' },
-    'Europe/Berlin': { offset: 1, label: 'Berlin (UTC+01:00)' },
-    'Asia/Tokyo': { offset: 9, label: 'Tokyo (UTC+09:00)' },
-    'Australia/Sydney': { offset: 11, label: 'Sydney (UTC+11:00)' },
-};
+// Comprehensive and curated IANA Timezone list for the selection UI
+export const IANA_TIMEZONES = [
+    // US & Canada
+    { value: 'America/New_York', label: 'Eastern Time (New York, Miami, Toronto)' },
+    { value: 'America/Chicago', label: 'Central Time (Chicago, Dallas, Winnipeg)' },
+    { value: 'America/Denver', label: 'Mountain Time (Denver, Calgary, Phoenix)' },
+    { value: 'America/Los_Angeles', label: 'Pacific Time (LA, Vancouver, Seattle)' },
+    { value: 'America/Anchorage', label: 'Alaska Time' },
+    { value: 'Pacific/Honolulu', label: 'Hawaii-Aleutian Time' },
+    { value: 'America/Phoenix', label: 'Arizona (No DST)' },
+
+    // Latin America
+    { value: 'America/Sao_Paulo', label: 'Brasília (São Paulo, Rio de Janeiro)' },
+    { value: 'America/Manaus', label: 'Amazon (Manaus)' },
+    { value: 'America/Bogota', label: 'Colombia (Bogotá)' },
+    { value: 'America/Mexico_City', label: 'Mexico City' },
+    { value: 'America/Santiago', label: 'Chile (Santiago)' },
+    { value: 'America/Argentina/Buenos_Aires', label: 'Argentina (Buenos Aires)' },
+
+    // Europe
+    { value: 'Europe/London', label: 'London, Dublin, Lisbon' },
+    { value: 'Europe/Paris', label: 'Paris, Madrid, Amsterdam' },
+    { value: 'Europe/Berlin', label: 'Berlin, Rome, Stockholm' },
+    { value: 'Europe/Lisbon', label: 'Lisbon, Porto' },
+    { value: 'Europe/Dublin', label: 'Dublin' },
+
+    // Asia/Pacific
+    { value: 'Asia/Tokyo', label: 'Tokyo, Seoul' },
+    { value: 'Asia/Dubai', label: 'Dubai, Abu Dhabi' },
+    { value: 'Asia/Singapore', label: 'Singapore, Hong Kong' },
+    { value: 'Australia/Sydney', label: 'Sydney, Melbourne' },
+    { value: 'Australia/Perth', label: 'Perth' },
+    { value: 'Asia/Jerusalem', label: 'Jerusalem (Israel)' },
+];
 
 /**
  * Get timezone from coordinates using local coordinate-based detection
@@ -44,6 +65,11 @@ export async function getTimezoneFromCoords(lat: number, lng: number): Promise<s
     // Hawaii
     if (lat >= 18 && lat <= 29 && lng >= -161 && lng <= -154) {
         return 'Pacific/Honolulu';
+    }
+
+    // Colombia
+    if (lat >= -4 && lat <= 13 && lng >= -82 && lng <= -66) {
+        return 'America/Bogota';
     }
 
     // Brazil
@@ -81,27 +107,31 @@ export async function getTimezoneFromCoords(lat: number, lng: number): Promise<s
 }
 
 /**
- * Format timezone for display (e.g., "America/Sao_Paulo - Brasília (UTC-03:00)")
+ * Format timezone for display
  */
 export function formatTimezoneDisplay(timezone: string): string {
-    const info = TIMEZONE_OFFSETS[timezone];
-    if (info) {
-        return `${timezone} - ${info.label}`;
-    }
+    const found = IANA_TIMEZONES.find(t => t.value === timezone);
+    if (found) return found.label;
     return timezone;
 }
 
 /**
- * Get simple timezone label
+ * Get current time in a specific timezone
  */
-export function getTimezoneLabel(timezone: string): string {
-    const info = TIMEZONE_OFFSETS[timezone];
-    return info?.label || timezone;
+export function getZonedNow(timezone: string): Date {
+    return toZonedTime(new Date(), timezone);
+}
+
+/**
+ * Format a date in a specific timezone
+ */
+export function formatInTZ(date: Date | string | number, timezone: string, formatStr: string): string {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    return formatInTimeZone(d, timezone, formatStr);
 }
 
 /**
  * Convert a local date string to tenant timezone ISO string
- * This ensures dates are saved consistently regardless of browser timezone
  */
 export function toTenantISOString(
     dateStr: string,
@@ -110,9 +140,7 @@ export function toTenantISOString(
 ): string {
     // Create the date string in local format
     const localDateTimeStr = `${dateStr}T${timeStr}:00`;
-
-    // For now, we just return the local format without UTC conversion
-    // This matches the toLocalISOString approach used in BookingModal
+    // We keep ISO-8601 representation consistent
     return localDateTimeStr;
 }
 

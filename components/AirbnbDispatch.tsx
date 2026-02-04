@@ -7,14 +7,26 @@ import { DispatchTimeline } from './calendar/dispatch-timeline'
 import { Button } from './ui/button'
 import { RefreshCw, LayoutGrid, Calendar as CalendarIcon, Filter } from 'lucide-react'
 import { toast } from 'sonner'
-import { format } from 'date-fns'
+import { format, startOfDay, endOfDay } from 'date-fns'
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+
+import { useTimezone } from '@/contexts/TimezoneContext'
 
 export default function AirbnbDispatch() {
-    const [date, setDate] = useState(new Date())
+    const { timezone, now } = useTimezone()
+    const [date, setDate] = useState(now)
     const [employees, setEmployees] = useState([])
     const [bookings, setBookings] = useState([])
     const [loading, setLoading] = useState(true)
     const supabase = createClient()
+
+    useEffect(() => {
+        const today = format(now, 'yyyy-MM-dd')
+        const current = format(date, 'yyyy-MM-dd')
+        if (today === current) {
+            // Optional: keep it updated if viewing today
+        }
+    }, [now])
 
     const fetchData = async () => {
         setLoading(true)
@@ -28,7 +40,6 @@ export default function AirbnbDispatch() {
             if (teamError) throw teamError
 
             // Map team members to the interface expected by the timeline
-            // We use user_id as the ID for mapping assignments
             const mappedEmployees = (teamData || []).map((m: any) => ({
                 id: m.user_id || m.id,
                 full_name: m.name,
@@ -38,10 +49,9 @@ export default function AirbnbDispatch() {
             setEmployees(mappedEmployees)
 
             // 2. Fetch Bookings (Filtered for Airbnb/iCal)
-            const startOfDay = new Date(date)
-            startOfDay.setHours(0, 0, 0, 0)
-            const endOfDay = new Date(date)
-            endOfDay.setHours(23, 59, 59, 999)
+            const dateStr = format(date, 'yyyy-MM-dd')
+            const startOfDayISO = fromZonedTime(`${dateStr}T00:00:00`, timezone).toISOString()
+            const endOfDayISO = fromZonedTime(`${dateStr}T23:59:59.999`, timezone).toISOString()
 
             const { data: bookingData, error: bookingError } = await (supabase
                 .from('bookings') as any)
@@ -58,8 +68,8 @@ export default function AirbnbDispatch() {
                         member_id
                     )
                 `)
-                .gte('start_date', startOfDay.toISOString())
-                .lte('start_date', endOfDay.toISOString())
+                .gte('start_date', startOfDayISO)
+                .lte('start_date', endOfDayISO)
             // .not('calendar_id', 'is', null) // Commented out to show ALL bookings for testing
 
 
@@ -167,7 +177,7 @@ export default function AirbnbDispatch() {
                 </div>
 
                 <div className="flex items-center gap-3 w-full sm:w-auto">
-                    <Button variant="outline" className="gap-2 rounded-xl flex-1 sm:flex-none" onClick={() => setDate(new Date())}>
+                    <Button variant="outline" className="gap-2 rounded-xl flex-1 sm:flex-none" onClick={() => setDate(now)}>
                         <CalendarIcon size={18} />
                         Hoje, {format(date, 'dd MMM')}
                     </Button>

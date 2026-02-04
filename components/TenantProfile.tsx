@@ -6,7 +6,7 @@ import { InternationalPhoneInput } from './ui/InternationalPhoneInput';
 import { AddressAutocomplete } from './ui/AddressAutocomplete';
 import { createClient } from '../lib/supabase/client';
 import { toast } from 'sonner';
-import { getTimezoneFromCoords, formatTimezoneDisplay } from '../lib/timezone-utils';
+import { getTimezoneFromCoords, formatTimezoneDisplay, IANA_TIMEZONES } from '../lib/timezone-utils';
 
 interface TenantProfileData {
     name: string;
@@ -226,19 +226,30 @@ export const TenantProfile: React.FC = () => {
                         </p>
                     </div>
 
-                    {/* Timezone Display (Read-only) */}
+                    {/* Timezone Selection */}
                     <div className="space-y-2 mt-4">
                         <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Timezone</label>
                         <div className="relative">
-                            <Clock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                            <Input
-                                value={detectingTimezone ? 'Detecting...' : formatTimezoneDisplay(profile.timezone)}
-                                disabled
-                                className="pl-10 bg-slate-50 text-slate-600 cursor-not-allowed"
-                            />
+                            <Clock className="absolute left-3 top-3 h-4 w-4 text-slate-400 z-10" />
+                            <select
+                                value={profile.timezone}
+                                onChange={(e) => setProfile({ ...profile, timezone: e.target.value })}
+                                className="w-full h-11 pl-10 pr-3 rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                                disabled={detectingTimezone}
+                            >
+                                {detectingTimezone ? (
+                                    <option>Detectando...</option>
+                                ) : (
+                                    IANA_TIMEZONES.map(tz => (
+                                        <option key={tz.value} value={tz.value}>
+                                            {tz.label}
+                                        </option>
+                                    ))
+                                )}
+                            </select>
                         </div>
                         <p className="text-xs text-slate-400">
-                            Auto-detected from address. Used for all booking times.
+                            Fuso horário oficial da empresa. Todos os agendamentos e automações seguirão este horário.
                         </p>
                     </div>
                 </div>

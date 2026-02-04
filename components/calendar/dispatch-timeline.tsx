@@ -15,13 +15,17 @@ import {
   User,
   Clock,
   MapPin,
+  ChevronLeft,
   ChevronRight,
   ExternalLink,
   DollarSign,
-  ClipboardList
+  ClipboardList,
+  Target
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { parseISO, differenceInMinutes, startOfDay, setHours, addMinutes } from 'date-fns'
+import { parseISO, differenceInMinutes, startOfDay, setHours, addMinutes, format } from 'date-fns'
+import { toZonedTime, fromZonedTime } from 'date-fns-tz'
+import { useTimezone } from '@/contexts/TimezoneContext'
 
 interface Employee {
   id: string
@@ -54,8 +58,8 @@ const HOUR_WIDTH = 120 // pixels per hour
 const SLOT_DURATION = 1 // 1-minute precision for ultra-smooth drag
 const SNAP_PIXELS = (SLOT_DURATION / 60) * HOUR_WIDTH // 2px for 1min snap
 export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }: DispatchTimelineProps) {
+  const { now: currentTime, timezone } = useTimezone()
   const [selectedBooking, setSelectedBooking] = React.useState<Booking | null>(null)
-  const [currentTime, setCurrentTime] = React.useState(new Date())
   const containerRef = React.useRef<HTMLDivElement>(null)
   const rowRefs = React.useRef<Map<string, HTMLDivElement>>(new Map())
 
@@ -73,10 +77,32 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
     resizeSide?: 'left' | 'right'
   } | null>(null)
 
-  // Update current time every minute
+  // Time is managed by TimezoneProvider
+
+  // Navigation Helpers
+  const scrollToNow = () => {
+    if (!containerRef.current) return
+    const nowPos = getXPosition(currentTime.toISOString())
+    const centerOffset = containerRef.current.clientWidth / 2
+    containerRef.current.scrollTo({
+      left: Math.max(0, 224 + nowPos - centerOffset),
+      behavior: 'smooth'
+    })
+  }
+
+  const scrollHorizontally = (direction: 'left' | 'right') => {
+    if (!containerRef.current) return
+    const scrollAmount = containerRef.current.clientWidth * 0.75
+    containerRef.current.scrollBy({
+      left: direction === 'left' ? -scrollAmount : scrollAmount,
+      behavior: 'smooth'
+    })
+  }
+
+  // Auto-scroll to "Now" on mount
   React.useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 60000)
-    return () => clearInterval(timer)
+    const timer = setTimeout(scrollToNow, 500)
+    return () => clearTimeout(timer)
   }, [])
 
   // Auto-scroll logic during drag
@@ -107,15 +133,15 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
   const assignedBookings = bookings.filter(b => (b.resource_ids || []).length > 0)
 
   const getXPosition = (timeStr: string) => {
-    const start = parseISO(timeStr)
-    const viewStart = startOfDay(date)
+    const start = toZonedTime(parseISO(timeStr), timezone)
+    const viewStart = startOfDay(date) // date is already zoned (now)
     const diff = differenceInMinutes(start, viewStart)
     return (diff / 60) * HOUR_WIDTH
   }
 
   const getWidth = (startStr: string, endStr?: string | null) => {
-    const start = parseISO(startStr)
-    const end = endStr ? parseISO(endStr) : addMinutes(start, 60) // Default 1h if null
+    const start = toZonedTime(parseISO(startStr), timezone)
+    const end = endStr ? toZonedTime(parseISO(endStr), timezone) : addMinutes(start, 60) // Default 1h if null
     const diff = differenceInMinutes(end, start)
     return (diff / 60) * HOUR_WIDTH
   }
@@ -166,10 +192,10 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
             const snappedWidth = Math.max(HOUR_WIDTH * (SLOT_DURATION / 60), Math.round(rawNewWidth / SNAP_PIXELS) * SNAP_PIXELS)
             const durationHours = snappedWidth / HOUR_WIDTH
 
-            const start = parseISO(booking.start_time)
+            const start = toZonedTime(parseISO(booking.start_time), timezone)
             const newEnd = new Date(start.getTime() + durationHours * 60 * 60 * 1000)
 
-            onBookingUpdate(booking.id, { end_time: newEnd.toISOString() })
+            onBookingUpdate(booking.id, { end_time: fromZonedTime(newEnd, timezone).toISOString() })
           } else {
             const resultWidth = interaction.initialWidth - deltaX
             // Snap delta
@@ -177,28 +203,26 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
             // Limit so width doesn't go negative
             const finalDelta = Math.min(snappedDelta, interaction.initialWidth - (HOUR_WIDTH * (SLOT_DURATION / 60)))
 
-            const start = parseISO(booking.start_time)
+            const start = toZonedTime(parseISO(booking.start_time), timezone)
             const viewStart = startOfDay(date)
             // Current minutes relative to start
             const currentMins = differenceInMinutes(start, viewStart)
             const addedMins = (finalDelta / HOUR_WIDTH) * 60
 
             const newStart = addMinutes(start, addedMins)
-            // End stays same
-            const end = booking.end_time ? parseISO(booking.end_time) : addMinutes(start, 60) // shouldn't happen if width maintained
 
-            onBookingUpdate(booking.id, { start_time: newStart.toISOString() })
+            onBookingUpdate(booking.id, { start_time: fromZonedTime(newStart, timezone).toISOString() })
           }
         } else {
           // Drag Logic
           const snappedDelta = Math.round(deltaX / SNAP_PIXELS) * SNAP_PIXELS
 
           // Time Update
-          const start = parseISO(booking.start_time)
+          const start = toZonedTime(parseISO(booking.start_time), timezone)
           const addedMins = (snappedDelta / HOUR_WIDTH) * 60
           const newStart = addMinutes(start, addedMins)
 
-          const duration = differenceInMinutes(booking.end_time ? parseISO(booking.end_time) : addMinutes(start, 120), start)
+          const duration = differenceInMinutes(booking.end_time ? toZonedTime(parseISO(booking.end_time), timezone) : addMinutes(start, 120), start)
           const newEnd = addMinutes(newStart, duration)
 
           // Resource Update (Row Detection)
@@ -215,8 +239,8 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
           }
 
           onBookingUpdate(booking.id, {
-            start_time: newStart.toISOString(),
-            end_time: newEnd.toISOString(),
+            start_time: fromZonedTime(newStart, timezone).toISOString(),
+            end_time: fromZonedTime(newEnd, timezone).toISOString(),
             resource_ids: [newResourceId]
           })
         }
@@ -236,7 +260,7 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
     }
   }, [interaction, bookings, onBookingUpdate, date])
 
-  const nowPosition = getXPosition(currentTime.toISOString())
+  const nowPosition = getXPosition(new Date().toISOString())
 
   return (
     <div className="flex h-full bg-slate-100/50 gap-4 p-4 overflow-hidden">
@@ -278,7 +302,7 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
                 <div className="flex items-center gap-3 text-[10px] font-bold text-slate-500">
                   <span className="flex items-center gap-1">
                     <Clock size={12} className="text-indigo-400" />
-                    {parseISO(booking.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    {format(toZonedTime(parseISO(booking.start_time), timezone), 'HH:mm')}
                   </span>
                   <span className="text-emerald-600 font-black">R${booking.price}</span>
                 </div>
@@ -300,9 +324,36 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
               style={{ left: `${224 + nowPosition}px` }}
             >
               <div className="absolute top-0 -left-[5px] w-[10px] h-[10px] bg-rose-500 rounded-full shadow-lg" />
-              <div className="absolute top-0 -left-6 bg-rose-500 text-white text-[8px] font-bold px-1 rounded shadow-md uppercase">
+              <div className="absolute top-0 -left-6 bg-rose-500 text-white text-[8px] font-extrabold px-1.5 py-0.5 rounded shadow-md uppercase tracking-tighter">
                 Agora
               </div>
+            </div>
+
+            {/* Floating Navigation Controls */}
+            <div className="fixed bottom-8 right-8 z-[100] flex items-center gap-2 p-2 bg-white/80 backdrop-blur-xl border border-white/40 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.12)] animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => scrollHorizontally('left')}
+                className="h-12 w-12 rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-600 shadow-sm"
+              >
+                <ChevronLeft size={24} />
+              </Button>
+              <Button
+                onClick={scrollToNow}
+                className="h-12 px-6 rounded-xl bg-slate-900 border-none hover:bg-slate-800 text-white font-black text-xs uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-slate-200"
+              >
+                <Target size={16} className="text-rose-400" />
+                Agora
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => scrollHorizontally('right')}
+                className="h-12 w-12 rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-600 shadow-sm"
+              >
+                <ChevronRight size={24} />
+              </Button>
             </div>
 
             {/* Timeline Header (Sticky Top) */}
@@ -331,7 +382,7 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
                 employees.map(member => {
                   const memberBookings = assignedBookings
                     .filter(b => b.resource_ids?.includes(member.id))
-                    .sort((a, b) => parseISO(a.start_time).getTime() - parseISO(b.start_time).getTime())
+                    .sort((a, b) => toZonedTime(parseISO(a.start_time), timezone).getTime() - toZonedTime(parseISO(b.start_time), timezone).getTime())
 
                   return (
                     <div key={member.id} className="flex border-b last:border-0 hover:bg-slate-50/30 transition-colors">
@@ -377,7 +428,7 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
 
                           // Conflict Detection (check against next booking)
                           const nextBooking = memberBookings[idx + 1]
-                          const hasConflict = nextBooking && parseISO(nextBooking.start_time) < (booking.end_time ? parseISO(booking.end_time) : addMinutes(parseISO(booking.start_time), 60))
+                          const hasConflict = nextBooking && toZonedTime(parseISO(nextBooking.start_time), timezone) < (booking.end_time ? toZonedTime(parseISO(booking.end_time), timezone) : addMinutes(toZonedTime(parseISO(booking.start_time), timezone), 60))
 
                           // Interaction calculations
                           let top = 16
@@ -407,10 +458,10 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
 
                               // Snap prediction for label
                               const snappedDelta = Math.round(deltaX / SNAP_PIXELS) * SNAP_PIXELS
-                              const start = parseISO(booking.start_time)
+                              const start = toZonedTime(parseISO(booking.start_time), timezone)
                               const addedMins = (snappedDelta / HOUR_WIDTH) * 60
                               const predictedStart = addMinutes(start, addedMins)
-                              liveTimeLabel = predictedStart.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                              liveTimeLabel = format(predictedStart, 'HH:mm')
                             }
                           }
 
@@ -476,7 +527,7 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
                                 <div className="flex items-center justify-between text-[9px] font-bold opacity-80 pointer-events-none">
                                   <span className="flex items-center gap-1">
                                     <Clock size={10} />
-                                    {parseISO(booking.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                    {format(toZonedTime(parseISO(booking.start_time), timezone), 'HH:mm')}
                                   </span>
                                   <span className="bg-white/50 px-1 rounded text-emerald-700 font-bold">R${booking.price}</span>
                                 </div>
@@ -545,7 +596,7 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
                     <span className="text-[10px] font-bold text-slate-400 uppercase">Horário</span>
                     <div className="flex items-center gap-2 font-bold text-slate-900">
                       <Clock size={16} className="text-amber-500" />
-                      {parseISO(selectedBooking.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      {format(toZonedTime(parseISO(selectedBooking.start_time), timezone), 'HH:mm')}
                     </div>
                   </div>
                   <div className="p-4 rounded-2xl border bg-white flex flex-col gap-1 shadow-sm">

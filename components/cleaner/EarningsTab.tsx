@@ -149,32 +149,32 @@ export const EarningsTab: React.FC<EarningsTabProps> = ({ userId }) => {
                 <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100">
                     <div className="flex items-center gap-2 mb-2">
                         <Clock size={16} className="text-amber-600" />
-                        <span className="text-xs font-bold text-amber-600 uppercase">Pendente</span>
+                        <span className="text-xs font-bold text-amber-600 uppercase">{t('payroll.summary.pending', 'Pending')}</span>
                     </div>
                     <p className="text-2xl font-black text-amber-700">${totalPending.toFixed(2)}</p>
-                    <p className="text-xs text-amber-500">{pendingCount} jobs</p>
+                    <p className="text-xs text-amber-500">{t('payroll.work.jobs', '{{count}} jobs', { count: pendingCount })}</p>
                 </div>
                 <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100">
                     <div className="flex items-center gap-2 mb-2">
                         <CheckCircle size={16} className="text-emerald-600" />
-                        <span className="text-xs font-bold text-emerald-600 uppercase">Recebido</span>
+                        <span className="text-xs font-bold text-emerald-600 uppercase">{t('payroll.summary.received', 'Received')}</span>
                     </div>
                     <p className="text-2xl font-black text-emerald-700">${totalReceived.toFixed(2)}</p>
-                    <p className="text-xs text-emerald-500">{paidCount} jobs</p>
+                    <p className="text-xs text-emerald-500">{t('payroll.work.jobs', '{{count}} jobs', { count: paidCount })}</p>
                 </div>
                 <div className="bg-indigo-50 rounded-2xl p-4 border border-indigo-100">
                     <div className="flex items-center gap-2 mb-2">
                         <TrendingUp size={16} className="text-indigo-600" />
-                        <span className="text-xs font-bold text-indigo-600 uppercase">Semana</span>
+                        <span className="text-xs font-bold text-indigo-600 uppercase">{t('payroll.summary.week', 'Week')}</span>
                     </div>
                     <p className="text-2xl font-black text-indigo-700">${thisWeekEarnings.toFixed(2)}</p>
-                    <p className="text-xs text-indigo-500">{thisWeekCount} jobs</p>
+                    <p className="text-xs text-indigo-500">{t('payroll.work.jobs', '{{count}} jobs', { count: thisWeekCount })}</p>
                 </div>
             </div>
 
             {/* Filter */}
             <div className="flex items-center justify-between">
-                <h3 className="font-bold text-slate-700">Histórico</h3>
+                <h3 className="font-bold text-slate-700">History</h3>
                 <div className="flex gap-2">
                     {(['all', 'pending', 'paid'] as const).map(f => (
                         <button
@@ -185,7 +185,7 @@ export const EarningsTab: React.FC<EarningsTabProps> = ({ userId }) => {
                                 : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                                 }`}
                         >
-                            {f === 'all' ? 'Todos' : f === 'pending' ? 'Pendentes' : 'Pagos'}
+                            {f === 'all' ? t('common.all', 'All') : f === 'pending' ? t('payroll.status.pending', 'Pending') : t('payroll.status.paid', 'Paid')}
                         </button>
                     ))}
                 </div>
@@ -208,11 +208,11 @@ export const EarningsTab: React.FC<EarningsTabProps> = ({ userId }) => {
                                     <div className="flex items-start justify-between">
                                         <div className="flex-1 min-w-0">
                                             <h4 className="font-bold text-slate-800 truncate">
-                                                {entry.customers?.name || 'Cliente'}
+                                                {entry.customers?.name || t('payroll.table.customer', 'Customer')}
                                             </h4>
                                             <p className="text-xs text-slate-400 flex items-center gap-1 truncate">
                                                 <MapPin size={12} />
-                                                {entry.customers?.address || 'Sem endereço'}
+                                                {entry.customers?.address || t('payroll.table.no_address', 'No address')}
                                             </p>
                                         </div>
                                         <div className="text-right ml-3">
@@ -224,7 +224,7 @@ export const EarningsTab: React.FC<EarningsTabProps> = ({ userId }) => {
                                                 ? 'bg-emerald-100 text-emerald-700'
                                                 : 'bg-amber-100 text-amber-700'
                                                 }`}>
-                                                {entry.pay_status === 'paid' ? '✓ PAGO' : 'PENDENTE'}
+                                                {entry.pay_status === 'paid' ? `✓ ${t('payroll.status.paid', 'PAID')}` : t('payroll.status.pending', 'PENDING')}
                                             </span>
                                         </div>
                                     </div>
@@ -240,7 +240,7 @@ export const EarningsTab: React.FC<EarningsTabProps> = ({ userId }) => {
                 <div className="space-y-3">
                     <h3 className="font-bold text-slate-700 flex items-center gap-2 border-t pt-6">
                         <TrendingUp size={16} className="text-indigo-600" />
-                        Histórico de Pagamentos e Ajustes
+                        {t('payroll.history.title', 'Payout & Adjustment History')}
                     </h3>
                     <div className="space-y-2">
                         {payrollEntries.map(entry => (
@@ -248,18 +248,18 @@ export const EarningsTab: React.FC<EarningsTabProps> = ({ userId }) => {
                                 <div className="flex items-center justify-between">
                                     <div>
                                         <p className="text-xs font-bold text-indigo-600 uppercase">
-                                            {entry.status === 'paid' ? 'Recibo de Pagamento' : 'Ajuste de Salário'}
+                                            {entry.status === 'paid' ? t('payroll.history.payment_receipt', 'Payment Receipt') : t('payroll.history.adjustment', 'Payroll Adjustment')}
                                         </p>
                                         <p className="text-sm font-medium text-slate-700">
-                                            Período: {entry.payroll_periods?.period_start ? format(parseISO(entry.payroll_periods.period_start), 'dd/MM') : ''} -
-                                            {entry.payroll_periods?.period_end ? format(parseISO(entry.payroll_periods.period_end), 'dd/MM') : ''}
+                                            {t('payroll.period.label', 'Period')}: {entry.payroll_periods?.period_start ? format(parseISO(entry.payroll_periods.period_start), 'MM/dd') : ''} -
+                                            {entry.payroll_periods?.period_end ? format(parseISO(entry.payroll_periods.period_end), 'MM/dd') : ''}
                                         </p>
                                     </div>
                                     <div className="text-right">
                                         <p className="font-black text-indigo-700">
                                             +${(entry.bonuses || 0).toFixed(2)}
                                         </p>
-                                        <span className="text-[10px] font-bold text-indigo-400">BÔNUS / EXTRA</span>
+                                        <span className="text-[10px] font-bold text-indigo-400">{t('payroll.history.bonus_extra', 'BONUS / EXTRA')}</span>
                                     </div>
                                 </div>
                             </div>

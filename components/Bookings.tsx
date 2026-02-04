@@ -36,6 +36,8 @@ import {
   subDays
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useTimezone } from '../contexts/TimezoneContext';
+import { toZonedTime, formatInTimeZone } from 'date-fns-tz';
 
 type ViewMode = 'month' | 'week' | 'day' | 'dispatch';
 
@@ -53,8 +55,9 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export const Bookings: React.FC = () => {
   const { t } = useTranslation();
+  const { timezone, now: zonedNow, formatTime } = useTimezone();
   const supabase = createClient();
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(zonedNow);
 
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -218,8 +221,8 @@ export const Bookings: React.FC = () => {
       }
 
       // Check time bounds
-      const startString = format(start, 'HH:mm:ss');
-      const endString = format(end, 'HH:mm:ss');
+      const startString = formatInTimeZone(start, timezone, 'HH:mm:ss');
+      const endString = formatInTimeZone(end, timezone, 'HH:mm:ss');
       // Simple string comparison works for HH:mm:ss 24h format
       // rule.start_time / end_time usually HH:mm:ss or HH:mm
 
@@ -234,8 +237,8 @@ export const Bookings: React.FC = () => {
       if (b.id === excludeBookingId) return false;
       if ((b as any).assigned_to !== cleanerId) return false;
 
-      const existingStart = parseISO(b.start_date);
-      const existingEnd = parseISO(b.end_date);
+      const existingStart = toZonedTime(parseISO(b.start_date), timezone);
+      const existingEnd = toZonedTime(parseISO(b.end_date), timezone);
 
       // Conflict if overlap
       // (StartA < EndB) and (EndA > StartB)
@@ -348,7 +351,7 @@ export const Bookings: React.FC = () => {
 
   const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
   const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
-  const goToToday = () => setCurrentDate(new Date());
+  const goToToday = () => setCurrentDate(zonedNow);
 
   const navigateNext = () => {
     if (viewMode === 'month') setCurrentDate(addMonths(currentDate, 1));
@@ -364,8 +367,8 @@ export const Bookings: React.FC = () => {
 
   const getDayBookings = (day: Date) => {
     return bookings.filter(b => {
-      const start = parseISO(b.start_date);
-      const end = parseISO(b.end_date);
+      const start = toZonedTime(parseISO(b.start_date), timezone);
+      const end = toZonedTime(parseISO(b.end_date), timezone);
       return isWithinInterval(day, { start, end }) || isSameDay(day, start);
     });
   };
@@ -441,8 +444,8 @@ export const Bookings: React.FC = () => {
     const booking = bookings.find(b => b.id === bookingId) as any;
     if (!booking) return;
 
-    const start = parseISO(booking.start_date);
-    const end = parseISO(booking.end_date);
+    const start = toZonedTime(parseISO(booking.start_date), timezone);
+    const end = toZonedTime(parseISO(booking.end_date), timezone);
     const duration = end.getTime() - start.getTime();
 
     const newStart = targetDate;
@@ -462,7 +465,7 @@ export const Bookings: React.FC = () => {
         : b
     );
     setBookings(updatedBookings as any);
-    toast.success(`Reagendado para ${format(newStart, 'd MMM, HH:mm', { locale: ptBR })}`);
+    toast.success(`Reagendado para ${formatInTimeZone(newStart, timezone, 'd MMM, HH:mm', { locale: ptBR })}`);
 
     const { error } = await (supabase
       .from('bookings') as any)
@@ -795,7 +798,7 @@ export const Bookings: React.FC = () => {
                 {isDetails && (
                   <span className="text-sm font-normal text-slate-500 flex items-center gap-2">
                     <CalendarIcon size={14} />
-                    {selectedBooking && format(parseISO(selectedBooking.start_date), 'PPP')} - {selectedBooking && format(parseISO(selectedBooking.end_date), 'PPP')}
+                    {selectedBooking && formatTime(selectedBooking.start_date, 'PPP')} - {selectedBooking && formatTime(selectedBooking.end_date, 'PPP')}
                   </span>
                 )}
               </div>

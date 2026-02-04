@@ -14,6 +14,7 @@ import {
     DropdownMenuTrigger,
 } from '../ui/dropdown-menu.tsx';
 import { DollarSign } from 'lucide-react';
+import { useTimezone } from '../../contexts/TimezoneContext';
 import { QuickPaymentModal } from '../commerce/QuickPaymentModal.tsx';
 
 interface Conversation {
@@ -48,6 +49,7 @@ export const UnifiedInbox: React.FC = () => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const textInputRef = useRef<HTMLInputElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const { formatTime } = useTimezone();
     const { makeCall } = useTelnyx();
     const supabase = createClient();
 
@@ -140,7 +142,7 @@ export const UnifiedInbox: React.FC = () => {
                     id: log.id,
                     content: log.notes || '(No Content)',
                     direction: log.direction, // 'inbound' or 'outbound'
-                    created_at: new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    created_at: formatTime(log.created_at, 'HH:mm'),
                     status: log.status || 'sent'
                 }));
                 setMessages(loadedMessages);
@@ -175,7 +177,7 @@ export const UnifiedInbox: React.FC = () => {
                         customer_name: target, // Use phone as name
                         customer_phone: target,
                         last_message: 'Drafting...',
-                        last_message_at: new Date().toLocaleTimeString(),
+                        last_message_at: formatTime(new Date(), 'HH:mm'),
                         unread_count: 0,
                         avatar_color: getAvatarColor(target),
                         channel: 'sms'
@@ -212,7 +214,7 @@ export const UnifiedInbox: React.FC = () => {
             id: tempId,
             content: inputText,
             direction: 'outbound',
-            created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            created_at: formatTime(new Date(), 'HH:mm'),
             status: 'queued'
         };
 
@@ -324,7 +326,7 @@ export const UnifiedInbox: React.FC = () => {
                     id: Date.now().toString(),
                     content: `[File] ${file.name}`,
                     direction: 'outbound',
-                    created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    created_at: formatTime(new Date(), 'HH:mm'),
                     status: 'sent'
                 };
                 setMessages(prev => [...prev, newMessage]);

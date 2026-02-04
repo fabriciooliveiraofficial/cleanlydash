@@ -27,6 +27,9 @@ interface NotificationSettingsData {
         emails: string[];
         phones: string[];
     };
+    push_config?: {
+        [key: string]: 'standard' | 'rich' | 'interactive';
+    };
 }
 
 export const NotificationSettings: React.FC = () => {
@@ -53,7 +56,8 @@ export const NotificationSettings: React.FC = () => {
         recipients: {
             emails: [],
             phones: []
-        }
+        },
+        push_config: {}
     });
 
     const { tenant_id, user: authUser } = useRole();
@@ -405,34 +409,67 @@ export const NotificationSettings: React.FC = () => {
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {[
-                                        { key: 'new_booking', label: 'Nova Reserva', desc: 'Reserva confirmada via integração.', group: 'Operacional' },
-                                        { key: 'booking_cancelled', label: 'Cancelamento', desc: 'Alertar quando uma faxina for abortada.', group: 'Operacional' },
-                                        { key: 'checklist_completed', label: 'Checklist OK', desc: 'Faxineira finalizou as tarefas.', group: 'Operacional' },
-                                        { key: 'checkin_alert', label: 'Time Window', desc: 'Alerta 1h antes do check-in.', group: 'Operacional' },
-                                        { key: 'support_reply', label: 'Ticket Atendido', desc: 'Nossa equipe respondeu seu chamado.', group: 'Suporte' },
-                                        { key: 'new_review', label: 'Review Recebida', desc: 'Notas e comentários do proprietário.', group: 'Suporte' },
-                                        { key: 'payment_failed', label: 'Falha Cobrança', desc: 'Assinatura ou crédito com erro.', group: 'Financeiro' },
-                                        { key: 'low_balance', label: 'Saldo Crítico', desc: 'Créditos de API abaixo de 10%.', group: 'Financeiro' },
-                                    ].map((event) => (
-                                        <div
-                                            key={event.key}
-                                            onClick={() => toggleEvent(event.key as any)}
-                                            className={`group cursor-pointer p-5 rounded-2xl border transition-all duration-300 ${(settings.events as any)[event.key]
-                                                ? 'bg-white border-indigo-200 shadow-md ring-1 ring-indigo-50'
-                                                : 'bg-slate-50 border-slate-100 hover:border-slate-200 opacity-70'
-                                                }`}
-                                        >
-                                            <div className="flex items-start justify-between mb-3">
-                                                <div className={`p-2 rounded-xl transition-all ${(settings.events as any)[event.key] ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-400'
-                                                    }`}>
-                                                    <CheckCircle size={16} />
+                                        { key: 'new_booking', label: 'Nova Reserva', desc: 'Reserva confirmada.', group: 'Operacional' },
+                                        { key: 'booking_cancelled', label: 'Cancelamento', desc: 'Faxina abortada.', group: 'Operacional' },
+                                        { key: 'checklist_completed', label: 'Checklist OK', desc: 'Tarefa finalizada.', group: 'Operacional' },
+                                        { key: 'checkin_alert', label: 'Check-in', desc: 'Início do serviço.', group: 'Operacional' },
+                                        { key: 'support_reply', label: 'Ticket', desc: 'Resposta do suporte.', group: 'Suporte' },
+                                        { key: 'new_review', label: 'Review', desc: 'Feedback recebido.', group: 'Suporte' },
+                                        { key: 'payment_failed', label: 'Pagamento', desc: 'Falha na cobrança.', group: 'Financeiro' },
+                                        { key: 'low_balance', label: 'Saldo', desc: 'API Credits low.', group: 'Financeiro' },
+                                    ].map((event) => {
+                                        const eventKey = event.key as keyof typeof settings.events;
+                                        const isEnabled = settings.events[eventKey];
+                                        const pushType = (settings.push_config as any)?.[eventKey] || 'standard';
+
+                                        return (
+                                            <div
+                                                key={event.key}
+                                                className={`group p-4 rounded-2xl border transition-all duration-300 ${isEnabled
+                                                    ? 'bg-white border-indigo-200 shadow-md ring-1 ring-indigo-50'
+                                                    : 'bg-slate-50 border-slate-100 hover:border-slate-200'
+                                                    }`}
+                                            >
+                                                <div className="flex items-start justify-between mb-3">
+                                                    <div className="flex gap-2">
+                                                        <div
+                                                            onClick={() => toggleEvent(eventKey)}
+                                                            className={`cursor-pointer p-2 rounded-xl transition-all ${isEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-400'}`}
+                                                        >
+                                                            <CheckCircle size={16} />
+                                                        </div>
+                                                        <div>
+                                                            <h4 className="text-sm font-bold text-slate-900">{event.label}</h4>
+                                                            <p className="text-xs text-slate-500 font-medium">{event.desc}</p>
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{event.group}</span>
+
+                                                {isEnabled && (
+                                                    <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Push Type</span>
+                                                        <select
+                                                            value={pushType}
+                                                            onChange={(e) => {
+                                                                setSettings(prev => ({
+                                                                    ...prev,
+                                                                    push_config: {
+                                                                        ...prev.push_config,
+                                                                        [eventKey]: e.target.value
+                                                                    }
+                                                                }));
+                                                            }}
+                                                            className="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg px-2 py-1 outline-none focus:ring-2 ring-indigo-200 cursor-pointer"
+                                                        >
+                                                            <option value="standard">Standard</option>
+                                                            <option value="rich">Rich Media</option>
+                                                            <option value="interactive">Interactive</option>
+                                                        </select>
+                                                    </div>
+                                                )}
                                             </div>
-                                            <h4 className="text-sm font-bold text-slate-900 mb-1">{event.label}</h4>
-                                            <p className="text-xs text-slate-500 font-medium leading-relaxed">{event.desc}</p>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
 

@@ -1,6 +1,8 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { format, isSameDay, parseISO, isBefore, addHours } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useTimezone } from '../../contexts/TimezoneContext';
+import { toZonedTime, formatInTimeZone } from 'date-fns-tz';
 import { AlertCircle, Clock, ClipboardList } from 'lucide-react';
 import { Badge } from '../ui/badge';
 
@@ -38,7 +40,8 @@ export const DayView: React.FC<DayViewProps> = ({
     onBookingMove,
     onBookingResize
 }) => {
-    const dayBookings = bookings.filter(b => isSameDay(parseISO(b.start_date), currentDate));
+    const { timezone, now: zonedNow, formatTime } = useTimezone();
+    const dayBookings = bookings.filter(b => isSameDay(toZonedTime(parseISO(b.start_date), timezone), currentDate));
 
     // Refs for touch handling
     const longPressTimer = useRef<NodeJS.Timeout | null>(null);
@@ -74,31 +77,31 @@ export const DayView: React.FC<DayViewProps> = ({
             if (b.id === bookingId) return false;
             if (b.assigned_to !== assignedTo) return false;
 
-            const existingStart = parseISO(b.start_date);
-            const existingEnd = parseISO(b.end_date);
+            const existingStart = toZonedTime(parseISO(b.start_date), timezone);
+            const existingEnd = toZonedTime(parseISO(b.end_date), timezone);
 
             return (newStart < existingEnd && newEnd > existingStart);
         });
-    }, [bookings]);
+    }, [bookings, timezone]);
 
     const getBookingsStartingAt = (hour: number) => {
         return dayBookings.filter(booking => {
-            const start = parseISO(booking.start_date);
+            const start = toZonedTime(parseISO(booking.start_date), timezone);
             return start.getHours() === hour;
         });
     };
 
     const getBookingCoveringSlot = (hour: number): Booking | null => {
         return dayBookings.find(booking => {
-            const start = parseISO(booking.start_date);
-            const end = parseISO(booking.end_date);
+            const start = toZonedTime(parseISO(booking.start_date), timezone);
+            const end = toZonedTime(parseISO(booking.end_date), timezone);
             return start.getHours() <= hour && end.getHours() > hour;
         }) || null;
     };
 
     const getBookingSpan = (booking: Booking) => {
-        const start = parseISO(booking.start_date);
-        const end = parseISO(booking.end_date);
+        const start = toZonedTime(parseISO(booking.start_date), timezone);
+        const end = toZonedTime(parseISO(booking.end_date), timezone);
         const hours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
         return Math.max(1, hours);
     };
@@ -106,10 +109,10 @@ export const DayView: React.FC<DayViewProps> = ({
     const isPast = (hour: number) => {
         const slotTime = new Date(currentDate);
         slotTime.setHours(hour, 0, 0, 0);
-        return isBefore(slotTime, new Date());
+        return isBefore(slotTime, zonedNow);
     };
 
-    const isToday = isSameDay(currentDate, new Date());
+    const isToday = isSameDay(currentDate, zonedNow);
 
     const getHourFromTouch = (clientY: number): number | null => {
         if (!gridRef.current) return null;
@@ -161,8 +164,8 @@ export const DayView: React.FC<DayViewProps> = ({
         const snappedMinutes = Math.round(rawMinutes / 1); // 1-min precision
 
         if (draggedBooking) {
-            const originalStart = parseISO(draggedBooking.start_date);
-            const originalEnd = parseISO(draggedBooking.end_date);
+            const originalStart = toZonedTime(parseISO(draggedBooking.start_date), timezone);
+            const originalEnd = toZonedTime(parseISO(draggedBooking.end_date), timezone);
             const duration = originalEnd.getTime() - originalStart.getTime();
 
             const newStart = new Date(currentDate);
@@ -198,8 +201,8 @@ export const DayView: React.FC<DayViewProps> = ({
         setDragOverHour(null);
 
         if (draggedBooking && onBookingMove) {
-            const originalStart = parseISO(draggedBooking.start_date);
-            const originalEnd = parseISO(draggedBooking.end_date);
+            const originalStart = toZonedTime(parseISO(draggedBooking.start_date), timezone);
+            const originalEnd = toZonedTime(parseISO(draggedBooking.end_date), timezone);
             const duration = originalEnd.getTime() - originalStart.getTime();
 
             const rect = e.currentTarget.getBoundingClientRect();
@@ -263,8 +266,8 @@ export const DayView: React.FC<DayViewProps> = ({
             if (hour !== null) {
                 setDragOverHour(hour);
 
-                const originalStart = parseISO(touchDragBooking.start_date);
-                const originalEnd = parseISO(touchDragBooking.end_date);
+                const originalStart = toZonedTime(parseISO(touchDragBooking.start_date), timezone);
+                const originalEnd = toZonedTime(parseISO(touchDragBooking.end_date), timezone);
                 const duration = originalEnd.getTime() - originalStart.getTime();
 
                 const newStart = new Date(currentDate);
@@ -287,8 +290,8 @@ export const DayView: React.FC<DayViewProps> = ({
         }
 
         if (touchDragBooking && dragOverHour !== null && onBookingMove) {
-            const originalStart = parseISO(touchDragBooking.start_date);
-            const originalEnd = parseISO(touchDragBooking.end_date);
+            const originalStart = toZonedTime(parseISO(touchDragBooking.start_date), timezone);
+            const originalEnd = toZonedTime(parseISO(touchDragBooking.end_date), timezone);
             const duration = originalEnd.getTime() - originalStart.getTime();
 
             const newStart = new Date(currentDate);
@@ -333,9 +336,9 @@ export const DayView: React.FC<DayViewProps> = ({
 
             const deltaHours = Math.round(deltaY / HOUR_HEIGHT);
             if (deltaHours !== 0) {
-                const originalEnd = parseISO(booking.end_date);
+                const originalEnd = toZonedTime(parseISO(booking.end_date), timezone);
                 const newEnd = addHours(originalEnd, deltaHours);
-                const originalStart = parseISO(booking.start_date);
+                const originalStart = toZonedTime(parseISO(booking.start_date), timezone);
 
                 if (newEnd.getTime() > originalStart.getTime() + 30 * 60 * 1000) {
                     if (checkConflict(booking.id, booking.assigned_to, originalStart, newEnd)) {
@@ -363,9 +366,9 @@ export const DayView: React.FC<DayViewProps> = ({
             const deltaHours = Math.round(finalDelta / HOUR_HEIGHT);
 
             if (deltaHours !== 0 && onBookingResize) {
-                const originalEnd = parseISO(booking.end_date);
+                const originalEnd = toZonedTime(parseISO(booking.end_date), timezone);
                 const newEnd = addHours(originalEnd, deltaHours);
-                const originalStart = parseISO(booking.start_date);
+                const originalStart = toZonedTime(parseISO(booking.start_date), timezone);
 
                 if (newEnd.getTime() > originalStart.getTime() + 30 * 60 * 1000) {
                     if (!checkConflict(booking.id, booking.assigned_to, originalStart, newEnd)) {
@@ -480,7 +483,7 @@ export const DayView: React.FC<DayViewProps> = ({
                                         className="absolute left-1 right-1 rounded-lg pointer-events-none z-[100] border-2 border-indigo-400 bg-indigo-500/10 shadow-xl overflow-hidden flex flex-col p-2"
                                         style={{
                                             top: `${dragOverMinute / 60 * HOUR_HEIGHT}px`,
-                                            height: `${(parseISO(draggedBooking.end_date).getTime() - parseISO(draggedBooking.start_date).getTime()) / (1000 * 60 * 60) * HOUR_HEIGHT}px`
+                                            height: `${(toZonedTime(parseISO(draggedBooking.end_date), timezone).getTime() - toZonedTime(parseISO(draggedBooking.start_date), timezone).getTime()) / (1000 * 60 * 60) * HOUR_HEIGHT}px`
                                         }}
                                     >
                                         <div className="flex items-center gap-1.5 mb-1">
@@ -555,7 +558,7 @@ export const DayView: React.FC<DayViewProps> = ({
                                             <div className="px-4 py-2 h-full flex flex-col pointer-events-none select-none">
                                                 <div className="flex items-center justify-between">
                                                     <div className="text-sm font-bold">
-                                                        {format(parseISO(booking.start_date), 'HH:mm')} - {format(parseISO(booking.end_date), 'HH:mm')}
+                                                        {formatTime(booking.start_date, 'HH:mm')} - {formatTime(booking.end_date, 'HH:mm')}
                                                     </div>
                                                     <Badge
                                                         className="px-2 py-0 text-[10px] uppercase font-bold bg-white/20"

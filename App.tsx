@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { TenantApp } from './components/TenantApp';
-import { PlatformApp } from './components/PlatformApp';
-import { CleanerAppWrapper } from './components/cleaner/CleanerAppWrapper';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { useSessionManager } from './hooks/use-session-manager';
+
+const TenantApp = lazy(() => import('./components/TenantApp').then(m => ({ default: m.TenantApp })));
+const PlatformApp = lazy(() => import('./components/PlatformApp').then(m => ({ default: m.PlatformApp })));
+const CleanerAppWrapper = lazy(() => import('./components/cleaner/CleanerAppWrapper').then(m => ({ default: m.CleanerAppWrapper })));
 
 const App: React.FC = () => {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
@@ -44,29 +45,23 @@ const App: React.FC = () => {
     return <div className="flex items-center justify-center h-screen">Carregando...</div>;
   }
 
-  // 1. Platform App (Admin)
-  if (currentPath.startsWith('/admin/platform') || currentPath.startsWith('/platform') || currentPath.startsWith('/callback')) {
-    return (
-      <>
-        <PlatformApp />
-      </>
-    );
-  }
-
-  // 2. Cleaner App
-  if (currentPath.startsWith('/cleaner')) {
-    return (
-      <>
-        <CleanerAppWrapper />
-      </>
-    );
-  }
-
-  // 3. Tenant App (Default)
   return (
-    <>
-      <TenantApp />
-    </>
+    <Suspense fallback={<div className="flex items-center justify-center h-screen">Carregando módulos...</div>}>
+      {/* 1. Platform App (Admin) */}
+      {(currentPath.startsWith('/admin/platform') || currentPath.startsWith('/platform') || currentPath.startsWith('/callback')) && (
+        <PlatformApp />
+      )}
+
+      {/* 2. Cleaner App */}
+      {currentPath.startsWith('/cleaner') && (
+        <CleanerAppWrapper />
+      )}
+
+      {/* 3. Tenant App (Default) */}
+      {!currentPath.startsWith('/admin/platform') && !currentPath.startsWith('/platform') && !currentPath.startsWith('/callback') && !currentPath.startsWith('/cleaner') && (
+        <TenantApp />
+      )}
+    </Suspense>
   );
 };
 
