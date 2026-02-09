@@ -41,6 +41,7 @@ import { PortalSupportHUD } from './support/PortalSupportHUD.tsx';
 import { PortalTransition } from './support/PortalTransition.tsx';
 import { MirrorEmitter } from './support/MirrorEmitter.tsx';
 import { ReleaseGuard } from './system/ReleaseGuard.tsx';
+import { BookingConfirmation } from './sales/BookingConfirmation.tsx';
 
 const TenantAppInner: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabType>(TabType.OVERVIEW);
@@ -138,6 +139,10 @@ const TenantAppInner: React.FC = () => {
         return <PaymentSuccessPage />;
     }
 
+    if (window.location.pathname === '/confirm-booking') {
+        return <BookingConfirmation />;
+    }
+
     if (window.location.pathname.startsWith('/invoice/')) {
         return <PublicInvoicePage />;
     }
@@ -145,6 +150,7 @@ const TenantAppInner: React.FC = () => {
     if (window.location.pathname === '/debug') {
         return <SystemDiagnostics />;
     }
+
 
     if (inviteToken || isInvited) {
         return <AcceptInvite

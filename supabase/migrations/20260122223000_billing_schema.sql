@@ -21,9 +21,18 @@ CREATE TABLE IF NOT EXISTS public.tenant_subscriptions (
 ALTER TABLE public.tenant_subscriptions ENABLE ROW LEVEL SECURITY;
 
 -- 4. Policies
-CREATE POLICY "Tenants can view own subscription"
-ON public.tenant_subscriptions FOR SELECT
-USING (tenant_id = auth.uid());
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT FROM pg_policies 
+        WHERE tablename = 'tenant_subscriptions' 
+        AND policyname = 'Tenants can view own subscription'
+    ) THEN
+        CREATE POLICY "Tenants can view own subscription"
+        ON public.tenant_subscriptions FOR SELECT
+        USING (tenant_id = auth.uid());
+    END IF;
+END $$;
 
 -- 5. Notify
 NOTIFY pgrst, 'reload config';

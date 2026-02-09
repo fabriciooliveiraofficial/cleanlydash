@@ -2,12 +2,12 @@
 
 import * as React from 'react'
 import { updateBookingStatus } from '@/app/(dashboard)/calendar/actions'
-import { 
-  Clock, 
-  MapPin, 
-  User, 
-  MoreHorizontal, 
-  ChevronRight, 
+import {
+  Clock,
+  MapPin,
+  User,
+  MoreHorizontal,
+  ChevronRight,
   ChevronLeft,
   CheckCircle2,
   Truck,
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { useTimezone } from '@/contexts/TimezoneContext'
 
 const COLUMNS = [
   { id: 'pending', title: 'Pendente', icon: AlertCircle, color: 'text-amber-600', bg: 'bg-amber-50' },
@@ -24,17 +25,18 @@ const COLUMNS = [
 ]
 
 export function KanbanBoard({ initialBookings }: { initialBookings: any[] }) {
+  const { formatTime, formatWallTime } = useTimezone()
   const [bookings, setBookings] = React.useState(initialBookings)
 
   const moveTask = async (bookingId: string, currentStatus: string, direction: 'next' | 'prev') => {
     const statusOrder = COLUMNS.map(c => c.id)
     const currentIndex = statusOrder.indexOf(currentStatus)
     let nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1
-    
+
     if (nextIndex < 0 || nextIndex >= statusOrder.length) return
 
     const newStatus = statusOrder[nextIndex]
-    
+
     // Update local UI
     setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status: newStatus } : b))
 
@@ -64,8 +66,8 @@ export function KanbanBoard({ initialBookings }: { initialBookings: any[] }) {
             {bookings
               .filter(b => b.status === column.id)
               .map((booking) => (
-                <div 
-                  key={booking.id} 
+                <div
+                  key={booking.id}
                   className="group relative flex flex-col gap-3 rounded-xl border bg-white p-4 shadow-sm transition-all hover:shadow-md"
                 >
                   <div className="flex items-start justify-between">
@@ -84,7 +86,7 @@ export function KanbanBoard({ initialBookings }: { initialBookings: any[] }) {
                   <div className="flex items-center gap-4 border-t pt-3">
                     <div className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
                       <Clock size={14} className="text-indigo-500" />
-                      {booking.time.slice(0, 5)}
+                      {formatWallTime(booking.time)}
                     </div>
                     <div className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
                       <MapPin size={14} className="text-rose-500" />
@@ -93,10 +95,10 @@ export function KanbanBoard({ initialBookings }: { initialBookings: any[] }) {
                   </div>
 
                   <div className="flex items-center justify-between gap-2 border-t pt-3">
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-8 w-8 p-0 disabled:opacity-30" 
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 disabled:opacity-30"
                       disabled={column.id === 'pending'}
                       onClick={() => moveTask(booking.id, booking.status, 'prev')}
                     >
@@ -105,10 +107,10 @@ export function KanbanBoard({ initialBookings }: { initialBookings: any[] }) {
                     <div className="text-xs font-bold text-indigo-600">
                       R$ {booking.price}
                     </div>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-8 w-8 p-0 disabled:opacity-30" 
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 disabled:opacity-30"
                       disabled={column.id === 'completed'}
                       onClick={() => moveTask(booking.id, booking.status, 'next')}
                     >

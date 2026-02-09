@@ -4,15 +4,19 @@ import { createClient } from '../lib/supabase/client';
 import {
     X, ChevronRight, ChevronLeft, User, Calendar, Clock,
     DollarSign, Palette, FileText, UserPlus, Check, RefreshCw,
-    Mail, MessageSquare, Edit2, Trash2, Plus, Sparkles, Search, ListChecks, CreditCard, Users, ShieldAlert
+    Mail, MessageSquare, Edit2, Trash2, Plus, Sparkles, Search, ListChecks, CreditCard, Users, ShieldAlert,
+    Phone, MapPin
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, addHours, addDays, addWeeks, addMonths, isBefore, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { toZonedTime } from 'date-fns-tz';
 import { CustomerCombobox } from './CustomerCombobox';
 import { InternationalPhoneInput } from './ui/InternationalPhoneInput';
 import { useRole } from '../hooks/use-role';
 import { DeleteRecurrenceModal } from './DeleteRecurrenceModal';
+import { calculateEstimate } from '../lib/sales/EstimateCalculator';
+import { useTimezone } from '../contexts/TimezoneContext';
 
 interface BookingModalProps {
     isOpen: boolean;
@@ -20,6 +24,8 @@ interface BookingModalProps {
     onSave: () => void;
     booking?: any;
     defaultDate?: Date;
+    defaultHour?: number;
+    defaultMinute?: number;
 }
 
 interface Customer {
@@ -107,10 +113,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     onClose,
     onSave,
     booking,
-    defaultDate
+    defaultDate,
+    defaultHour,
+    defaultMinute
 }) => {
     const supabase = createClient();
     const { t } = useTranslation();
+    const { formatTime, formatWallTime, businessHours, timezone } = useTimezone();
     const isEditMode = !!booking;
 
     // Interface states
@@ -195,6 +204,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     const [isDeleting, setIsDeleting] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [recurrenceSeriesForDelete, setRecurrenceSeriesForDelete] = useState<any[]>([]);
+    const [tenantProfile, setTenantProfile] = useState<any>(null);
+    const [sendingQuote, setSendingQuote] = useState(false);
 
     const [isInitialized, setIsInitialized] = useState(false);
     const initialValuesRef = React.useRef<any>(null);
@@ -363,8 +374,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 fetchAssignedAddons();
 
                 const recType = parseRRule(booking.recurrence_rule);
-                const startDate = booking.start_date ? format(new Date(booking.start_date), 'yyyy-MM-dd') : '';
-                const startTime = booking.start_date ? format(new Date(booking.start_date), 'HH:mm') : '09:00';
+                // Use toZonedTime to get the wall clock time in the tenant's timezone
+                const zonedStartDate = booking.start_date ? toZonedTime(parseISO(booking.start_date), timezone) : null;
+                const startDate = zonedStartDate ? format(zonedStartDate, 'yyyy-MM-dd') : '';
+                const startTime = zonedStartDate ? format(zonedStartDate, 'HH:mm') : '09:00';
 
                 initialValuesRef.current = {
                     recurrence_type: recType,
@@ -486,7 +499,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     service_id: '',
                     assigned_to: '',
                     start_date: format(defaultDate, 'yyyy-MM-dd'),
-                    start_time: format(defaultDate, 'HH:mm'),
+                    start_time: defaultHour !== undefined
+                        ? `${String(defaultHour).padStart(2, '0')}:${String(defaultMinute || 0).padStart(2, '0')}`
+                        : format(defaultDate, 'HH:mm'),
                     duration_minutes: 60,
                     price: 0,
                     cleaner_pay_rate: 0,
@@ -545,7 +560,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             setIsInitialized(false);
             initialValuesRef.current = null;
         }
-    }, [isOpen, booking, defaultDate]);
+    }, [isOpen, booking, defaultDate, defaultHour, defaultMinute]);
 
     useEffect(() => {
         if (!isInitialized) return;
@@ -654,6 +669,19 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             .order('name');
         setServices(data || []);
     };
+
+    useEffect(() => {
+        const fetchTenantProfile = async () => {
+            if (!sessionTenantId) return;
+            const { data } = await supabase
+                .from('tenant_profiles')
+                .select('*')
+                .eq('tenant_id', sessionTenantId)
+                .single();
+            if (data) setTenantProfile(data);
+        };
+        fetchTenantProfile();
+    }, [sessionTenantId]);
 
     const fetchStaff = async () => {
         const { data: { user } } = await supabase.auth.getUser();
@@ -1397,6 +1425,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
     const getSelectedCustomer = () => customers.find(c => c.id === formData.customer_id);
     const getSelectedService = () => services.find(s => s.id === formData.service_id);
+    const getSelectedServiceCategory = () => {
+        const service = getSelectedService();
+        if (!service) return null;
+        return categories.find(c => c.id === service.category_id)?.name;
+    };
+    const isStaffAssigned = !!formData.assigned_to || !!selectedCrewId;
 
     // Smart Availability Logic
     const isStaffAvailable = (staffId: string, checkTime?: string) => {
@@ -1448,11 +1482,37 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     const availableStaff = staff.filter(s => isStaffAvailable(s.id));
     const unavailableStaff = staff.filter(s => !isStaffAvailable(s.id));
 
-    // Generate Time Slots based on Staff Availability
+    // Generate Time Slots based on Staff Availability & Business Hours
     const generateTimeSlots = () => {
         const slots: { time: string; available: boolean }[] = [];
-        const startHour = 0;
-        const endHour = 23;
+
+        let startHour = 0;
+        let endHour = 23;
+
+        if (businessHours) {
+            let minStart = 24;
+            let maxEnd = 0;
+            let hasActiveDay = false;
+
+            Object.values(businessHours).forEach((config: any) => {
+                if (config.active) {
+                    hasActiveDay = true;
+                    const startH = parseInt(config.start.split(':')[0], 10);
+                    const endH = Math.ceil(parseInt(config.end.split(':')[0], 10) + (parseInt(config.end.split(':')[1], 10) / 60));
+                    minStart = Math.min(minStart, startH);
+                    maxEnd = Math.max(maxEnd, endH);
+                }
+            });
+
+            if (hasActiveDay) {
+                startHour = minStart;
+                endHour = maxEnd;
+            } else {
+                // Fallback if no days are active (e.g. all closed), maybe show default 8-18?
+                // Or keep 0-23? User wants strict. If all closed, maybe show nothing?
+                // But 0-23 is safer for editing.
+            }
+        }
 
         for (let hour = startHour; hour <= endHour; hour++) {
             for (let min = 0; min < 60; min += 30) {
@@ -1484,25 +1544,26 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     };
 
     const totalPriceRecurrence = () => {
-        // Base Total from Instances
-        let instancesTotal = 0;
-        if (formData.recurrence_type === 'none') {
-            instancesTotal = formData.price;
-        } else {
-            instancesTotal = recurrenceInstances.reduce((sum, i) => sum + i.price, 0);
-        }
-
-        // Addons Total (Per instance or One-off?)
-        // Assumption: Add-ons are per visit/instance.
-        // So we multiply addons total by number of instances (if recurrence > none, else 1)
-
-        const addonsTotalPerVisit = selectedAddons.reduce((sum, id) => {
-            const addon = addons.find(a => a.id === id);
-            return sum + (addon?.price || 0);
-        }, 0);
-
         const count = formData.recurrence_type !== 'none' ? recurrenceInstances.length : 1;
-        const totalBeforeDiscount = instancesTotal + (addonsTotalPerVisit * count);
+
+        // Calculate single instance estimate
+        const selectedService = services.find(s => s.id === formData.service_id) || null;
+
+        const singleEstimate = calculateEstimate({
+            service: selectedService ? {
+                id: selectedService.id,
+                name: selectedService.name,
+                price_default: formData.price, // Use override price if set
+                duration_minutes: formData.duration_minutes
+            } : null,
+            selectedTaskIds: [], // Tasks are usually baked into price here or handled separately
+            availableTasks: [],
+            selectedAddonIds: selectedAddons,
+            availableAddons: addons,
+            discount: { type: 'percent', value: 0 } // Discount is applied at the end
+        });
+
+        const totalBeforeDiscount = (singleEstimate.subtotal * count);
 
         let discountAmount = 0;
         if (discount.type === 'fixed') {
@@ -1514,91 +1575,328 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         return Math.max(0, totalBeforeDiscount - discountAmount);
     };
 
+    const handleSendQuote = async () => {
+        const customer = getSelectedCustomer();
+        if (!customer?.email) return toast.error("Por favor, selecione um cliente com e-mail.");
+
+        const selectedService = services.find(s => s.id === formData.service_id);
+        const recurringService = services.find(s => s.id === (formData.recurrence_service_id || formData.service_id));
+
+        const estimate = calculateEstimate({
+            service: selectedService ? {
+                id: selectedService.id,
+                name: selectedService.name,
+                price_default: formData.price,
+                duration_minutes: formData.duration_minutes
+            } : null,
+            selectedTaskIds: [],
+            availableTasks: [],
+            selectedAddonIds: selectedAddons,
+            availableAddons: addons,
+            discount: { type: discount.type, value: discount.value }
+        });
+
+        const recEstimate = formData.recurrence_type !== 'none' ? calculateEstimate({
+            service: recurringService ? {
+                id: recurringService.id,
+                name: recurringService.name,
+                price_default: formData.recurrence_price || recurringService.price_default,
+                duration_minutes: recurringService.duration_minutes
+            } : null,
+            selectedTaskIds: [],
+            availableTasks: [],
+            selectedAddonIds: selectedAddons,
+            availableAddons: addons,
+            discount: { type: discount.type, value: discount.value }
+        }) : null;
+
+        setSendingQuote(true);
+        try {
+            const { error } = await supabase.functions.invoke('send_quote_email', {
+                body: {
+                    clientEmail: customer.email,
+                    clientName: customer.name,
+                    profile: tenantProfile,
+                    serviceName: selectedService?.name,
+                    recurringServiceName: formData.recurrence_type !== 'none' ? recurringService?.name : null,
+                    estimate,
+                    recurringEstimate: recEstimate,
+                    frequency: formData.recurrence_type !== 'none' ? formData.recurrence_type : null,
+                    checklist: serviceTasks,
+                    addons: addons.filter(a => selectedAddons.includes(a.id)),
+                    selectedDate: formData.start_date,
+                    selectedSlot: formData.start_time,
+                    confirmationUrl: `${window.location.origin}/confirm-booking?data=${btoa(JSON.stringify({
+                        tenantId: sessionTenantId,
+                        serviceId: formData.service_id,
+                        recurringServiceId: formData.recurrence_type !== 'none' ? (formData.recurrence_service_id || formData.service_id) : formData.service_id,
+                        addonIds: selectedAddons,
+                        date: formData.start_date,
+                        time: formData.start_time,
+                        clientName: customer.name,
+                        clientEmail: customer.email,
+                        total: estimate.total,
+                        recurringTotal: recEstimate?.total || null,
+                        isRecurring: formData.recurrence_type !== 'none',
+                        frequency: formData.recurrence_type !== 'none' ? formData.recurrence_type : null
+                    }))}`
+                }
+            });
+
+            if (error) throw error;
+            toast.success("Orçamento enviado com sucesso!");
+        } catch (err: any) {
+            toast.error(`Erro ao enviar orçamento: ${err.message}`);
+        } finally {
+            setSendingQuote(false);
+        }
+    };
+
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-hidden">
-            <div className={`bg-white rounded-3xl shadow-2xl w-full max-w-5xl animate-in zoom-in-95 max-h-[92vh] flex flex-col transition-all duration-500 ${showDrawer ? 'scale-[0.98] opacity-90 -translate-x-32' : ''}`}>
+        <>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-hidden">
+                <div className={`bg-white rounded-3xl shadow-2xl w-full max-w-2xl animate-in zoom-in-95 max-h-[92vh] flex flex-col transition-all duration-500 ${showDrawer ? 'scale-[0.98] opacity-90 -translate-x-32' : ''}`}>
 
-                {/* Header */}
-                <div className="px-8 py-5 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-indigo-50/50 to-purple-50/50 rounded-t-3xl border-slate-100">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
-                            <Calendar size={22} />
+                    {/* Header: Premium Redesign */}
+                    <div className="px-8 py-7 border-b border-slate-100 flex justify-between items-center bg-gradient-to-br from-white via-indigo-50/30 to-purple-50/30 rounded-t-[32px] relative overflow-hidden shrink-0">
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 blur-[80px] rounded-full -mr-20 -mt-20"></div>
+                        <div className="absolute top-0 left-0 w-48 h-48 bg-purple-500/5 blur-[80px] rounded-full -ml-16 -mt-16"></div>
+
+                        <div className="flex items-center gap-4 relative z-10">
+                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-600 to-indigo-700 flex items-center justify-center text-white shadow-[0_8px_20px_-6px_rgba(79,70,229,0.5)]">
+                                {isEditMode ? <Edit2 size={24} /> : <Calendar size={24} />}
+                            </div>
+                            <div>
+                                <h3 className="font-black text-2xl text-slate-800 tracking-tight leading-none">
+                                    {isEditMode ? t('booking_modal.edit_title') : t('booking_modal.new_title')}
+                                </h3>
+                                <div className="flex items-center gap-2 mt-2">
+                                    <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full uppercase tracking-widest">{t('booking_modal.subtitle')}</span>
+                                    <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{isEditMode ? 'Management ID: #' + (formData.id?.slice(0, 8)) : 'Smart Sales Assistant'}</span>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <h3 className="font-black text-xl text-slate-800 tracking-tight">
-                                {isEditMode ? t('booking_modal.edit_title') : t('booking_modal.new_title')}
-                            </h3>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none mt-0.5">{t('booking_modal.subtitle')}</p>
-                        </div>
+                        <button
+                            onClick={onClose}
+                            className="w-11 h-11 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100/50 rounded-2xl transition-all active:scale-95 group relative z-10"
+                        >
+                            <X size={20} className="group-hover:rotate-90 transition-transform duration-300" />
+                        </button>
                     </div>
-                    <button onClick={onClose} className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-slate-600 rounded-xl hover:bg-white transition-all">
-                        <X size={24} />
-                    </button>
-                </div>
 
-                {/* Main Content Area */}
-                <div className="flex-1 overflow-hidden p-8 flex gap-8">
+                    {/* Main Content Area: Spacious & Structured */}
+                    <div className="flex-1 overflow-y-auto p-10 space-y-12 custom-scrollbar bg-white rounded-b-[32px]">
 
-                    {/* Left Column: Client & Service Details */}
-                    <div className="flex-[1.2] space-y-6 overflow-y-auto pr-2 custom-scrollbar">
+                        {/* Section: Serviço e Valores - World-Class Redesign */}
+                        <div className="space-y-6">
+                            <div className="flex items-center gap-3 ml-1">
+                                <div className="w-1 h-5 bg-indigo-600 rounded-full"></div>
+                                <label className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">{t('booking_modal.service_label')}</label>
+                            </div>
+                            <div className="space-y-5">
+                                {/* Smart Service Selector */}
+                                <div className="space-y-3">
 
-                        {/* Section: Cliente Card */}
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t('booking_modal.client_label')}</label>
-                                {formData.customer_id && (
-                                    <button
-                                        onClick={() => {
-                                            setDrawerMode('customer');
-                                            setShowDrawer(true);
-                                        }}
-                                        className="text-xs text-indigo-600 font-bold hover:text-indigo-700"
-                                    >
-                                        {t('booking_modal.change_button')}
-                                    </button>
+
+                                    {/* Summary Card: Premium Design */}
+                                    {formData.service_id ? (
+                                        <div
+                                            onClick={() => {
+                                                setDrawerMode('service');
+                                                setShowDrawer(true);
+                                            }}
+                                            className="p-6 rounded-[28px] bg-gradient-to-br from-indigo-50 to-white border-2 border-indigo-100 shadow-sm hover:border-indigo-300 transition-all cursor-pointer group relative overflow-hidden active:scale-[0.99]"
+                                        >
+                                            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                                <Sparkles size={40} className="text-indigo-600" />
+                                            </div>
+
+                                            <div className="flex justify-between items-start relative z-10">
+                                                <div className="flex gap-4">
+                                                    <div className="w-12 h-12 rounded-2xl bg-white border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-sm group-hover:scale-110 transition-transform">
+                                                        <Search size={24} />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="text-lg font-black text-slate-800 tracking-tight leading-none mb-2 group-hover:text-indigo-600 transition-colors">
+                                                            {getSelectedService()?.name || t('booking_modal.select_service')}
+                                                        </h4>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="px-2 py-0.5 bg-indigo-600 text-[10px] font-black text-white rounded-lg uppercase tracking-widest">{getSelectedServiceCategory() || 'Cleanly'}</span>
+                                                            <span className="text-xs text-slate-400 font-bold flex items-center gap-1.5 ml-1">
+                                                                <Clock size={12} className="text-slate-300" />
+                                                                {getSelectedService()?.duration_minutes || 0} min
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">{t('booking_modal.price_label')}</div>
+                                                    <div className="text-2xl font-black text-indigo-700 tracking-tight">R$ {formData.price || 0}</div>
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-5 pt-4 border-t border-indigo-50/50 flex justify-between items-center relative z-10">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest group-hover:text-indigo-500 transition-colors">{t('booking_modal.change_service')}</span>
+                                                <ChevronRight size={18} className="text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all" />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => {
+                                                setDrawerMode('service');
+                                                setShowDrawer(true);
+                                            }}
+                                            className="w-full p-8 rounded-[28px] border-2 border-dashed border-slate-200 bg-slate-50 text-slate-400 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600 transition-all group flex flex-col items-center gap-3 active:scale-[0.99]"
+                                        >
+                                            <div className="w-14 h-14 rounded-full bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
+                                                <Plus size={28} />
+                                            </div>
+                                            <span className="text-sm font-black uppercase tracking-widest">{t('booking_modal.select_service')}</span>
+                                        </button>
+                                    )}
+                                </div>
+
+
+                                {/* Old Smart Estimate Card (Disabled) */}
+                                {false && formData.service_id && (
+                                    <div className="bg-white rounded-2xl border border-indigo-100 shadow-lg shadow-indigo-50/50 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                                        {/* Header with Sales Copy */}
+                                        <div className="bg-indigo-50/50 p-4 border-b border-indigo-50">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <h4 className="font-black text-indigo-900 text-sm">{getSelectedService()?.name}</h4>
+                                                    <p className="text-xs text-indigo-700/80 mt-1 italic font-medium">
+                                                        "{getSelectedService()?.description || 'Serviço profissional de alta qualidade.'}"
+                                                    </p>
+                                                </div>
+                                                <div className="bg-white px-2 py-1 rounded-lg border border-indigo-100 shadow-sm">
+                                                    <span className="text-xs font-black text-indigo-600">{getSelectedService()?.duration_minutes} min</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Checklist (What's Included) */}
+                                        {serviceTasks.length > 0 && (
+                                            <div className="p-4 bg-slate-50/50 border-b border-slate-100">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 block">{t('booking_modal.whats_included')}</label>
+                                                <div className="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto custom-scrollbar pr-1">
+                                                    {serviceTasks.map(task => (
+                                                        <div key={task.id} className="flex items-start gap-2.5 group">
+                                                            <div className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-110 transition-transform">
+                                                                <Check size={10} strokeWidth={3} />
+                                                            </div>
+                                                            <span className="text-xs text-slate-600 font-medium leading-relaxed group-hover:text-slate-900 transition-colors">
+                                                                {task.title}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Price & Discount Engine */}
+                                        <div className="p-4 grid grid-cols-2 gap-4">
+                                            {/* Base Price */}
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">{t('booking_modal.base_price_label')}</label>
+                                                <div className="relative group">
+                                                    <DollarSign size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-hover:text-indigo-500 transition-colors" />
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-slate-700 transition-all"
+                                                        value={formData.price}
+                                                        onChange={e => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {/* Discount Selector */}
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">{t('booking_modal.apply_discount_label')}</label>
+                                                <div className="flex gap-2">
+                                                    <select
+                                                        className="bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 px-2 outline-none focus:border-indigo-500"
+                                                        value={discount.type}
+                                                        onChange={e => setDiscount({ ...discount, type: e.target.value as any })}
+                                                    >
+                                                        <option value="fixed">R$</option>
+                                                        <option value="percent">%</option>
+                                                    </select>
+                                                    <input
+                                                        type="number"
+                                                        step={discount.type === 'percent' ? '1' : '0.01'}
+                                                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 outline-none text-sm font-bold text-rose-600 placeholder:text-rose-200 transition-all"
+                                                        placeholder="0"
+                                                        value={discount.value || ''}
+                                                        onChange={e => setDiscount({ ...discount, value: parseFloat(e.target.value) || 0 })}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Reason for Discount - Only show if discount > 0 */}
+                                        {discount.value > 0 && (
+                                            <div className="px-4 pb-4 animate-in fade-in slide-in-from-top-1">
+                                                <input
+                                                    type="text"
+                                                    className="w-full px-3 py-2 bg-rose-50 border border-rose-100 rounded-xl text-xs text-rose-700 placeholder:text-rose-300 focus:ring-1 focus:ring-rose-500 outline-none"
+                                                    placeholder={t('booking_modal.discount_reason_placeholder')}
+                                                    value={discount.reason}
+                                                    onChange={e => setDiscount({ ...discount, reason: e.target.value })}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                             </div>
 
-                            {formData.customer_id ? (
-                                <div
-                                    onClick={() => {
-                                        setDrawerMode('customer');
-                                        setShowDrawer(true);
-                                    }}
-                                    className="p-4 rounded-2xl bg-indigo-50 border border-indigo-100 cursor-pointer hover:bg-indigo-100/50 transition-all group"
-                                >
-                                    <div className="flex items-start gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-white border-2 border-indigo-100 flex items-center justify-center text-indigo-600 font-bold shadow-sm">
-                                            {getSelectedCustomer()?.name?.[0].toUpperCase()}
-                                        </div>
-                                        <div>
-                                            <h3 className="font-bold text-slate-900 group-hover:text-indigo-900 transition-colors">
-                                                {getSelectedCustomer()?.name}
-                                            </h3>
-                                            <p className="text-xs text-slate-500 line-clamp-1">{getSelectedCustomer()?.address}</p>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <span className="text-[10px] px-2 py-0.5 bg-white rounded-full text-slate-500 font-bold border border-indigo-100">
-                                                    {getSelectedCustomer()?.phone}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <button
-                                    onClick={() => {
-                                        setDrawerMode('customer');
-                                        setShowDrawer(true);
-                                    }}
-                                    className="w-full p-4 rounded-2xl border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-slate-50 transition-all group flex items-center justify-center gap-2"
-                                >
-                                    <div className="w-8 h-8 rounded-full bg-slate-100 group-hover:bg-indigo-100 flex items-center justify-center text-slate-400 group-hover:text-indigo-600 transition-colors">
-                                        <UserPlus size={16} />
-                                    </div>
-                                    <span className="font-bold text-slate-400 group-hover:text-indigo-600">{t('booking_modal.select_client_placeholder')}</span>
-                                </button>
-                            )}
+                            {/* 2.1 ADD-ONS UPSELL */}
+
                         </div>
+
+                        {/* Section: Cliente Card */}
+                        {formData.customer_id && (
+                            <div className="space-y-4 animate-in fade-in slide-in-from-left-4 duration-500 delay-75">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t('booking_modal.client_label', { defaultValue: 'Informações do Cliente' })}</label>
+                                <div className="p-4 bg-slate-50 border border-slate-200 rounded-3xl space-y-3">
+                                    {(() => {
+                                        const selectedCustomer = customers.find(c => c.id === formData.customer_id);
+                                        return (
+                                            <>
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-2xl bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold">
+                                                        {selectedCustomer?.name?.charAt(0) || 'C'}
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="text-sm font-bold text-slate-800">{selectedCustomer?.name || 'Cliente'}</h4>
+                                                        <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                                                            <Mail className="w-3 h-3" />
+                                                            <span>{selectedCustomer?.email || t('common.no_email', { defaultValue: 'Sem e-mail' })}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="pt-3 border-t border-slate-100 flex flex-wrap gap-4">
+                                                    <div className="flex items-center gap-2 text-xs text-slate-600">
+                                                        <div className="p-1 bg-white rounded-lg border border-slate-100">
+                                                            <Phone size={12} className="text-slate-400" />
+                                                        </div>
+                                                        <span className="font-medium">{selectedCustomer?.phone || t('common.no_phone', { defaultValue: 'Sem telefone' })}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 text-xs text-slate-600">
+                                                        <div className="p-1 bg-white rounded-lg border border-slate-100">
+                                                            <MapPin size={12} className="text-slate-400" />
+                                                        </div>
+                                                        <span className="font-medium truncate max-w-[200px]">{selectedCustomer?.address || t('common.no_address', { defaultValue: 'Sem endereço' })}</span>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        );
+                                    })()}
+                                </div>
+                            </div>
+                        )}
 
                         {/* Section: Staff & Color (Moved) */}
                         <div className="space-y-4 animate-in fade-in slide-in-from-left-4 duration-500 delay-100">
@@ -1721,222 +2019,20 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                             </div>
                         </div>
 
-                        {/* Section: Serviço e Valores */}
-                        <div className={`space-y-4 transition-all duration-300 ${!formData.assigned_to ? 'opacity-40 pointer-events-none grayscale' : ''}`}>
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t('booking_modal.service_label')}</label>
-                            <div className="space-y-4">
-                                {/* Smart Service Selector */}
-                                <div className="space-y-3">
 
-
-                                    {/* Summary Card */}
-                                    {formData.service_id ? (
-                                        <div
-                                            onClick={() => {
-                                                setDrawerMode('service');
-                                                setShowDrawer(true);
-                                            }}
-                                            className="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100 hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer group animate-in fade-in zoom-in-95"
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-xl bg-white border border-indigo-50 shadow-sm flex items-center justify-center text-indigo-600 group-hover:scale-110 transition-transform">
-                                                    <Sparkles size={18} />
-                                                </div>
-                                                <div>
-                                                    <div className="text-xs font-bold text-indigo-900">
-                                                        {formData.recurrence_type !== 'none' && recurrenceInstances.length > 0
-                                                            ? services.find(s => s.id === recurrenceInstances[0].service_id)?.name
-                                                            : getSelectedService()?.name}
-                                                    </div>
-                                                    <div className="text-[10px] text-indigo-700/70 font-bold">
-                                                        {formData.recurrence_type !== 'none' && recurrenceInstances.length > 0
-                                                            ? `${recurrenceInstances[0].duration_minutes} min • R$ ${recurrenceInstances[0].price.toFixed(2)}`
-                                                            : `${getSelectedService()?.duration_minutes || 0} min • R$ ${formData.price.toFixed(2)}`}
-                                                    </div>
-                                                </div>
-                                                <div className="ml-auto">
-                                                    <button className="text-[10px] font-black uppercase tracking-widest text-indigo-400 group-hover:text-indigo-600">
-                                                        {t('booking_modal.edit_button')}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <button
-                                            onClick={() => {
-                                                setDrawerMode('service');
-                                                setShowDrawer(true);
-                                            }}
-                                            className="w-full p-4 rounded-2xl border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-slate-50 transition-all group flex items-center justify-center gap-2"
-                                        >
-                                            <div className="w-8 h-8 rounded-full bg-slate-100 group-hover:bg-indigo-100 flex items-center justify-center text-slate-400 group-hover:text-indigo-600 transition-colors">
-                                                <Sparkles size={16} />
-                                            </div>
-                                            <span className="font-bold text-slate-400 group-hover:text-indigo-600">{t('booking_modal.select_service_placeholder')}</span>
-                                        </button>
-                                    )}
-
-                                    {/* Old Smart Estimate Card (Disabled) */}
-                                    {false && formData.service_id && (
-                                        <div className="bg-white rounded-2xl border border-indigo-100 shadow-lg shadow-indigo-50/50 overflow-hidden animate-in fade-in slide-in-from-top-2">
-                                            {/* Header with Sales Copy */}
-                                            <div className="bg-indigo-50/50 p-4 border-b border-indigo-50">
-                                                <div className="flex justify-between items-start">
-                                                    <div>
-                                                        <h4 className="font-black text-indigo-900 text-sm">{getSelectedService()?.name}</h4>
-                                                        <p className="text-xs text-indigo-700/80 mt-1 italic font-medium">
-                                                            "{getSelectedService()?.description || 'Serviço profissional de alta qualidade.'}"
-                                                        </p>
-                                                    </div>
-                                                    <div className="bg-white px-2 py-1 rounded-lg border border-indigo-100 shadow-sm">
-                                                        <span className="text-xs font-black text-indigo-600">{getSelectedService()?.duration_minutes} min</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Checklist (What's Included) */}
-                                            {serviceTasks.length > 0 && (
-                                                <div className="p-4 bg-slate-50/50 border-b border-slate-100">
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 block">{t('booking_modal.whats_included')}</label>
-                                                    <div className="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto custom-scrollbar pr-1">
-                                                        {serviceTasks.map(task => (
-                                                            <div key={task.id} className="flex items-start gap-2.5 group">
-                                                                <div className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-110 transition-transform">
-                                                                    <Check size={10} strokeWidth={3} />
-                                                                </div>
-                                                                <span className="text-xs text-slate-600 font-medium leading-relaxed group-hover:text-slate-900 transition-colors">
-                                                                    {task.title}
-                                                                </span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* Price & Discount Engine */}
-                                            <div className="p-4 grid grid-cols-2 gap-4">
-                                                {/* Base Price */}
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">{t('booking_modal.base_price_label')}</label>
-                                                    <div className="relative group">
-                                                        <DollarSign size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-hover:text-indigo-500 transition-colors" />
-                                                        <input
-                                                            type="number"
-                                                            step="0.01"
-                                                            className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-slate-700 transition-all"
-                                                            value={formData.price}
-                                                            onChange={e => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
-                                                        />
-                                                    </div>
-                                                </div>
-
-                                                {/* Discount Selector */}
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">{t('booking_modal.apply_discount_label')}</label>
-                                                    <div className="flex gap-2">
-                                                        <select
-                                                            className="bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 px-2 outline-none focus:border-indigo-500"
-                                                            value={discount.type}
-                                                            onChange={e => setDiscount({ ...discount, type: e.target.value as any })}
-                                                        >
-                                                            <option value="fixed">R$</option>
-                                                            <option value="percent">%</option>
-                                                        </select>
-                                                        <input
-                                                            type="number"
-                                                            step={discount.type === 'percent' ? '1' : '0.01'}
-                                                            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 outline-none text-sm font-bold text-rose-600 placeholder:text-rose-200 transition-all"
-                                                            placeholder="0"
-                                                            value={discount.value || ''}
-                                                            onChange={e => setDiscount({ ...discount, value: parseFloat(e.target.value) || 0 })}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Reason for Discount - Only show if discount > 0 */}
-                                            {discount.value > 0 && (
-                                                <div className="px-4 pb-4 animate-in fade-in slide-in-from-top-1">
-                                                    <input
-                                                        type="text"
-                                                        className="w-full px-3 py-2 bg-rose-50 border border-rose-100 rounded-xl text-xs text-rose-700 placeholder:text-rose-300 focus:ring-1 focus:ring-rose-500 outline-none"
-                                                        placeholder={t('booking_modal.discount_reason_placeholder')}
-                                                        value={discount.reason}
-                                                        onChange={e => setDiscount({ ...discount, reason: e.target.value })}
-                                                    />
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* 2.1 ADD-ONS UPSELL */}
-
-                            </div>
-                        </div>
-
-
-                        {/* Section: Status */}
-                        <div className="space-y-2">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t('booking_modal.status_label')}</label>
-                            <div className="flex gap-2">
-                                {['pending', 'confirmed', 'completed', 'cancelled'].map(st => (
-                                    <button
-                                        key={st}
-                                        onClick={() => setFormData({ ...formData, status: st })}
-                                        className={`flex-1 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider border transition-all ${formData.status === st
-                                            ? st === 'confirmed' ? 'bg-blue-600 border-blue-600 text-white shadow-md' :
-                                                st === 'pending' ? 'bg-amber-500 border-amber-500 text-white shadow-md' :
-                                                    st === 'completed' ? 'bg-emerald-600 border-emerald-600 text-white shadow-md' :
-                                                        st === 'cancelled' ? 'bg-orange-500 border-orange-500 text-white shadow-md' :
-                                                            'bg-indigo-600 border-indigo-600 text-white shadow-md'
-                                            : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-300 hover:text-indigo-600'
-                                            }`}
-                                    >
-                                        {st === 'pending' ? t('booking_modal.status_pending') : st === 'confirmed' ? t('booking_modal.status_confirmed') : st === 'completed' ? t('booking_modal.status_completed') : t('booking_modal.status_cancelled')}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Section: Payment Preference */}
-                        <div className="space-y-2">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t('booking_modal.payment_method_label', { defaultValue: 'Preferência de Pagamento' })}</label>
-                            <div className="flex gap-2">
-                                {[
-                                    { id: 'stripe', label: 'Stripe/CC', icon: CreditCard },
-                                    { id: 'zelle', label: 'Zelle', icon: DollarSign },
-                                    { id: 'venmo', label: 'Venmo', icon: DollarSign },
-                                    { id: 'check', label: 'Check', icon: FileText },
-                                ].map(pm => (
-                                    <button
-                                        key={pm.id}
-                                        type="button"
-                                        onClick={() => setFormData({ ...formData, payment_method_preference: pm.id })}
-                                        className={`flex-1 flex flex-col items-center justify-center py-2.5 rounded-xl border transition-all ${formData.payment_method_preference === pm.id
-                                            ? 'bg-indigo-50 border-indigo-600 text-indigo-700 shadow-sm ring-1 ring-indigo-600'
-                                            : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-300 hover:text-indigo-600'
-                                            }`}
-                                    >
-                                        <pm.icon size={14} className="mb-1" />
-                                        <span className="text-[9px] font-black uppercase tracking-tighter">{pm.label}</span>
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                    </div>
-
-                    {/* Right Column: Schedule Card & Notes */}
-                    <div className="flex-1 space-y-6 flex flex-col overflow-hidden">
+                        {/* Right Column: Schedule Card & Notes - Consolidated below */}
 
                         {/* Schedule Summary Card */}
                         <div
                             onClick={() => {
+                                if (!isStaffAssigned) {
+                                    toast.error(t('booking_modal.select_staff_first_warning', { defaultValue: 'Por favor, selecione um cleaner ou equipe primeiro.' }));
+                                    return;
+                                }
                                 setDrawerMode('schedule');
                                 setShowDrawer(true);
                             }}
-                            className={`p-5 rounded-3xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white shadow-xl shadow-indigo-100 cursor-pointer hover:scale-[1.02] active:scale-[0.98] transition-all group shrink-0 ${!formData.assigned_to ? 'opacity-40 pointer-events-none grayscale' : ''}`}
+                            className={`p-5 rounded-3xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white shadow-xl shadow-indigo-100 transition-all group shrink-0 ${!isStaffAssigned ? 'opacity-40 cursor-not-allowed grayscale' : 'cursor-pointer hover:scale-[1.02] active:scale-[0.98]'}`}
                         >
                             <div className="flex justify-between items-start mb-4">
                                 <div className="p-2.5 bg-white/20 rounded-2xl backdrop-blur-md">
@@ -1951,7 +2047,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                 <div>
                                     <div className="text-2xl font-black">{format(new Date(`${formData.start_date}T00:00:00`), "dd 'de' MMM", { locale: ptBR })}</div>
                                     <div className="text-white/80 font-bold flex items-center gap-1.5 mt-1">
-                                        <span>{formData.start_time}</span>
+                                        <span>{formatWallTime(formData.start_time)}</span>
                                         <span className="opacity-40">•</span>
                                         <span>{formData.duration_minutes}min</span>
                                         {formData.recurrence_type !== 'none' && (
@@ -1975,977 +2071,1077 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                             </div>
                         </div>
 
-                        {/* Notes & Inventory Section */}
-                        <div className="flex-1 border border-slate-100 rounded-3xl flex flex-col overflow-hidden bg-slate-50/30">
-                            <div className="flex gap-1 p-1.5 bg-slate-100 rounded-t-3xl shrink-0">
-                                <button
-                                    onClick={() => setActiveTab('details')}
-                                    className={`flex-1 py-1.5 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === 'details'
-                                        ? 'bg-white text-slate-800 shadow-sm'
-                                        : 'text-slate-400 hover:text-slate-600'
-                                        }`}
-                                >
-                                    {t('booking_modal.tab_notes')}
-                                </button>
-                                <button
-                                    onClick={() => setActiveTab('inventory')}
-                                    className={`flex-1 py-1.5 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === 'inventory'
-                                        ? 'bg-white text-slate-800 shadow-sm'
-                                        : 'text-slate-400 hover:text-slate-600'
-                                        }`}
-                                >
-                                    {t('booking_modal.tab_inventory')}
-                                </button>
+                        {/* Unified Footer Info: Status + Payment + Notes */}
+                        <div className="space-y-6 pt-2">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t('booking_modal.status_label')}</label>
+                                <div className="flex gap-2">
+                                    {['pending', 'confirmed', 'completed', 'cancelled'].map(st => (
+                                        <button
+                                            key={st}
+                                            onClick={() => setFormData({ ...formData, status: st })}
+                                            className={`flex-1 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider border transition-all ${formData.status === st
+                                                ? st === 'confirmed' ? 'bg-blue-600 border-blue-600 text-white shadow-md' :
+                                                    st === 'pending' ? 'bg-amber-500 border-amber-500 text-white shadow-md' :
+                                                        st === 'completed' ? 'bg-emerald-600 border-emerald-600 text-white shadow-md' :
+                                                            st === 'cancelled' ? 'bg-orange-500 border-orange-500 text-white shadow-md' :
+                                                                'bg-indigo-600 border-indigo-600 text-white shadow-md'
+                                                : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-300 hover:text-indigo-600'
+                                                }`}
+                                        >
+                                            {st === 'pending' ? t('booking_modal.status_pending') : st === 'confirmed' ? t('booking_modal.status_confirmed') : st === 'completed' ? t('booking_modal.status_completed') : t('booking_modal.status_cancelled')}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
 
-                            {activeTab === 'details' ? (
-                                <div className="flex flex-col flex-1 overflow-hidden">
-                                    <div className="flex gap-1 p-1.5 bg-slate-50 border-b border-slate-100 shrink-0">
-                                        {(['internal', 'client', 'staff'] as const).map(tab => (
-                                            <button
-                                                key={tab}
-                                                onClick={() => setActiveNotesTab(tab)}
-                                                className={`flex-1 py-1.5 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeNotesTab === tab
-                                                    ? 'bg-slate-800 text-white shadow-sm'
-                                                    : 'text-slate-400 hover:text-slate-600'
-                                                    }`}
-                                            >
-                                                {tab === 'internal' ? t('booking_modal.tab_internal') : tab === 'client' ? t('booking_modal.tab_client') : t('booking_modal.tab_staff')}
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <div className="p-4 flex-1 overflow-y-auto">
-                                        <textarea
-                                            className="w-full h-full bg-transparent border-none focus:ring-0 text-sm text-slate-600 placeholder:text-slate-300 italic resize-none"
-                                            placeholder={
-                                                activeNotesTab === 'internal' ? t('booking_modal.notes_placeholder_internal') :
-                                                    activeNotesTab === 'client' ? t('booking_modal.notes_placeholder_client') :
-                                                        t('booking_modal.notes_placeholder_staff')
-                                            }
-                                            value={
-                                                activeNotesTab === 'internal' ? formData.notes_internal :
-                                                    activeNotesTab === 'client' ? formData.notes_client :
-                                                        formData.notes_staff
-                                            }
-                                            onChange={e => setFormData({
-                                                ...formData,
-                                                [activeNotesTab === 'internal' ? 'notes_internal' : activeNotesTab === 'client' ? 'notes_client' : 'notes_staff']: e.target.value
-                                            })}
-                                        />
-                                    </div>
+                            {/* Section: Payment Preference */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{t('booking_modal.payment_method_label', { defaultValue: 'Preferência de Pagamento' })}</label>
+                                <div className="flex gap-2">
+                                    {[
+                                        { id: 'stripe', label: 'Stripe/CC', icon: CreditCard },
+                                        { id: 'zelle', label: 'Zelle', icon: DollarSign },
+                                        { id: 'venmo', label: 'Venmo', icon: DollarSign },
+                                        { id: 'check', label: 'Check', icon: FileText },
+                                    ].map(pm => (
+                                        <button
+                                            key={pm.id}
+                                            type="button"
+                                            onClick={() => setFormData({ ...formData, payment_method_preference: pm.id })}
+                                            className={`flex-1 flex flex-col items-center justify-center py-2.5 rounded-xl border transition-all ${formData.payment_method_preference === pm.id
+                                                ? 'bg-indigo-50 border-indigo-600 text-indigo-700 shadow-sm ring-1 ring-indigo-600'
+                                                : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-300 hover:text-indigo-600'
+                                                }`}
+                                        >
+                                            <pm.icon size={14} className="mb-1" />
+                                            <span className="text-[9px] font-black uppercase tracking-tighter">{pm.label}</span>
+                                        </button>
+                                    ))}
                                 </div>
-                            ) : (
-                                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest">{t('booking_modal.supplies_label')}</h4>
-                                        <span className="text-[10px] text-slate-400 font-bold">{bookingInventory.length} {t('booking_modal.items_count')}</span>
-                                    </div>
-
-                                    {isLoadingInventory ? (
-                                        <div className="text-center py-8"><div className="animate-spin h-5 w-5 border-2 border-indigo-600 border-t-transparent rounded-full mx-auto"></div></div>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            {bookingInventory.map((item, idx) => (
-                                                <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-2xl group">
-                                                    <div>
-                                                        <p className="text-xs font-bold text-slate-700">{item.name}</p>
-                                                        <p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {item.unit}(s)</p>
-                                                    </div>
-                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <button
-                                                            onClick={() => setBookingInventory(bookingInventory.filter((_, i) => i !== idx))}
-                                                            className="p-1.5 text-rose-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                                        >
-                                                            <Trash2 size={14} />
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ))}
-
-                                            <div className="pt-2">
-                                                <select
-                                                    className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-500 outline-none focus:ring-2 focus:ring-indigo-500"
-                                                    onChange={(e) => {
-                                                        const item = availableInventory.find(i => i.id === e.target.value);
-                                                        if (item) {
-                                                            setBookingInventory([...bookingInventory, { item_id: item.id, quantity: 1, name: item.name, unit: item.unit }]);
-                                                        }
-                                                        e.target.value = '';
-                                                    }}
-                                                    value=""
-                                                >
-                                                    <option value="">{t('booking_modal.add_extra_item')}</option>
-                                                    {availableInventory.filter(i => !bookingInventory.some(bi => bi.item_id === i.id)).map(i => (
-                                                        <option key={i.id} value={i.id}>{i.name}</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-
-                    </div>
-                </div>
-
-                {/* Footer */}
-                <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-between rounded-b-3xl">
-                    <div className="flex flex-col">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{t('booking_modal.total_label')}</span>
-                        <div className="flex items-center gap-2">
-                            {formData.recurrence_type !== 'none' && (
-                                <span className="text-xs text-slate-400 font-bold">{t('booking_modal.grand_total_label')}</span>
-                            )}
-                            <span className="text-2xl font-black text-indigo-700">R$ {totalPriceRecurrence().toFixed(2)}</span>
-                        </div>
-                    </div>
-                    <div className="flex gap-4">
-                        <button onClick={onClose} className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-200 rounded-2xl transition-colors text-sm">
-                            {t('booking_modal.cancel_button')}
-                        </button>
-                        {isEditMode && (
-                            <button
-                                onClick={handleDeleteClick}
-                                className="px-4 py-3 text-rose-500 font-bold hover:bg-rose-50 rounded-2xl transition-colors text-sm flex items-center gap-2"
-                            >
-                                <Trash2 size={18} />
-                            </button>
-                        )}
-                        <button
-                            onClick={handleSave}
-                            disabled={saving || !formData.customer_id || !formData.assigned_to || !formData.service_id || !formData.start_date || !formData.start_time}
-                            className={`px-8 py-3 bg-indigo-600 text-white font-black rounded-2xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-indigo-100 transition-all active:scale-95 flex items-center gap-2 text-sm ${(!formData.customer_id || !formData.assigned_to || !formData.service_id || !formData.start_date || !formData.start_time) ? 'grayscale' : ''}`}
-                        >
-                            {saving ? (
-                                <span className="flex items-center gap-2"><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> {t('booking_modal.saving')}</span>
-                            ) : (
-                                <>{isEditMode ? t('booking_modal.save_changes') : t('booking_modal.confirm_booking')} <ChevronRight size={18} /></>
-                            )}
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <DeleteRecurrenceModal
-                isOpen={showDeleteModal}
-                onClose={() => setShowDeleteModal(false)}
-                onConfirm={confirmDeleteSeries}
-                instances={recurrenceSeriesForDelete}
-                isDeleting={isDeleting}
-            />
-
-            {/* Slide-over (Scheduling & Recurrence) */}
-            {showDrawer && (
-                <div className="fixed inset-0 z-[60] flex justify-end">
-                    {/* Backdrop */}
-                    <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in" onClick={() => setShowDrawer(false)}></div>
-
-                    {/* Drawer Content */}
-                    <div className="relative w-full max-w-xl bg-white shadow-2xl h-full flex flex-col animate-in slide-in-from-right duration-500">
-                        <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center shrink-0">
-                            <div>
-                                <h3 className="font-black text-slate-800 uppercase tracking-tight text-lg">
-                                    {drawerMode === 'schedule' ? t('booking_modal.drawer_schedule_title') : drawerMode === 'service' ? t('booking_modal.drawer_service_title') : t('booking_modal.drawer_client_title')}
-                                </h3>
-                                <p className="text-xs text-slate-500 font-bold uppercase tracking-widest leading-none mt-1">
-                                    {drawerMode === 'schedule' ? t('booking_modal.drawer_schedule_subtitle') : drawerMode === 'service' ? t('booking_modal.subtitle') : t('booking_modal.drawer_client_subtitle')}
-                                </p>
                             </div>
-                            <button onClick={() => setShowDrawer(false)} className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-slate-600 shadow-sm transition-all active:scale-95">✕</button>
-                        </div>
 
-                        <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
-                            {drawerMode === 'customer' ? (
-                                <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                                    <CustomerCombobox
-                                        customers={customers}
-                                        selectedId={formData.customer_id}
-                                        onSelect={(customer) => {
-                                            setFormData({ ...formData, customer_id: customer.id });
-                                            setShowDrawer(false);
-                                        }}
-                                        onCreate={async (newCust) => {
-                                            const { data: { user } } = await supabase.auth.getUser();
-                                            if (!user) return null;
-
-                                            const { data: profile } = await supabase
-                                                .from('profiles')
-                                                .select('tenant_id')
-                                                .eq('id', user.id)
-                                                .single();
-
-                                            const tenantId = (profile as any)?.tenant_id;
-                                            if (!tenantId) {
-                                                toast.error("Erro: Tenant ID náo encontrado.");
-                                                return null;
-                                            }
-
-                                            if (newCust.phone || newCust.email) {
-                                                const filters = [];
-                                                if (newCust.phone) filters.push(`phone.eq.${newCust.phone}`);
-                                                if (newCust.email) filters.push(`email.eq.${newCust.email}`);
-
-                                                const { data: existing } = await (supabase
-                                                    .from('customers')
-                                                    .select('*')
-                                                    .eq('tenant_id', tenantId)
-                                                    .or(filters.join(','))
-                                                    .maybeSingle() as any);
-
-                                                if (existing) {
-                                                    toast.info("Cliente já cadastrado. Selecionando existente...");
-                                                    if (!(customers as Customer[]).find(c => c.id === existing.id)) {
-                                                        setCustomers([...customers, existing as Customer]);
-                                                    }
-                                                    setShowDrawer(false);
-                                                    return existing as Customer;
-                                                }
-                                            }
-
-                                            const { data, error } = await supabase
-                                                .from('customers')
-                                                .insert({
-                                                    name: newCust.name,
-                                                    email: newCust.email || null,
-                                                    phone: newCust.phone || null,
-                                                    address: newCust.address,
-                                                    tenant_id: tenantId
-                                                } as any)
-                                                .select()
-                                                .single();
-
-                                            if (error) { toast.error(`Erro: ${error.message}`); return null; }
-                                            toast.success("Cliente criado!");
-                                            setCustomers([...customers, data as Customer]);
-                                            setShowDrawer(false);
-                                            return data as Customer;
-                                        }}
-                                    />
-
-                                    <div className="mt-8 p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100 flex gap-3">
-                                        <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
-                                            <UserPlus size={16} />
-                                        </div>
-                                        <div>
-                                            <h4 className="text-sm font-bold text-slate-800 mb-1">Novo Cliente?</h4>
-                                            <p className="text-xs text-slate-500 leading-relaxed">
-                                                Digite o nome acima. Se náo encontrarmos, o formulário de cadastro aparecerá automaticamente aqui mesmo.
-                                            </p>
-                                        </div>
-                                    </div>
+                            {/* Notes & Inventory Section */}
+                            <div className="border border-slate-100 rounded-3xl flex flex-col overflow-hidden bg-slate-50/30 min-h-[300px]">
+                                <div className="flex gap-1 p-1.5 bg-slate-100 rounded-t-3xl shrink-0">
+                                    <button
+                                        onClick={() => setActiveTab('details')}
+                                        className={`flex-1 py-1.5 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === 'details'
+                                            ? 'bg-white text-slate-800 shadow-sm'
+                                            : 'text-slate-400 hover:text-slate-600'
+                                            }`}
+                                    >
+                                        {t('booking_modal.tab_notes')}
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveTab('inventory')}
+                                        className={`flex-1 py-1.5 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === 'inventory'
+                                            ? 'bg-white text-slate-800 shadow-sm'
+                                            : 'text-slate-400 hover:text-slate-600'
+                                            }`}
+                                    >
+                                        {t('booking_modal.tab_inventory')}
+                                    </button>
                                 </div>
-                            ) : drawerMode === 'service' ? (
-                                <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                                    <div className="flex-1 overflow-y-auto px-1 scrollbar-hide pb-20">
-                                        {(() => {
-                                            const selectedService = getSelectedService();
-                                            return (
-                                                <>
-                                                    {/* INITIAL SERVICE SECTION */}
-                                                    <div className="mb-8">
-                                                        <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 block">
-                                                            {formData.use_split_recurrence ? '1ª Visita (Serviço Inicial)' : 'Serviço Principal'}
-                                                        </label>
 
-                                                        <div className="flex gap-2 mb-4">
-                                                            <div className="w-1/3 relative">
-                                                                <select
-                                                                    className="w-full pl-3 pr-8 py-3 bg-white border border-slate-200 rounded-2xl appearance-none text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                                                    value={selectedCategory}
-                                                                    onChange={e => setSelectedCategory(e.target.value)}
-                                                                >
-                                                                    <option value="">Todas Categorias</option>
-                                                                    {categories.map(c => (
-                                                                        <option key={c.id} value={c.id}>{c.name}</option>
-                                                                    ))}
-                                                                </select>
-                                                                <ChevronRight size={14} className="absolute right-3 top-1/2 -translate-y-1/2 rotate-90 text-slate-400 pointer-events-none" />
-                                                            </div>
-
-                                                            <div className="w-2/3 relative">
-                                                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                                                                <select
-                                                                    className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl appearance-none text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow shadow-sm"
-                                                                    value={formData.service_id}
-                                                                    onChange={e => handleServiceChange(e.target.value)}
-                                                                >
-                                                                    <option value="">Selecione o serviço...</option>
-
-                                                                    {/* Empty State warning inside the select if category selected but no services */}
-                                                                    {(() => {
-                                                                        if (!selectedCategory) return null;
-                                                                        const hasServicesInCat = services.some(s => s.category_id === selectedCategory);
-                                                                        if (!hasServicesInCat) {
-                                                                            return (
-                                                                                <option disabled className="text-rose-500">
-                                                                                    ⚠️ Nenhum serviço vinculado a esta categoria
-                                                                                </option>
-                                                                            );
-                                                                        }
-                                                                        return null;
-                                                                    })()}
-
-                                                                    {/* Grouped services by category */}
-                                                                    {categories
-                                                                        .filter(cat => !selectedCategory || cat.id === selectedCategory)
-                                                                        .map(cat => {
-                                                                            const catServices = services.filter(s => s.category_id === cat.id);
-                                                                            if (catServices.length === 0) return null;
-
-                                                                            return (
-                                                                                <optgroup key={cat.id} label={cat.name}>
-                                                                                    {catServices.map(s => (
-                                                                                        <option key={s.id} value={s.id}>
-                                                                                            {s.name} - R$ {s.price_default}
-                                                                                        </option>
-                                                                                    ))}
-                                                                                </optgroup>
-                                                                            );
-                                                                        })}
-
-                                                                    {/* Services without category (only show if no filter is active or if specifically "all" is intended) */}
-                                                                    {(!selectedCategory) && services.filter(s => !s.category_id).length > 0 && (
-                                                                        <optgroup label="Geral / Outros">
-                                                                            {services.filter(s => !s.category_id).map(s => (
-                                                                                <option key={s.id} value={s.id}>
-                                                                                    {s.name} - R$ {s.price_default}
-                                                                                </option>
-                                                                            ))}
-                                                                        </optgroup>
-                                                                    )}
-                                                                </select>
-                                                                <ChevronRight size={16} className="absolute right-3 top-1/2 -translate-y-1/2 rotate-90" />
-                                                            </div>
-                                                        </div>
-
-                                                        {selectedService && (
-                                                            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-top-2">
-                                                                <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-start">
-                                                                    <div>
-                                                                        <h4 className="font-bold text-slate-800 text-sm">{selectedService.name}</h4>
-                                                                        <div className="flex items-center gap-2 mt-1">
-                                                                            <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold uppercase tracking-wide rounded-md">
-                                                                                {selectedService.duration_minutes} min
-                                                                            </span>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="text-right">
-                                                                        <div className="text-lg font-black text-indigo-600">R$ {formData.price.toFixed(2)}</div>
-                                                                        <div className="text-[10px] text-slate-400 font-medium">Preço Base</div>
-                                                                    </div>
-                                                                </div>
-
-                                                                {serviceTasks.length > 0 && (
-                                                                    <div className="p-4 border-b border-slate-100 bg-slate-50/50">
-                                                                        <div className="mb-4 flex items-center justify-between">
-                                                                            <div className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                                                                                <Sparkles size={14} className="text-amber-500" /> Smart Estimate Checklist
-                                                                            </div>
-                                                                            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full uppercase tracking-tight">
-                                                                                Incluso
-                                                                            </span>
-                                                                        </div>
-
-                                                                        <div className="space-y-4 max-h-[180px] overflow-y-auto pr-2 custom-scrollbar">
-                                                                            {Object.entries(
-                                                                                serviceTasks.reduce((acc, task) => {
-                                                                                    const room = task.room_name || 'Geral';
-                                                                                    if (!acc[room]) acc[room] = [];
-                                                                                    acc[room].push(task);
-                                                                                    return acc;
-                                                                                }, {} as Record<string, ServiceTask[]>)
-                                                                            ).map(([room, tasks]) => (
-                                                                                <div key={room} className="space-y-2">
-                                                                                    <div className="flex items-center gap-2 pb-1 border-b border-slate-100">
-                                                                                        <div className="w-5 h-5 rounded bg-indigo-50 flex items-center justify-center text-indigo-500">
-                                                                                            {room.toLowerCase().includes('cozinha') || room.toLowerCase().includes('kitchen') ? <Clock size={12} /> :
-                                                                                                room.toLowerCase().includes('banheiro') || room.toLowerCase().includes('bath') ? <Palette size={12} /> :
-                                                                                                    room.toLowerCase().includes('quarto') || room.toLowerCase().includes('bed') ? <FileText size={12} /> :
-                                                                                                        <Check size={12} />}
-                                                                                        </div>
-                                                                                        <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">{room}</span>
-                                                                                    </div>
-                                                                                    <div className="grid grid-cols-1 gap-1.5 pl-7">
-                                                                                        {(tasks as ServiceTask[]).map(task => (
-                                                                                            <div key={task.id} className="flex items-start gap-2 group">
-                                                                                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0 group-hover:scale-125 transition-transform" />
-                                                                                                <span className="text-xs text-slate-600 font-medium group-hover:text-slate-900 transition-colors">{task.title}</span>
-                                                                                            </div>
-                                                                                        ))}
-                                                                                    </div>
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-
-                                                                <div className="p-4 grid grid-cols-3 gap-3 bg-slate-50/30">
-                                                                    <div>
-                                                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">Preço Manual (R$)</label>
-                                                                        <input
-                                                                            type="number"
-                                                                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold text-slate-700"
-                                                                            value={formData.price}
-                                                                            onChange={e => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
-                                                                        />
-                                                                    </div>
-                                                                    <div>
-                                                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">Desconto (R$)</label>
-                                                                        <input
-                                                                            type="number"
-                                                                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 outline-none text-xs font-bold text-rose-600"
-                                                                            value={discount.value || ''}
-                                                                            onChange={e => setDiscount({ ...discount, value: parseFloat(e.target.value) || 0 })}
-                                                                        />
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                    </div>
-
-                                                    <div className="my-6 border-t border-slate-100" />
-
-                                                    {/* Add-ons Section */}
-                                                    <div className="pt-4">
-                                                        <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] italic mb-4">
-                                                            Adicionais & Upsell
-                                                        </label>
-                                                        <div className="grid grid-cols-1 gap-2">
-                                                            {addons
-                                                                .filter(addon => addon.is_standalone || (formData.service_id && !addon.is_standalone))
-                                                                .map(addon => {
-                                                                    const isSelected = selectedAddons.includes(addon.id);
-                                                                    return (
-                                                                        <div
-                                                                            key={addon.id}
-                                                                            onClick={() => toggleAddon(addon.id)}
-                                                                            className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between group ${isSelected
-                                                                                ? 'bg-indigo-50 border-indigo-200 shadow-sm'
-                                                                                : 'bg-white border-slate-100 hover:border-indigo-200'
-                                                                                }`}
-                                                                        >
-                                                                            <div className="flex items-center gap-3">
-                                                                                <div className={`w-5 h-5 rounded-md flex items-center justify-center transition-colors ${isSelected ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-300 group-hover:bg-indigo-100 group-hover:text-indigo-400'
-                                                                                    }`}>
-                                                                                    <Check size={12} strokeWidth={4} />
-                                                                                </div>
-                                                                                <div>
-                                                                                    <div className={`text-xs font-bold transition-colors ${isSelected ? 'text-indigo-900' : 'text-slate-600'}`}>{addon.name}</div>
-                                                                                    {addon.description && <div className="text-[10px] text-slate-400 truncate max-w-[180px]">{addon.description}</div>}
-                                                                                </div>
-                                                                            </div>
-                                                                            <div className={`text-xs font-black transition-colors ${isSelected ? 'text-indigo-600' : 'text-slate-400'}`}>
-                                                                                + R$ {addon.price.toFixed(2)}
-                                                                            </div>
-                                                                        </div>
-                                                                    );
-                                                                })}
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="p-8 border-t border-slate-100 bg-slate-50/50 shrink-0 mt-auto">
-                                                        <button
-                                                            onClick={() => setShowDrawer(false)}
-                                                            className="w-full py-4 bg-slate-900 text-white font-black uppercase tracking-[0.2em] rounded-2xl hover:bg-black transition-all shadow-xl shadow-slate-200 active:scale-95"
-                                                        >
-                                                            Confirmar Serviços
-                                                        </button>
-                                                    </div>
-                                                </>
-                                            );
-                                        })()}
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="space-y-10 animate-in fade-in slide-in-from-right-4 duration-300">
-
-                                    {/* Section 1: Data & Hora */}
-                                    <div className="space-y-4">
-                                        <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] italic mb-6">
-                                            <span className="bg-slate-800 text-white h-5 w-5 rounded-lg flex items-center justify-center not-italic text-[10px] shadow-lg shadow-slate-200">1</span>
-                                            Definiçáo Inicial
-                                        </label>
-
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="space-y-2">
-                                                <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Data</label>
-                                                <input
-                                                    type="date"
-                                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-slate-700"
-                                                    value={formData.start_date}
-                                                    onChange={e => setFormData({ ...formData, start_date: e.target.value })}
-                                                />
-                                            </div>
-                                            {/* Smart Time Slot Selector */}
-                                            <div className="space-y-3 col-span-2">
-                                                <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">
-                                                    Horários Disponíveis
-                                                    {formData.assigned_to && (
-                                                        <span className="ml-2 text-indigo-600 font-normal normal-case opacity-80">
-                                                            (Baseado em {staff.find(s => s.id === formData.assigned_to)?.name})
-                                                        </span>
-                                                    )}
-                                                </label>
-                                                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                                                    {generateTimeSlots().map(slot => (
-                                                        <button
-                                                            key={slot.time}
-                                                            type="button"
-                                                            disabled={!slot.available}
-                                                            onClick={() => setFormData({ ...formData, start_time: slot.time })}
-                                                            className={`
-                                                                    py-2 rounded-lg text-xs font-bold transition-all border
-                                                                    ${formData.start_time === slot.time
-                                                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-105'
-                                                                    : slot.available
-                                                                        ? 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'
-                                                                        : 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed decoration-slate-300'
-                                                                }
-                                                                `}
-                                                        >
-                                                            {slot.time}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                                {generateTimeSlots().filter(s => s.available).length === 0 && (
-                                                    <div className="p-3 bg-amber-50 text-amber-700 text-xs rounded-xl flex items-center gap-2 border border-amber-100">
-                                                        <Sparkles size={14} />
-                                                        <span>Nenhum horário disponível para este dia.</span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Duraçáo</label>
-                                            <select
-                                                className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-slate-700 transition-all"
-                                                value={formData.duration_minutes}
-                                                onChange={e => setFormData({ ...formData, duration_minutes: parseInt(e.target.value) })}
-                                            >
-                                                <option value={30}>30 min</option>
-                                                <option value={60}>1 hora</option>
-                                                <option value={90}>1h 30min</option>
-                                                <option value={120}>2 horas</option>
-                                                <option value={180}>3 horas</option>
-                                                <option value={240}>4 horas</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-
-                                    {/* Section 2: Recorrência */}
-                                    <div className="space-y-4">
-                                        <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] italic mb-6">
-                                            <span className="bg-slate-800 text-white h-5 w-5 rounded-lg flex items-center justify-center not-italic text-[10px] shadow-lg shadow-slate-200">2</span>
-                                            Frequência
-                                        </label>
-
-                                        <div className="flex flex-wrap gap-2">
-                                            {[
-                                                { value: 'none', label: 'Náo repete' },
-                                                { value: 'daily', label: 'Diário' },
-                                                { value: 'weekly', label: 'Semanal' },
-                                                { value: 'biweekly', label: 'Quinzenal' },
-                                                { value: 'monthly', label: 'Mensal' },
-                                            ].map(opt => (
+                                {activeTab === 'details' ? (
+                                    <div className="flex flex-col flex-1 overflow-hidden">
+                                        <div className="flex gap-1 p-1.5 bg-slate-50 border-b border-slate-100 shrink-0">
+                                            {(['internal', 'client', 'staff'] as const).map(tab => (
                                                 <button
-                                                    key={opt.value}
-                                                    type="button"
-                                                    onClick={() => setFormData({ ...formData, recurrence_type: opt.value as RecurrenceType })}
-                                                    className={`px-4 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl border transition-all ${formData.recurrence_type === opt.value
-                                                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100'
-                                                        : 'bg-white text-slate-400 border-slate-200 hover:border-indigo-300'
+                                                    key={tab}
+                                                    onClick={() => setActiveNotesTab(tab)}
+                                                    className={`flex-1 py-1.5 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeNotesTab === tab
+                                                        ? 'bg-slate-800 text-white shadow-sm'
+                                                        : 'text-slate-400 hover:text-slate-600'
                                                         }`}
                                                 >
-                                                    {opt.label}
+                                                    {tab === 'internal' ? t('booking_modal.tab_internal') : tab === 'client' ? t('booking_modal.tab_client') : t('booking_modal.tab_staff')}
                                                 </button>
                                             ))}
                                         </div>
-
-                                        {formData.recurrence_type !== 'none' && (
-                                            <div className="mt-4 p-6 bg-indigo-50/50 rounded-3xl border border-indigo-100 flex items-center justify-between">
-                                                <div className="flex items-center gap-4">
-                                                    <span className="text-xs font-bold text-indigo-700 uppercase">Repetir</span>
-                                                    <input
-                                                        type="number"
-                                                        min="2"
-                                                        max="52"
-                                                        className="w-16 h-12 bg-white border border-indigo-200 rounded-2xl text-lg font-black text-center text-indigo-800 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                                        value={formData.recurrence_count}
-                                                        onChange={e => setFormData({ ...formData, recurrence_count: parseInt(e.target.value) || 4 })}
-                                                    />
-                                                    <span className="text-xs font-bold text-indigo-700 uppercase">vezes</span>
-                                                </div>
-                                                <RefreshCw className="text-indigo-300 animate-spin-slow" size={24} />
-                                            </div>
-                                        )}
-
-                                        {/* Section 2.5: Notificações */}
-                                        <div className="space-y-4 pt-4 border-t border-slate-100">
-                                            <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] italic mb-6">
-                                                <span className="bg-slate-800 text-white h-5 w-5 rounded-lg flex items-center justify-center not-italic text-[10px] shadow-lg shadow-slate-200">2.5</span>
-                                                Notificações
-                                            </label>
-
-                                            <div className="grid grid-cols-1 gap-4">
-                                                {/* Cliente Notification */}
-                                                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="p-2 bg-indigo-100 text-indigo-600 rounded-xl">
-                                                            <Mail size={16} />
-                                                        </div>
-                                                        <div>
-                                                            <div className="text-sm font-bold text-slate-800">Notificar Cliente</div>
-                                                            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Confirmação de Agendamento</div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex bg-white p-1 rounded-xl border border-slate-200">
-                                                        {(['none', 'email', 'sms', 'both'] as NotificationType[]).map(type => (
-                                                            <button
-                                                                key={type}
-                                                                onClick={() => setFormData({ ...formData, notify_client: type })}
-                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${formData.notify_client === type
-                                                                    ? 'bg-indigo-600 text-white shadow-sm'
-                                                                    : 'text-slate-400 hover:text-indigo-500'
-                                                                    }`}
-                                                            >
-                                                                {type === 'none' ? 'Off' : type === 'both' ? 'Email+SMS' : type}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-
-                                                {/* Staff Notification */}
-                                                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="p-2 bg-purple-100 text-purple-600 rounded-xl">
-                                                            <MessageSquare size={16} />
-                                                        </div>
-                                                        <div>
-                                                            <div className="text-sm font-bold text-slate-800">Notificar Equipe</div>
-                                                            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Aviso de Novo Trabalho</div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex bg-white p-1 rounded-xl border border-slate-200">
-                                                        {(['none', 'email', 'sms', 'both'] as NotificationType[]).map(type => (
-                                                            <button
-                                                                key={type}
-                                                                onClick={() => setFormData({ ...formData, notify_staff: type })}
-                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${formData.notify_staff === type
-                                                                    ? 'bg-purple-600 text-white shadow-sm'
-                                                                    : 'text-slate-400 hover:text-purple-500'
-                                                                    }`}
-                                                            >
-                                                                {type === 'none' ? 'Off' : type === 'both' ? 'Email+SMS' : type}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </div>
+                                        <div className="p-4 flex-1 overflow-y-auto">
+                                            <textarea
+                                                className="w-full h-full bg-transparent border-none focus:ring-0 text-sm text-slate-600 placeholder:text-slate-300 italic resize-none"
+                                                placeholder={
+                                                    activeNotesTab === 'internal' ? t('booking_modal.notes_placeholder_internal') :
+                                                        activeNotesTab === 'client' ? t('booking_modal.notes_placeholder_client') :
+                                                            t('booking_modal.notes_placeholder_staff')
+                                                }
+                                                value={
+                                                    activeNotesTab === 'internal' ? formData.notes_internal :
+                                                        activeNotesTab === 'client' ? formData.notes_client :
+                                                            formData.notes_staff
+                                                }
+                                                onChange={e => setFormData({
+                                                    ...formData,
+                                                    [activeNotesTab === 'internal' ? 'notes_internal' : activeNotesTab === 'client' ? 'notes_client' : 'notes_staff']: e.target.value
+                                                })}
+                                            />
                                         </div>
                                     </div>
+                                ) : (
+                                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest">{t('booking_modal.supplies_label')}</h4>
+                                            <span className="text-[10px] text-slate-400 font-bold">{bookingInventory.length} {t('booking_modal.items_count')}</span>
+                                        </div>
 
-                                    {/* Section 3: Preview */}
-                                    {formData.recurrence_type !== 'none' && recurrenceInstances.length > 0 && (
-                                        <div className="space-y-4 pt-4">
-                                            <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] italic mb-6">
-                                                <span className="bg-slate-800 text-white h-5 w-5 rounded-lg flex items-center justify-center not-italic text-[10px] shadow-lg shadow-slate-200">3</span>
-                                                Ajuste Fino das Datas
-                                            </label>
-
-                                            <div className="space-y-3 pr-2">
-                                                {recurrenceInstances.map((instance, idx) => (
-                                                    <div
-                                                        key={instance.id}
-                                                        className={`p-5 rounded-3xl border transition-all group ${editingInstance === instance.id
-                                                            ? 'bg-indigo-50/50 border-indigo-200 shadow-xl shadow-indigo-100/20'
-                                                            : 'bg-white border-slate-100 hover:border-indigo-100 hover:shadow-lg hover:shadow-slate-100 cursor-pointer'
-                                                            }`}
-                                                        onClick={() => setEditingInstance(editingInstance === instance.id ? null : instance.id)}
-                                                    >
-                                                        <div className="flex items-center justify-between">
-                                                            <div className="flex items-center gap-5">
-                                                                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-black transition-transform group-hover:scale-110 ${idx === 0 ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-slate-100 text-slate-500'
-                                                                    }`}>
-                                                                    {idx + 1}
-                                                                </div>
-                                                                <div>
-                                                                    <div className="text-base font-black text-slate-800 leading-tight">
-                                                                        {format(instance.date, "EEEE, d 'de' MMMM", { locale: ptBR })}
-                                                                    </div>
-                                                                    <div className="flex items-center gap-2 mt-1">
-                                                                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-                                                                            {instance.time} • R$ {(instance.price + instance.addon_ids.reduce((s, aid) => s + (addons.find(a => a.id === aid)?.price || 0), 0)).toFixed(2)}
-                                                                        </span>
-                                                                        <span className="w-1 h-1 rounded-full bg-slate-200" />
-                                                                        <span className="text-[11px] font-black text-indigo-500 uppercase tracking-tight">
-                                                                            {services.find(s => s.id === instance.service_id)?.name}
-                                                                            {instance.addon_ids.length > 0 && ` (+${instance.addon_ids.length} add-ons)`}
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex items-center gap-3">
-                                                                {idx > 0 && (
-                                                                    <button
-                                                                        onClick={(e) => { e.stopPropagation(); removeInstance(instance.id); }}
-                                                                        className="w-10 h-10 flex items-center justify-center text-rose-300 hover:text-rose-500 hover:bg-rose-50 rounded-2xl transition-all active:scale-95"
-                                                                    >
-                                                                        <Trash2 size={18} />
-                                                                    </button>
-                                                                )}
-                                                                <div className={`w-10 h-10 flex items-center justify-center rounded-2xl transition-all ${editingInstance === instance.id ? 'bg-indigo-600 text-white' : 'bg-slate-50 text-slate-300 group-hover:text-indigo-600 group-hover:bg-indigo-50'}`}>
-                                                                    <Edit2 size={16} />
-                                                                </div>
-                                                            </div>
+                                        {isLoadingInventory ? (
+                                            <div className="text-center py-8"><div className="animate-spin h-5 w-5 border-2 border-indigo-600 border-t-transparent rounded-full mx-auto"></div></div>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                {bookingInventory.map((item, idx) => (
+                                                    <div key={idx} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-2xl group">
+                                                        <div>
+                                                            <p className="text-xs font-bold text-slate-700">{item.name}</p>
+                                                            <p className="text-[10px] text-slate-400 font-bold uppercase">{item.quantity} {item.unit}(s)</p>
                                                         </div>
+                                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <button
+                                                                onClick={() => setBookingInventory(bookingInventory.filter((_, i) => i !== idx))}
+                                                                className="p-1.5 text-rose-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))}
 
-                                                        {editingInstance === instance.id && (
-                                                            <div className="mt-5 pt-5 border-t border-indigo-100 space-y-4 animate-in fade-in slide-in-from-top-2" onClick={e => e.stopPropagation()}>
-                                                                <div className="grid grid-cols-2 gap-4">
-                                                                    <div className="space-y-1.5">
-                                                                        <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Data da Visita</label>
-                                                                        <input
-                                                                            type="date"
-                                                                            className="w-full px-4 py-3 bg-white border border-indigo-100 rounded-2xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
-                                                                            value={format(instance.date, 'yyyy-MM-dd')}
-                                                                            onChange={e => updateInstance(instance.id, { date: new Date(e.target.value + 'T' + instance.time) })}
-                                                                        />
-                                                                    </div>
-                                                                    <div className="space-y-1.5">
-                                                                        <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Horário</label>
-                                                                        <input
-                                                                            type="time"
-                                                                            className="w-full px-4 py-3 bg-white border border-indigo-100 rounded-2xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
-                                                                            value={instance.time}
-                                                                            onChange={e => updateInstance(instance.id, { time: e.target.value })}
-                                                                        />
-                                                                    </div>
-                                                                </div>
+                                                <div className="pt-2">
+                                                    <select
+                                                        className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-500 outline-none focus:ring-2 focus:ring-indigo-500"
+                                                        onChange={(e) => {
+                                                            const item = availableInventory.find(i => i.id === e.target.value);
+                                                            if (item) {
+                                                                setBookingInventory([...bookingInventory, { item_id: item.id, quantity: 1, name: item.name, unit: item.unit }]);
+                                                            }
+                                                            e.target.value = '';
+                                                        }}
+                                                        value=""
+                                                    >
+                                                        <option value="">{t('booking_modal.add_extra_item')}</option>
+                                                        {availableInventory.filter(i => !bookingInventory.some(bi => bi.item_id === i.id)).map(i => (
+                                                            <option key={i.id} value={i.id}>{i.name}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
 
-                                                                <div className="space-y-4">
-                                                                    <div className="grid grid-cols-2 gap-4">
-                                                                        <div className="space-y-1.5">
-                                                                            <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Categoria da Visita</label>
+                        {/* Footer: Unified Premium Redesign */}
+                        <div className="px-10 py-7 bg-slate-50 border-t border-slate-100 flex items-center justify-between rounded-b-[32px] shrink-0">
+                            <div className="flex flex-col">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{t('booking_modal.total_label')}</span>
+                                <div className="flex items-center gap-2">
+                                    {formData.recurrence_type !== 'none' && (
+                                        <div className="flex flex-col">
+                                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Inicial</span>
+                                            <span className="text-lg font-black text-indigo-700">R$ {calculateEstimate({
+                                                service: getSelectedService() ? { ...getSelectedService()!, price_default: formData.price } : null,
+                                                selectedTaskIds: [],
+                                                availableTasks: [],
+                                                selectedAddonIds: selectedAddons,
+                                                availableAddons: addons,
+                                                discount: { type: discount.type, value: discount.value }
+                                            }).total.toFixed(2)}</span>
+                                        </div>
+                                    )}
+                                    {formData.recurrence_type !== 'none' && (
+                                        <div className="w-[1px] h-8 bg-slate-200 mx-2" />
+                                    )}
+                                    <div className="flex flex-col">
+                                        {formData.recurrence_type !== 'none' && (
+                                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{formData.recurrence_type === 'weekly' ? 'Semanal' : formData.recurrence_type === 'biweekly' ? 'Quinzenal' : 'Mensal'}</span>
+                                        )}
+                                        <span className={`${formData.recurrence_type !== 'none' ? 'text-lg' : 'text-2xl'} font-black text-indigo-700`}>
+                                            R$ {(formData.recurrence_type !== 'none' ? (
+                                                calculateEstimate({
+                                                    service: services.find(s => s.id === (formData.recurrence_service_id || formData.service_id)) ? {
+                                                        id: (formData.recurrence_service_id || formData.service_id),
+                                                        name: services.find(s => s.id === (formData.recurrence_service_id || formData.service_id))?.name || '',
+                                                        price_default: formData.recurrence_price || services.find(s => s.id === (formData.recurrence_service_id || formData.service_id))?.price_default || 0,
+                                                        duration_minutes: services.find(s => s.id === (formData.recurrence_service_id || formData.service_id))?.duration_minutes || 60
+                                                    } : null,
+                                                    selectedTaskIds: [],
+                                                    availableTasks: [],
+                                                    selectedAddonIds: selectedAddons,
+                                                    availableAddons: addons,
+                                                    discount: { type: discount.type, value: discount.value }
+                                                }).total
+                                            ) : totalPriceRecurrence()).toFixed(2)}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex gap-4">
+                                <button
+                                    onClick={handleSendQuote}
+                                    disabled={sendingQuote || saving || !formData.customer_id || !formData.service_id}
+                                    className="px-6 py-3 bg-white border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 rounded-2xl transition-all text-sm flex items-center gap-2 shadow-sm active:scale-95 disabled:opacity-50"
+                                >
+                                    {sendingQuote ? (
+                                        <div className="w-4 h-4 border-2 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin"></div>
+                                    ) : (
+                                        <Mail size={18} className="text-indigo-500" />
+                                    )}
+                                    Enviar Orçamento
+                                </button>
+                                <button onClick={onClose} className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-200 rounded-2xl transition-colors text-sm">
+                                    {t('booking_modal.cancel_button')}
+                                </button>
+                                {isEditMode && (
+                                    <button
+                                        onClick={handleDeleteClick}
+                                        className="px-4 py-3 text-rose-500 font-bold hover:bg-rose-50 rounded-2xl transition-colors text-sm flex items-center gap-2"
+                                    >
+                                        <Trash2 size={18} />
+                                    </button>
+                                )}
+                                <button
+                                    onClick={handleSave}
+                                    disabled={saving || !formData.customer_id || !formData.assigned_to || !formData.service_id || !formData.start_date || !formData.start_time}
+                                    className={`px-8 py-3 bg-indigo-600 text-white font-black rounded-2xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-indigo-100 transition-all active:scale-95 flex items-center gap-2 text-sm ${(!formData.customer_id || !formData.assigned_to || !formData.service_id || !formData.start_date || !formData.start_time) ? 'grayscale' : ''}`}
+                                >
+                                    {saving ? (
+                                        <span className="flex items-center gap-2"><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> {t('booking_modal.saving')}</span>
+                                    ) : (
+                                        <>{isEditMode ? t('booking_modal.save_changes') : t('booking_modal.confirm_booking')} <ChevronRight size={18} /></>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <DeleteRecurrenceModal
+                        isOpen={showDeleteModal}
+                        onClose={() => setShowDeleteModal(false)}
+                        onConfirm={confirmDeleteSeries}
+                        instances={recurrenceSeriesForDelete}
+                        isDeleting={isDeleting}
+                    />
+
+                    {/* Slide-over (Scheduling & Recurrence) */}
+                    {
+                        showDrawer && (
+                            <div className="fixed inset-0 z-[60] flex justify-end">
+                                {/* Backdrop */}
+                                <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in" onClick={() => setShowDrawer(false)}></div>
+
+                                {/* Drawer Content */}
+                                <div className="relative w-full max-w-xl bg-white shadow-2xl h-full flex flex-col animate-in slide-in-from-right duration-500">
+                                    <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center shrink-0">
+                                        <div>
+                                            <h3 className="font-black text-slate-800 uppercase tracking-tight text-lg">
+                                                {drawerMode === 'schedule' ? t('booking_modal.drawer_schedule_title') : drawerMode === 'service' ? t('booking_modal.drawer_service_title') : t('booking_modal.drawer_client_title')}
+                                            </h3>
+                                            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest leading-none mt-1">
+                                                {drawerMode === 'schedule' ? t('booking_modal.drawer_schedule_subtitle') : drawerMode === 'service' ? t('booking_modal.subtitle') : t('booking_modal.drawer_client_subtitle')}
+                                            </p>
+                                        </div>
+                                        <button onClick={() => setShowDrawer(false)} className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-slate-600 shadow-sm transition-all active:scale-95">✕</button>
+                                    </div>
+
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+                                        {drawerMode === 'customer' ? (
+                                            <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+                                                <CustomerCombobox
+                                                    customers={customers}
+                                                    selectedId={formData.customer_id}
+                                                    onSelect={(customer) => {
+                                                        setFormData({ ...formData, customer_id: customer.id });
+                                                        setShowDrawer(false);
+                                                    }}
+                                                    onCreate={async (newCust) => {
+                                                        const { data: { user } } = await supabase.auth.getUser();
+                                                        if (!user) return null;
+
+                                                        const { data: profile } = await supabase
+                                                            .from('profiles')
+                                                            .select('tenant_id')
+                                                            .eq('id', user.id)
+                                                            .single();
+
+                                                        const tenantId = (profile as any)?.tenant_id;
+                                                        if (!tenantId) {
+                                                            toast.error("Erro: Tenant ID náo encontrado.");
+                                                            return null;
+                                                        }
+
+                                                        if (newCust.phone || newCust.email) {
+                                                            const filters = [];
+                                                            if (newCust.phone) filters.push(`phone.eq.${newCust.phone}`);
+                                                            if (newCust.email) filters.push(`email.eq.${newCust.email}`);
+
+                                                            const { data: existing } = await (supabase
+                                                                .from('customers')
+                                                                .select('*')
+                                                                .eq('tenant_id', tenantId)
+                                                                .or(filters.join(','))
+                                                                .maybeSingle() as any);
+
+                                                            if (existing) {
+                                                                toast.info("Cliente já cadastrado. Selecionando existente...");
+                                                                if (!(customers as Customer[]).find(c => c.id === existing.id)) {
+                                                                    setCustomers([...customers, existing as Customer]);
+                                                                }
+                                                                setShowDrawer(false);
+                                                                return existing as Customer;
+                                                            }
+                                                        }
+
+                                                        const { data, error } = await supabase
+                                                            .from('customers')
+                                                            .insert({
+                                                                name: newCust.name,
+                                                                email: newCust.email || null,
+                                                                phone: newCust.phone || null,
+                                                                address: newCust.address,
+                                                                tenant_id: tenantId
+                                                            } as any)
+                                                            .select()
+                                                            .single();
+
+                                                        if (error) { toast.error(`Erro: ${error.message}`); return null; }
+                                                        toast.success("Cliente criado!");
+                                                        setCustomers([...customers, data as Customer]);
+                                                        setShowDrawer(false);
+                                                        return data as Customer;
+                                                    }}
+                                                />
+
+                                                <div className="mt-8 p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100 flex gap-3">
+                                                    <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                                                        <UserPlus size={16} />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="text-sm font-bold text-slate-800 mb-1">Novo Cliente?</h4>
+                                                        <p className="text-xs text-slate-500 leading-relaxed">
+                                                            Digite o nome acima. Se náo encontrarmos, o formulário de cadastro aparecerá automaticamente aqui mesmo.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : drawerMode === 'service' ? (
+                                            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                                                <div className="flex-1 overflow-y-auto px-1 scrollbar-hide pb-20">
+                                                    {(() => {
+                                                        const selectedService = getSelectedService();
+                                                        return (
+                                                            <>
+                                                                {/* INITIAL SERVICE SECTION */}
+                                                                <div className="mb-8">
+                                                                    <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 block">
+                                                                        {formData.use_split_recurrence ? '1ª Visita (Serviço Inicial)' : 'Serviço Principal'}
+                                                                    </label>
+
+                                                                    <div className="flex gap-2 mb-4">
+                                                                        <div className="w-1/3 relative">
                                                                             <select
-                                                                                className="w-full px-4 py-3 bg-white border border-indigo-100 rounded-2xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
-                                                                                value={instanceCategoryFilter || services.find(s => s.id === instance.service_id)?.category_id || ''}
-                                                                                onChange={e => setInstanceCategoryFilter(e.target.value)}
+                                                                                className="w-full pl-3 pr-8 py-3 bg-white border border-slate-200 rounded-2xl appearance-none text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                                                value={selectedCategory}
+                                                                                onChange={e => setSelectedCategory(e.target.value)}
                                                                             >
                                                                                 <option value="">Todas Categorias</option>
                                                                                 {categories.map(c => (
                                                                                     <option key={c.id} value={c.id}>{c.name}</option>
                                                                                 ))}
                                                                             </select>
+                                                                            <ChevronRight size={14} className="absolute right-3 top-1/2 -translate-y-1/2 rotate-90 text-slate-400 pointer-events-none" />
                                                                         </div>
-                                                                        <div className="space-y-1.5">
-                                                                            <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Serviço da Visita</label>
+
+                                                                        <div className="w-2/3 relative">
+                                                                            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                                                                             <select
-                                                                                className="w-full px-4 py-3 bg-white border border-indigo-100 rounded-2xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
-                                                                                value={instance.service_id}
-                                                                                onChange={e => {
-                                                                                    const s = services.find(srv => srv.id === e.target.value);
-                                                                                    updateInstance(instance.id, {
-                                                                                        service_id: e.target.value,
-                                                                                        price: s?.price_default || 0,
-                                                                                        duration_minutes: s?.duration_minutes || 60
-                                                                                    });
-                                                                                }}
+                                                                                className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl appearance-none text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow shadow-sm"
+                                                                                value={formData.service_id}
+                                                                                onChange={e => handleServiceChange(e.target.value)}
                                                                             >
                                                                                 <option value="">Selecione o serviço...</option>
 
+                                                                                {/* Empty State warning inside the select if category selected but no services */}
+                                                                                {(() => {
+                                                                                    if (!selectedCategory) return null;
+                                                                                    const hasServicesInCat = services.some(s => s.category_id === selectedCategory);
+                                                                                    if (!hasServicesInCat) {
+                                                                                        return (
+                                                                                            <option disabled className="text-rose-500">
+                                                                                                ⚠️ Nenhum serviço vinculado a esta categoria
+                                                                                            </option>
+                                                                                        );
+                                                                                    }
+                                                                                    return null;
+                                                                                })()}
+
+                                                                                {/* Grouped services by category */}
                                                                                 {categories
-                                                                                    .filter(cat => !instanceCategoryFilter || cat.id === instanceCategoryFilter)
+                                                                                    .filter(cat => !selectedCategory || cat.id === selectedCategory)
                                                                                     .map(cat => {
                                                                                         const catServices = services.filter(s => s.category_id === cat.id);
                                                                                         if (catServices.length === 0) return null;
+
                                                                                         return (
                                                                                             <optgroup key={cat.id} label={cat.name}>
                                                                                                 {catServices.map(s => (
-                                                                                                    <option key={s.id} value={s.id}>{s.name} - R$ {s.price_default}</option>
+                                                                                                    <option key={s.id} value={s.id}>
+                                                                                                        {s.name} - R$ {s.price_default}
+                                                                                                    </option>
                                                                                                 ))}
                                                                                             </optgroup>
                                                                                         );
                                                                                     })}
 
-                                                                                {(!instanceCategoryFilter) && services.filter(s => !s.category_id).length > 0 && (
+                                                                                {/* Services without category (only show if no filter is active or if specifically "all" is intended) */}
+                                                                                {(!selectedCategory) && services.filter(s => !s.category_id).length > 0 && (
                                                                                     <optgroup label="Geral / Outros">
                                                                                         {services.filter(s => !s.category_id).map(s => (
-                                                                                            <option key={s.id} value={s.id}>{s.name} - R$ {s.price_default}</option>
+                                                                                            <option key={s.id} value={s.id}>
+                                                                                                {s.name} - R$ {s.price_default}
+                                                                                            </option>
                                                                                         ))}
                                                                                     </optgroup>
                                                                                 )}
                                                                             </select>
+                                                                            <ChevronRight size={16} className="absolute right-3 top-1/2 -translate-y-1/2 rotate-90" />
                                                                         </div>
                                                                     </div>
 
-                                                                    <div className="space-y-4 pt-4 border-t border-indigo-50">
-                                                                        <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Add-ons desta Visita</label>
-                                                                        {addons.length > 0 ? (
-                                                                            <div className="flex flex-wrap gap-2">
-                                                                                {addons.map(addon => {
-                                                                                    const isSelected = instance.addon_ids.includes(addon.id);
-                                                                                    return (
-                                                                                        <button
-                                                                                            key={addon.id}
-                                                                                            type="button"
-                                                                                            onClick={() => {
-                                                                                                const newAddons = isSelected
-                                                                                                    ? instance.addon_ids.filter(id => id !== addon.id)
-                                                                                                    : [...instance.addon_ids, addon.id];
-                                                                                                updateInstance(instance.id, { addon_ids: newAddons });
-                                                                                            }}
-                                                                                            className={`px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-tight border transition-all flex items-center gap-2 ${isSelected
-                                                                                                ? 'bg-indigo-600 border-indigo-600 text-white shadow-md'
-                                                                                                : 'bg-white border-slate-100 text-slate-400 hover:border-indigo-200'
-                                                                                                }`}
-                                                                                        >
-                                                                                            {isSelected ? <Check size={12} /> : <Plus size={12} />}
-                                                                                            {addon.name} (+R$ {addon.price})
-                                                                                        </button>
-                                                                                    );
-                                                                                })}
-                                                                            </div>
-                                                                        ) : (
-                                                                            <div className="text-[10px] text-slate-400 italic font-medium ml-1">Nenhum add-on disponível para este serviço.</div>
-                                                                        )}
-                                                                    </div>
-
-                                                                    <div className="grid grid-cols-4 gap-3">
-                                                                        <div className="space-y-1.5">
-                                                                            <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Preço (R$)</label>
-                                                                            <input
-                                                                                type="number"
-                                                                                className="w-full px-3 py-3 bg-white border border-indigo-100 rounded-2xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
-                                                                                value={instance.price}
-                                                                                onChange={e => updateInstance(instance.id, { price: parseFloat(e.target.value) || 0 })}
-                                                                            />
-                                                                        </div>
-                                                                        <div className="space-y-1.5">
-                                                                            {instance.assignments && instance.assignments.length > 0 ? (
-                                                                                <div className="space-y-2">
-                                                                                    <label className="text-[10px] font-black text-emerald-400 uppercase tracking-widest ml-1">Pagto (R$)</label>
-                                                                                    {instance.assignments.map((assign, aIdx) => (
-                                                                                        <div key={assign.member_id} className="flex items-center gap-2">
-                                                                                            <span className="text-[9px] font-bold text-slate-400 w-16 truncate" title={assign.name}>{assign.name}</span>
-                                                                                            <input
-                                                                                                type="number"
-                                                                                                className="w-full px-2 py-1.5 bg-white border border-indigo-100 rounded-lg text-xs font-bold text-emerald-600 focus:ring-2 focus:ring-emerald-500 outline-none shadow-sm"
-                                                                                                value={assign.pay_rate}
-                                                                                                onChange={e => {
-                                                                                                    const newRate = parseFloat(e.target.value) || 0;
-                                                                                                    const newAssignments = [...instance.assignments];
-                                                                                                    newAssignments[aIdx] = { ...newAssignments[aIdx], pay_rate: newRate };
-                                                                                                    updateInstance(instance.id, { assignments: newAssignments });
-                                                                                                }}
-                                                                                            />
-                                                                                        </div>
-                                                                                    ))}
+                                                                    {selectedService && (
+                                                                        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-top-2">
+                                                                            <div className="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-start">
+                                                                                <div>
+                                                                                    <h4 className="font-bold text-slate-800 text-sm">{selectedService.name}</h4>
+                                                                                    <div className="flex items-center gap-2 mt-1">
+                                                                                        <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold uppercase tracking-wide rounded-md">
+                                                                                            {selectedService.duration_minutes} min
+                                                                                        </span>
+                                                                                    </div>
                                                                                 </div>
-                                                                            ) : (
-                                                                                <>
-                                                                                    <label className="text-[10px] font-black text-emerald-400 uppercase tracking-widest ml-1">Pagto (R$)</label>
+                                                                                <div className="text-right">
+                                                                                    <div className="text-lg font-black text-indigo-600">R$ {formData.price.toFixed(2)}</div>
+                                                                                    <div className="text-[10px] text-slate-400 font-medium">Preço Base</div>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            {serviceTasks.length > 0 && (
+                                                                                <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+                                                                                    <div className="mb-4 flex items-center justify-between">
+                                                                                        <div className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                                                                                            <Sparkles size={14} className="text-amber-500" /> Smart Estimate Checklist
+                                                                                        </div>
+                                                                                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full uppercase tracking-tight">
+                                                                                            Incluso
+                                                                                        </span>
+                                                                                    </div>
+
+                                                                                    <div className="space-y-4 max-h-[180px] overflow-y-auto pr-2 custom-scrollbar">
+                                                                                        {Object.entries(
+                                                                                            serviceTasks.reduce((acc, task) => {
+                                                                                                const room = task.room_name || 'Geral';
+                                                                                                if (!acc[room]) acc[room] = [];
+                                                                                                acc[room].push(task);
+                                                                                                return acc;
+                                                                                            }, {} as Record<string, ServiceTask[]>)
+                                                                                        ).map(([room, tasks]) => (
+                                                                                            <div key={room} className="space-y-2">
+                                                                                                <div className="flex items-center gap-2 pb-1 border-b border-slate-100">
+                                                                                                    <div className="w-5 h-5 rounded bg-indigo-50 flex items-center justify-center text-indigo-500">
+                                                                                                        {room.toLowerCase().includes('cozinha') || room.toLowerCase().includes('kitchen') ? <Clock size={12} /> :
+                                                                                                            room.toLowerCase().includes('banheiro') || room.toLowerCase().includes('bath') ? <Palette size={12} /> :
+                                                                                                                room.toLowerCase().includes('quarto') || room.toLowerCase().includes('bed') ? <FileText size={12} /> :
+                                                                                                                    <Check size={12} />}
+                                                                                                    </div>
+                                                                                                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">{room}</span>
+                                                                                                </div>
+                                                                                                <div className="grid grid-cols-1 gap-1.5 pl-7">
+                                                                                                    {(tasks as ServiceTask[]).map(task => (
+                                                                                                        <div key={task.id} className="flex items-start gap-2 group">
+                                                                                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0 group-hover:scale-125 transition-transform" />
+                                                                                                            <span className="text-xs text-slate-600 font-medium group-hover:text-slate-900 transition-colors">{task.title}</span>
+                                                                                                        </div>
+                                                                                                    ))}
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+
+                                                                            <div className="p-4 grid grid-cols-3 gap-3 bg-slate-50/30">
+                                                                                <div>
+                                                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">Preço Manual (R$)</label>
                                                                                     <input
                                                                                         type="number"
-                                                                                        className="w-full px-3 py-3 bg-white border border-indigo-100 rounded-2xl text-xs font-bold text-emerald-600 focus:ring-2 focus:ring-emerald-500 outline-none shadow-sm"
-                                                                                        value={instance.cleaner_pay_rate}
-                                                                                        onChange={e => updateInstance(instance.id, { cleaner_pay_rate: parseFloat(e.target.value) || 0 })}
+                                                                                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-xs font-bold text-slate-700"
+                                                                                        value={formData.price}
+                                                                                        onChange={e => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
                                                                                     />
-                                                                                </>
-                                                                            )}
+                                                                                </div>
+                                                                                <div>
+                                                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">Desconto (R$)</label>
+                                                                                    <input
+                                                                                        type="number"
+                                                                                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 outline-none text-xs font-bold text-rose-600"
+                                                                                        value={discount.value || ''}
+                                                                                        onChange={e => setDiscount({ ...discount, value: parseFloat(e.target.value) || 0 })}
+                                                                                    />
+                                                                                </div>
+                                                                            </div>
                                                                         </div>
-                                                                        <div className="space-y-1.5">
-                                                                            <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Dur (Min)</label>
-                                                                            <input
-                                                                                type="number"
-                                                                                className="w-full px-3 py-3 bg-white border border-indigo-100 rounded-2xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
-                                                                                value={instance.duration_minutes}
-                                                                                onChange={e => updateInstance(instance.id, { duration_minutes: parseInt(e.target.value) || 0 })}
-                                                                            />
+                                                                    )}
+                                                                </div>
+
+                                                                <div className="my-6 border-t border-slate-100" />
+
+                                                                {/* Add-ons Section */}
+                                                                <div className="pt-4">
+                                                                    <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] italic mb-4">
+                                                                        Adicionais & Upsell
+                                                                    </label>
+                                                                    <div className="grid grid-cols-1 gap-2">
+                                                                        {addons
+                                                                            .filter(addon => addon.is_standalone || (formData.service_id && !addon.is_standalone))
+                                                                            .map(addon => {
+                                                                                const isSelected = selectedAddons.includes(addon.id);
+                                                                                return (
+                                                                                    <div
+                                                                                        key={addon.id}
+                                                                                        onClick={() => toggleAddon(addon.id)}
+                                                                                        className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between group ${isSelected
+                                                                                            ? 'bg-indigo-50 border-indigo-200 shadow-sm'
+                                                                                            : 'bg-white border-slate-100 hover:border-indigo-200'
+                                                                                            }`}
+                                                                                    >
+                                                                                        <div className="flex items-center gap-3">
+                                                                                            <div className={`w-5 h-5 rounded-md flex items-center justify-center transition-colors ${isSelected ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-300 group-hover:bg-indigo-100 group-hover:text-indigo-400'
+                                                                                                }`}>
+                                                                                                <Check size={12} strokeWidth={4} />
+                                                                                            </div>
+                                                                                            <div>
+                                                                                                <div className={`text-xs font-bold transition-colors ${isSelected ? 'text-indigo-900' : 'text-slate-600'}`}>{addon.name}</div>
+                                                                                                {addon.description && <div className="text-[10px] text-slate-400 truncate max-w-[180px]">{addon.description}</div>}
+                                                                                            </div>
+                                                                                        </div>
+                                                                                        <div className={`text-xs font-black transition-colors ${isSelected ? 'text-indigo-600' : 'text-slate-400'}`}>
+                                                                                            + R$ {addon.price.toFixed(2)}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                );
+                                                                            })}
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="p-8 border-t border-slate-100 bg-slate-50/50 shrink-0 mt-auto">
+                                                                    <button
+                                                                        onClick={() => setShowDrawer(false)}
+                                                                        className="w-full py-4 bg-slate-900 text-white font-black uppercase tracking-[0.2em] rounded-2xl hover:bg-black transition-all shadow-xl shadow-slate-200 active:scale-95"
+                                                                    >
+                                                                        Confirmar Serviços
+                                                                    </button>
+                                                                </div>
+                                                            </>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-10 animate-in fade-in slide-in-from-right-4 duration-300">
+                                                <div className="flex-1 overflow-y-auto px-1 scrollbar-hide pb-20">
+
+                                                    {/* Section 1: Data & Hora */}
+                                                    <div className="space-y-4">
+                                                        <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] italic mb-6">
+                                                            <span className="bg-slate-800 text-white h-5 w-5 rounded-lg flex items-center justify-center not-italic text-[10px] shadow-lg shadow-slate-200">1</span>
+                                                            Definiçáo Inicial
+                                                        </label>
+
+                                                        <div className="grid grid-cols-2 gap-4">
+                                                            <div className="space-y-2">
+                                                                <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Data</label>
+                                                                <input
+                                                                    type="date"
+                                                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-slate-700"
+                                                                    value={formData.start_date}
+                                                                    onChange={e => setFormData({ ...formData, start_date: e.target.value })}
+                                                                />
+                                                            </div>
+                                                            {/* Smart Time Slot Selector */}
+                                                            <div className="space-y-3 col-span-2">
+                                                                <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">
+                                                                    Horários Disponíveis
+                                                                    {formData.assigned_to && (
+                                                                        <span className="ml-2 text-indigo-600 font-normal normal-case opacity-80">
+                                                                            (Baseado em {staff.find(s => s.id === formData.assigned_to)?.name})
+                                                                        </span>
+                                                                    )}
+                                                                </label>
+                                                                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                                                                    {generateTimeSlots().map(slot => (
+                                                                        <button
+                                                                            key={slot.time}
+                                                                            type="button"
+                                                                            disabled={!slot.available}
+                                                                            onClick={() => setFormData({ ...formData, start_time: slot.time })}
+                                                                            className={`
+                                                                    py-2 rounded-lg text-xs font-bold transition-all border
+                                                                    ${formData.start_time === slot.time
+                                                                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-105'
+                                                                                    : slot.available
+                                                                                        ? 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'
+                                                                                        : 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed decoration-slate-300'
+                                                                                }
+                                                                `}
+                                                                        >
+                                                                            {formatWallTime(parseInt(slot.time.split(':')[0], 10), parseInt(slot.time.split(':')[1], 10))}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                                {generateTimeSlots().filter(s => s.available).length === 0 && (
+                                                                    <div className="p-3 bg-amber-50 text-amber-700 text-xs rounded-xl flex items-center gap-2 border border-amber-100">
+                                                                        <Sparkles size={14} />
+                                                                        <span>Nenhum horário disponível para este dia.</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Duraçáo</label>
+                                                            <select
+                                                                className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-slate-700 transition-all"
+                                                                value={formData.duration_minutes}
+                                                                onChange={e => setFormData({ ...formData, duration_minutes: parseInt(e.target.value) })}
+                                                            >
+                                                                <option value={30}>30 min</option>
+                                                                <option value={60}>1 hora</option>
+                                                                <option value={90}>1h 30min</option>
+                                                                <option value={120}>2 horas</option>
+                                                                <option value={180}>3 horas</option>
+                                                                <option value={240}>4 horas</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+
+
+                                                    {/* Section 2: Recorrência */}
+                                                    <div className="space-y-4">
+                                                        <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] italic mb-6">
+                                                            <span className="bg-slate-800 text-white h-5 w-5 rounded-lg flex items-center justify-center not-italic text-[10px] shadow-lg shadow-slate-200">2</span>
+                                                            Frequência
+                                                        </label>
+
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {[
+                                                                { value: 'none', label: 'Náo repete' },
+                                                                { value: 'daily', label: 'Diário' },
+                                                                { value: 'weekly', label: 'Semanal' },
+                                                                { value: 'biweekly', label: 'Quinzenal' },
+                                                                { value: 'monthly', label: 'Mensal' },
+                                                            ].map(opt => (
+                                                                <button
+                                                                    key={opt.value}
+                                                                    type="button"
+                                                                    onClick={() => setFormData({ ...formData, recurrence_type: opt.value as RecurrenceType })}
+                                                                    className={`px-4 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl border transition-all ${formData.recurrence_type === opt.value
+                                                                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100'
+                                                                        : 'bg-white text-slate-400 border-slate-200 hover:border-indigo-300'
+                                                                        }`}
+                                                                >
+                                                                    {opt.label}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+
+                                                        {formData.recurrence_type !== 'none' && (
+                                                            <div className="mt-4 p-6 bg-indigo-50/50 rounded-3xl border border-indigo-100 flex items-center justify-between">
+                                                                <div className="flex items-center gap-4">
+                                                                    <span className="text-xs font-bold text-indigo-700 uppercase">Repetir</span>
+                                                                    <input
+                                                                        type="number"
+                                                                        min="2"
+                                                                        max="52"
+                                                                        className="w-16 h-12 bg-white border border-indigo-200 rounded-2xl text-lg font-black text-center text-indigo-800 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                                        value={formData.recurrence_count}
+                                                                        onChange={e => setFormData({ ...formData, recurrence_count: parseInt(e.target.value) || 4 })}
+                                                                    />
+                                                                    <span className="text-xs font-bold text-indigo-700 uppercase">vezes</span>
+                                                                </div>
+                                                                <RefreshCw className="text-indigo-300 animate-spin-slow" size={24} />
+                                                            </div>
+                                                        )}
+
+                                                        {/* Section 2.5: Notificações */}
+                                                        <div className="space-y-4 pt-4 border-t border-slate-100">
+                                                            <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] italic mb-6">
+                                                                <span className="bg-slate-800 text-white h-5 w-5 rounded-lg flex items-center justify-center not-italic text-[10px] shadow-lg shadow-slate-200">2.5</span>
+                                                                Notificações
+                                                            </label>
+
+                                                            <div className="grid grid-cols-1 gap-4">
+                                                                {/* Cliente Notification */}
+                                                                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="p-2 bg-indigo-100 text-indigo-600 rounded-xl">
+                                                                            <Mail size={16} />
                                                                         </div>
-                                                                        <div className="flex items-end pb-1">
+                                                                        <div>
+                                                                            <div className="text-sm font-bold text-slate-800">Notificar Cliente</div>
+                                                                            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Confirmação de Agendamento</div>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex bg-white p-1 rounded-xl border border-slate-200">
+                                                                        {(['none', 'email', 'sms', 'both'] as NotificationType[]).map(type => (
                                                                             <button
-                                                                                onClick={() => {
-                                                                                    setEditingInstance(null);
-                                                                                    // Smart Propagation: If editing the 2nd instance (index 1)
-                                                                                    if (idx === 1 && recurrenceInstances.length > 2) {
-                                                                                        setPendingPropagationId(instance.id);
-                                                                                    }
-                                                                                }}
-                                                                                className="w-full py-3 bg-black text-white font-black uppercase tracking-widest rounded-2xl text-[9px] shadow-lg hover:bg-slate-800 transition-all active:scale-95"
+                                                                                key={type}
+                                                                                onClick={() => setFormData({ ...formData, notify_client: type })}
+                                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${formData.notify_client === type
+                                                                                    ? 'bg-indigo-600 text-white shadow-sm'
+                                                                                    : 'text-slate-400 hover:text-indigo-500'
+                                                                                    }`}
                                                                             >
-                                                                                OK
+                                                                                {type === 'none' ? 'Off' : type === 'both' ? 'Email+SMS' : type}
                                                                             </button>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Staff Notification */}
+                                                                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="p-2 bg-purple-100 text-purple-600 rounded-xl">
+                                                                            <MessageSquare size={16} />
                                                                         </div>
+                                                                        <div>
+                                                                            <div className="text-sm font-bold text-slate-800">Notificar Equipe</div>
+                                                                            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Aviso de Novo Trabalho</div>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex bg-white p-1 rounded-xl border border-slate-200">
+                                                                        {(['none', 'email', 'sms', 'both'] as NotificationType[]).map(type => (
+                                                                            <button
+                                                                                key={type}
+                                                                                onClick={() => setFormData({ ...formData, notify_staff: type })}
+                                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${formData.notify_staff === type
+                                                                                    ? 'bg-purple-600 text-white shadow-sm'
+                                                                                    : 'text-slate-400 hover:text-purple-500'
+                                                                                    }`}
+                                                                            >
+                                                                                {type === 'none' ? 'Off' : type === 'both' ? 'Email+SMS' : type}
+                                                                            </button>
+                                                                        ))}
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                        )}
+                                                        </div>
                                                     </div>
-                                                ))}
+
+                                                    {/* Section 3: Preview */}
+                                                    {formData.recurrence_type !== 'none' && recurrenceInstances.length > 0 && (
+                                                        <div className="space-y-4 pt-4">
+                                                            <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] italic mb-6">
+                                                                <span className="bg-slate-800 text-white h-5 w-5 rounded-lg flex items-center justify-center not-italic text-[10px] shadow-lg shadow-slate-200">3</span>
+                                                                Ajuste Fino das Datas
+                                                            </label>
+
+                                                            <div className="space-y-3 pr-2">
+                                                                {recurrenceInstances.map((instance, idx) => (
+                                                                    <div
+                                                                        key={instance.id}
+                                                                        className={`p-5 rounded-3xl border transition-all group ${editingInstance === instance.id
+                                                                            ? 'bg-indigo-50/50 border-indigo-200 shadow-xl shadow-indigo-100/20'
+                                                                            : 'bg-white border-slate-100 hover:border-indigo-100 hover:shadow-lg hover:shadow-slate-100 cursor-pointer'
+                                                                            }`}
+                                                                        onClick={() => setEditingInstance(editingInstance === instance.id ? null : instance.id)}
+                                                                    >
+                                                                        <div className="flex items-center justify-between">
+                                                                            <div className="flex items-center gap-5">
+                                                                                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-black transition-transform group-hover:scale-110 ${idx === 0 ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-slate-100 text-slate-500'
+                                                                                    }`}>
+                                                                                    {idx + 1}
+                                                                                </div>
+                                                                                <div>
+                                                                                    <div className="text-base font-black text-slate-800 leading-tight">
+                                                                                        {format(instance.date, "EEEE, d 'de' MMMM", { locale: ptBR })}
+                                                                                    </div>
+                                                                                    <div className="flex items-center gap-2 mt-1">
+                                                                                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                                                                                            {formatWallTime(instance.time)} • R$ {(instance.price + instance.addon_ids.reduce((s, aid) => s + (addons.find(a => a.id === aid)?.price || 0), 0)).toFixed(2)}
+                                                                                        </span>
+                                                                                        <span className="w-1 h-1 rounded-full bg-slate-200" />
+                                                                                        <span className="text-[11px] font-black text-indigo-500 uppercase tracking-tight">
+                                                                                            {services.find(s => s.id === instance.service_id)?.name}
+                                                                                            {instance.addon_ids.length > 0 && ` (+${instance.addon_ids.length} add-ons)`}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className="flex items-center gap-3">
+                                                                                {idx > 0 && (
+                                                                                    <button
+                                                                                        onClick={(e) => { e.stopPropagation(); removeInstance(instance.id); }}
+                                                                                        className="w-10 h-10 flex items-center justify-center text-rose-300 hover:text-rose-500 hover:bg-rose-50 rounded-2xl transition-all active:scale-95"
+                                                                                    >
+                                                                                        <Trash2 size={18} />
+                                                                                    </button>
+                                                                                )}
+                                                                                <div className={`w-10 h-10 flex items-center justify-center rounded-2xl transition-all ${editingInstance === instance.id ? 'bg-indigo-600 text-white' : 'bg-slate-50 text-slate-300 group-hover:text-indigo-600 group-hover:bg-indigo-50'}`}>
+                                                                                    <Edit2 size={16} />
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {editingInstance === instance.id && (
+                                                                            <div className="mt-5 pt-5 border-t border-indigo-100 space-y-4 animate-in fade-in slide-in-from-top-2" onClick={e => e.stopPropagation()}>
+                                                                                <div className="grid grid-cols-2 gap-4">
+                                                                                    <div className="space-y-1.5">
+                                                                                        <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Data da Visita</label>
+                                                                                        <input
+                                                                                            type="date"
+                                                                                            className="w-full px-4 py-3 bg-white border border-indigo-100 rounded-2xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
+                                                                                            value={format(instance.date, 'yyyy-MM-dd')}
+                                                                                            onChange={e => updateInstance(instance.id, { date: new Date(e.target.value + 'T' + instance.time) })}
+                                                                                        />
+                                                                                    </div>
+                                                                                    <div className="space-y-1.5">
+                                                                                        <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Horário</label>
+                                                                                        <input
+                                                                                            type="time"
+                                                                                            className="w-full px-4 py-3 bg-white border border-indigo-100 rounded-2xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
+                                                                                            value={instance.time}
+                                                                                            onChange={e => updateInstance(instance.id, { time: e.target.value })}
+                                                                                        />
+                                                                                    </div>
+                                                                                </div>
+
+                                                                                <div className="space-y-4">
+                                                                                    <div className="grid grid-cols-2 gap-4">
+                                                                                        <div className="space-y-1.5">
+                                                                                            <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Categoria da Visita</label>
+                                                                                            <select
+                                                                                                className="w-full px-4 py-3 bg-white border border-indigo-100 rounded-2xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
+                                                                                                value={instanceCategoryFilter || services.find(s => s.id === instance.service_id)?.category_id || ''}
+                                                                                                onChange={e => setInstanceCategoryFilter(e.target.value)}
+                                                                                            >
+                                                                                                <option value="">Todas Categorias</option>
+                                                                                                {categories.map(c => (
+                                                                                                    <option key={c.id} value={c.id}>{c.name}</option>
+                                                                                                ))}
+                                                                                            </select>
+                                                                                        </div>
+                                                                                        <div className="space-y-1.5">
+                                                                                            <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Serviço da Visita</label>
+                                                                                            <select
+                                                                                                className="w-full px-4 py-3 bg-white border border-indigo-100 rounded-2xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
+                                                                                                value={instance.service_id}
+                                                                                                onChange={e => {
+                                                                                                    const s = services.find(srv => srv.id === e.target.value);
+                                                                                                    updateInstance(instance.id, {
+                                                                                                        service_id: e.target.value,
+                                                                                                        price: s?.price_default || 0,
+                                                                                                        duration_minutes: s?.duration_minutes || 60
+                                                                                                    });
+                                                                                                }}
+                                                                                            >
+                                                                                                <option value="">Selecione o serviço...</option>
+
+                                                                                                {categories
+                                                                                                    .filter(cat => !instanceCategoryFilter || cat.id === instanceCategoryFilter)
+                                                                                                    .map(cat => {
+                                                                                                        const catServices = services.filter(s => s.category_id === cat.id);
+                                                                                                        if (catServices.length === 0) return null;
+                                                                                                        return (
+                                                                                                            <optgroup key={cat.id} label={cat.name}>
+                                                                                                                {catServices.map(s => (
+                                                                                                                    <option key={s.id} value={s.id}>{s.name} - R$ {s.price_default}</option>
+                                                                                                                ))}
+                                                                                                            </optgroup>
+                                                                                                        );
+                                                                                                    })}
+
+                                                                                                {(!instanceCategoryFilter) && services.filter(s => !s.category_id).length > 0 && (
+                                                                                                    <optgroup label="Geral / Outros">
+                                                                                                        {services.filter(s => !s.category_id).map(s => (
+                                                                                                            <option key={s.id} value={s.id}>{s.name} - R$ {s.price_default}</option>
+                                                                                                        ))}
+                                                                                                    </optgroup>
+                                                                                                )}
+                                                                                            </select>
+                                                                                        </div>
+                                                                                    </div>
+
+                                                                                    <div className="space-y-4 pt-4 border-t border-indigo-50">
+                                                                                        <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Add-ons desta Visita</label>
+                                                                                        {addons.length > 0 ? (
+                                                                                            <div className="flex flex-wrap gap-2">
+                                                                                                {addons.map(addon => {
+                                                                                                    const isSelected = instance.addon_ids.includes(addon.id);
+                                                                                                    return (
+                                                                                                        <button
+                                                                                                            key={addon.id}
+                                                                                                            type="button"
+                                                                                                            onClick={() => {
+                                                                                                                const newAddons = isSelected
+                                                                                                                    ? instance.addon_ids.filter(id => id !== addon.id)
+                                                                                                                    : [...instance.addon_ids, addon.id];
+                                                                                                                updateInstance(instance.id, { addon_ids: newAddons });
+                                                                                                            }}
+                                                                                                            className={`px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-tight border transition-all flex items-center gap-2 ${isSelected
+                                                                                                                ? 'bg-indigo-600 border-indigo-600 text-white shadow-md'
+                                                                                                                : 'bg-white border-slate-100 text-slate-400 hover:border-indigo-200'
+                                                                                                                }`}
+                                                                                                        >
+                                                                                                            {isSelected ? <Check size={12} /> : <Plus size={12} />}
+                                                                                                            {addon.name} (+R$ {addon.price})
+                                                                                                        </button>
+                                                                                                    );
+                                                                                                })}
+                                                                                            </div>
+                                                                                        ) : (
+                                                                                            <div className="text-[10px] text-slate-400 italic font-medium ml-1">Nenhum add-on disponível para este serviço.</div>
+                                                                                        )}
+                                                                                    </div>
+
+                                                                                    <div className="grid grid-cols-4 gap-3">
+                                                                                        <div className="space-y-1.5">
+                                                                                            <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Preço (R$)</label>
+                                                                                            <input
+                                                                                                type="number"
+                                                                                                className="w-full px-3 py-3 bg-white border border-indigo-100 rounded-2xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
+                                                                                                value={instance.price}
+                                                                                                onChange={e => updateInstance(instance.id, { price: parseFloat(e.target.value) || 0 })}
+                                                                                            />
+                                                                                        </div>
+                                                                                        <div className="space-y-1.5">
+                                                                                            {instance.assignments && instance.assignments.length > 0 ? (
+                                                                                                <div className="space-y-2">
+                                                                                                    <label className="text-[10px] font-black text-emerald-400 uppercase tracking-widest ml-1">Pagto (R$)</label>
+                                                                                                    {instance.assignments.map((assign, aIdx) => (
+                                                                                                        <div key={assign.member_id} className="flex items-center gap-2">
+                                                                                                            <span className="text-[9px] font-bold text-slate-400 w-16 truncate" title={assign.name}>{assign.name}</span>
+                                                                                                            <input
+                                                                                                                type="number"
+                                                                                                                className="w-full px-2 py-1.5 bg-white border border-indigo-100 rounded-lg text-xs font-bold text-emerald-600 focus:ring-2 focus:ring-emerald-500 outline-none shadow-sm"
+                                                                                                                value={assign.pay_rate}
+                                                                                                                onChange={e => {
+                                                                                                                    const newRate = parseFloat(e.target.value) || 0;
+                                                                                                                    const newAssignments = [...instance.assignments];
+                                                                                                                    newAssignments[aIdx] = { ...newAssignments[aIdx], pay_rate: newRate };
+                                                                                                                    updateInstance(instance.id, { assignments: newAssignments });
+                                                                                                                }}
+                                                                                                            />
+                                                                                                        </div>
+                                                                                                    ))}
+                                                                                                </div>
+                                                                                            ) : (
+                                                                                                <>
+                                                                                                    <label className="text-[10px] font-black text-emerald-400 uppercase tracking-widest ml-1">Pagto (R$)</label>
+                                                                                                    <input
+                                                                                                        type="number"
+                                                                                                        className="w-full px-3 py-3 bg-white border border-indigo-100 rounded-2xl text-xs font-bold text-emerald-600 focus:ring-2 focus:ring-emerald-500 outline-none shadow-sm"
+                                                                                                        value={instance.cleaner_pay_rate}
+                                                                                                        onChange={e => updateInstance(instance.id, { cleaner_pay_rate: parseFloat(e.target.value) || 0 })}
+                                                                                                    />
+                                                                                                </>
+                                                                                            )}
+                                                                                        </div>
+                                                                                        <div className="space-y-1.5">
+                                                                                            <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Dur (Min)</label>
+                                                                                            <input
+                                                                                                type="number"
+                                                                                                className="w-full px-3 py-3 bg-white border border-indigo-100 rounded-2xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
+                                                                                                value={instance.duration_minutes}
+                                                                                                onChange={e => updateInstance(instance.id, { duration_minutes: parseInt(e.target.value) || 0 })}
+                                                                                            />
+                                                                                        </div>
+                                                                                        <div className="flex items-end pb-1">
+                                                                                            <button
+                                                                                                onClick={() => {
+                                                                                                    setEditingInstance(null);
+                                                                                                    if (idx === 1 && recurrenceInstances.length > 2) {
+                                                                                                        setPendingPropagationId(instance.id);
+                                                                                                    }
+                                                                                                }}
+                                                                                                className="w-full py-3 bg-black text-white font-black uppercase tracking-widest rounded-2xl text-[9px] shadow-lg hover:bg-slate-800 transition-all active:scale-95"
+                                                                                            >
+                                                                                                OK
+                                                                                            </button>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Smart Propagation Confirmation Card */}
+                                                {pendingPropagationId && (
+                                                    <div className="absolute inset-x-0 bottom-0 z-[100] p-6 animate-in fade-in slide-in-from-bottom duration-500">
+                                                        <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-md rounded-t-[40px]" onClick={() => setPendingPropagationId(null)}></div>
+
+                                                        <div className="relative w-full bg-white rounded-[32px] shadow-[0_32px_64px_-16px_rgba(79,70,229,0.3)] p-8 border border-indigo-50 flex flex-col gap-6">
+                                                            <div className="flex items-start gap-5">
+                                                                <div className="h-14 w-14 rounded-3xl bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-xl shadow-indigo-200 shrink-0">
+                                                                    <Sparkles size={28} />
+                                                                </div>
+                                                                <div className="pt-1">
+                                                                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight mb-2">Sugestão Inteligente</h4>
+                                                                    <p className="text-[11px] text-slate-500 font-bold leading-relaxed">
+                                                                        Detectamos uma mudança na segunda visita. Deseja replicar essa configuração para todos os agendamentos seguintes?
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="flex gap-4">
+                                                                <button
+                                                                    onClick={() => {
+                                                                        propagateInstanceChanges(pendingPropagationId);
+                                                                        setPendingPropagationId(null);
+                                                                    }}
+                                                                    className="flex-1 py-5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-200 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3"
+                                                                >
+                                                                    <RefreshCw size={16} className="animate-spin-slow" />
+                                                                    Sim, Replicar
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setPendingPropagationId(null)}
+                                                                    className="px-8 py-5 bg-slate-50 text-slate-400 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-slate-100 hover:text-slate-600 transition-all border border-slate-100"
+                                                                >
+                                                                    Não
+                                                                </button>
+                                                            </div>
+
+                                                            <div className="text-[9px] text-slate-400 font-black uppercase tracking-widest text-center opacity-40">
+                                                                * O Agendamento 1 náo será alterado
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
-                                        </div>
-                                    )}
+                                        )}
+                                    </div>
 
                                     <div className="p-8 border-t border-slate-100 bg-slate-50/50 shrink-0">
                                         <button
                                             onClick={() => setShowDrawer(false)}
                                             className="w-full py-4 bg-slate-900 text-white font-black uppercase tracking-[0.2em] rounded-2xl hover:bg-black transition-all shadow-2xl shadow-slate-300 active:scale-95"
                                         >
-                                            Confirmar Horários
+                                            Confirmar
                                         </button>
                                     </div>
-
-                                    {/* Smart Propagation Confirmation Card */}
-                                    {pendingPropagationId && (
-                                        <div className="absolute inset-x-0 bottom-0 z-[100] p-6 animate-in fade-in slide-in-from-bottom duration-500">
-                                            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-md rounded-t-[40px]" onClick={() => setPendingPropagationId(null)}></div>
-
-                                            <div className="relative w-full bg-white rounded-[32px] shadow-[0_32px_64px_-16px_rgba(79,70,229,0.3)] p-8 border border-indigo-50 flex flex-col gap-6">
-                                                <div className="flex items-start gap-5">
-                                                    <div className="h-14 w-14 rounded-3xl bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-xl shadow-indigo-200 shrink-0">
-                                                        <Sparkles size={28} />
-                                                    </div>
-                                                    <div className="pt-1">
-                                                        <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight mb-2">Sugestão Inteligente</h4>
-                                                        <p className="text-[11px] text-slate-500 font-bold leading-relaxed">
-                                                            Detectamos uma mudança na segunda visita. Deseja replicar essa configuração para todos os agendamentos seguintes?
-                                                        </p>
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex gap-4">
-                                                    <button
-                                                        onClick={() => {
-                                                            propagateInstanceChanges(pendingPropagationId);
-                                                            setPendingPropagationId(null);
-                                                        }}
-                                                        className="flex-1 py-5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-200 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3"
-                                                    >
-                                                        <RefreshCw size={16} className="animate-spin-slow" />
-                                                        Sim, Replicar
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setPendingPropagationId(null)}
-                                                        className="px-8 py-5 bg-slate-50 text-slate-400 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-slate-100 hover:text-slate-600 transition-all border border-slate-100"
-                                                    >
-                                                        Não
-                                                    </button>
-                                                </div>
-
-                                                <div className="text-[9px] text-slate-400 font-black uppercase tracking-widest text-center opacity-40">
-                                                    * O Agendamento 1 náo será alterado
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
                                 </div>
-                            )}
-                        </div>
-                    </div>
+                            </div>
+                        )}
                 </div>
-            )}
-        </div>
+            </div>
+        </>
     );
 };
+
+export default BookingModal;

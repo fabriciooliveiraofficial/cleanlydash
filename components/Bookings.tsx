@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from 'react';
-import { Plus, ChevronLeft, ChevronRight, Calculator, Calendar as CalendarIcon, Link, RefreshCw, Loader2, MapPin, ArrowLeft, Save, CheckCircle, Camera, Pencil, LayoutGrid, CalendarDays, CalendarRange, Users, ShieldAlert } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, Calculator, Calendar as CalendarIcon, Link, RefreshCw, Loader2, MapPin, ArrowLeft, Save, CheckCircle, Camera, Pencil, LayoutGrid, CalendarDays, CalendarRange, Users, ShieldAlert, Sparkles } from 'lucide-react';
 import { createClient } from '../lib/supabase/client.ts';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +16,7 @@ import {
   DialogTrigger,
   DialogFooter
 } from './ui/dialog.tsx';
+import { SalesHub } from './sales/SalesHub.tsx';
 import {
   format,
   addMonths,
@@ -37,7 +38,7 @@ import {
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useTimezone } from '../contexts/TimezoneContext';
-import { toZonedTime, formatInTimeZone } from 'date-fns-tz';
+import { toZonedTime, formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 
 type ViewMode = 'month' | 'week' | 'day' | 'dispatch';
 
@@ -55,7 +56,7 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export const Bookings: React.FC = () => {
   const { t } = useTranslation();
-  const { timezone, now: zonedNow, formatTime } = useTimezone();
+  const { timezone, now: zonedNow, formatTime, formatWallTime, timeFormat } = useTimezone();
   const supabase = createClient();
   const [currentDate, setCurrentDate] = useState(zonedNow);
 
@@ -75,6 +76,7 @@ export const Bookings: React.FC = () => {
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [defaultBookingDate, setDefaultBookingDate] = useState<Date | undefined>(undefined);
   const [defaultBookingHour, setDefaultBookingHour] = useState<number | undefined>(undefined);
+  const [defaultBookingMinute, setDefaultBookingMinute] = useState<number>(0);
 
   // View Mode
   const [viewMode, setViewMode] = useState<ViewMode>('week');
@@ -87,6 +89,8 @@ export const Bookings: React.FC = () => {
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+  const [isSalesHubOpen, setIsSalesHubOpen] = useState(false);
+
   // Reset view mode when dialog opens/closes
   useEffect(() => {
     if (!selectedBooking) {
@@ -95,10 +99,29 @@ export const Bookings: React.FC = () => {
       setEvidenceFile(null);
     }
   }, [selectedBooking]);
-  const handleOpenNewBooking = (date?: Date, hour?: number) => {
+  const handleOpenNewBooking = (date?: Date, hour?: number, minute?: number) => {
     setEditingBooking(null);
     setDefaultBookingDate(date);
     setDefaultBookingHour(hour);
+    // We should probably pass minute to modal too?
+    // Current state doesn't track minute explicitly for default.
+    // I need to update state or just bake it into date/hour logic?
+    // setDefaultBookingHour is number.
+    // If I can set defaultTime string? 
+    // Let's modify defaultBookingHour to be float? Or add setDefaultBookingMinute?
+    // Or just construct the full date?
+    if (date && hour !== undefined) {
+      const d = new Date(date);
+      d.setHours(hour, minute || 0, 0, 0);
+      setDefaultBookingDate(d);
+      // Wait, defaultBookingDate is used as "Day".
+      // BookingModal uses defaultBookingDate + defaultBookingHour?
+      // Let's see BookingModal usage.
+    }
+    // Actually, I'll add a new state for minute or pass it via existing mechanism.
+    // Simplest: Add defaultBookingMinute state.
+    setDefaultBookingMinute(minute || 0);
+
     setShowBookingModal(true);
   };
 
@@ -106,6 +129,18 @@ export const Bookings: React.FC = () => {
     setEditingBooking(booking as any);
     setDefaultBookingDate(undefined);
     setDefaultBookingHour(undefined);
+    setShowBookingModal(true);
+  };
+
+  const handleSalesToBooking = (data: any) => {
+    setEditingBooking({
+      ...data,
+      status: 'pending',
+      start_date: new Date().toISOString(),
+      start_time: '08:00',
+      duration_minutes: 60,
+    } as any);
+    setIsSalesHubOpen(false);
     setShowBookingModal(true);
   };
 
@@ -191,7 +226,7 @@ export const Bookings: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, [currentDate]);
+  }, [currentDate, timezone, timeFormat]); // Added dependencies to force refresh
 
   // --- Validation Logic ---
   const validateCleanerAvailability = (cleanerId: string, start: Date, end: Date, excludeBookingId?: string): { valid: boolean; reason?: string } => {
@@ -221,14 +256,17 @@ export const Bookings: React.FC = () => {
       }
 
       // Check time bounds
-      const startString = formatInTimeZone(start, timezone, 'HH:mm:ss');
-      const endString = formatInTimeZone(end, timezone, 'HH:mm:ss');
-      // Simple string comparison works for HH:mm:ss 24h format
-      // rule.start_time / end_time usually HH:mm:ss or HH:mm
+      // Inputs 'start' and 'end' are expected to be Zoned Dates (Visual Time)
+      // So we use simple format() to extract the wall time, avoiding double-shifting
+      const startString = format(start, 'HH:mm');
+      const endString = format(end, 'HH:mm');
 
-      // We need to be careful with crossing midnight, but assuming single day shifts for now.
-      if (startString < rule.start_time || endString > rule.end_time) {
-        return { valid: false, reason: `Fora do horário de trabalho (${rule.start_time.slice(0, 5)} - ${rule.end_time.slice(0, 5)})` };
+      // Normalize rule times to HH:mm (handling HH:mm:ss or HH:mm)
+      const ruleStart = rule.start_time.slice(0, 5);
+      const ruleEnd = rule.end_time.slice(0, 5);
+
+      if (startString < ruleStart || endString > ruleEnd) {
+        return { valid: false, reason: `Fora do horário de trabalho (${ruleStart} - ${ruleEnd})` };
       }
     }
 
@@ -277,18 +315,22 @@ export const Bookings: React.FC = () => {
     const originalStart = booking.start_date;
     const originalEnd = booking.end_date;
 
+    // Convert Wall Time back to UTC for storage
+    const utcStart = fromZonedTime(newStart, timezone);
+    const utcEnd = fromZonedTime(newEnd, timezone);
+
     // Optimistic update
     setBookings(prev => prev.map(b =>
       b.id === bookingId
-        ? { ...b, start_date: newStart.toISOString(), end_date: newEnd.toISOString() }
+        ? { ...b, start_date: utcStart.toISOString(), end_date: utcEnd.toISOString() }
         : b
     ) as Booking[]);
 
     const { error } = await (supabase
       .from('bookings') as any)
       .update({
-        start_date: newStart.toISOString(),
-        end_date: newEnd.toISOString()
+        start_date: utcStart.toISOString(),
+        end_date: utcEnd.toISOString()
       } as any)
       .eq('id', bookingId);
 
@@ -311,7 +353,8 @@ export const Bookings: React.FC = () => {
     const booking = bookings.find(b => b.id === bookingId) as any;
     if (!booking) return;
 
-    const newStart = parseISO(booking.start_date);
+    // Convert start to Zoned Time to match newEnd (Visual Time) for consistent validation
+    const newStart = toZonedTime(parseISO(booking.start_date), timezone);
 
     if (booking.assigned_to) {
       const validation = validateCleanerAvailability(booking.assigned_to, newStart, newEnd, bookingId);
@@ -323,16 +366,19 @@ export const Bookings: React.FC = () => {
 
     const originalEnd = booking.end_date;
 
+    // Convert Wall Time (newEnd) back to UTC
+    const utcEnd = fromZonedTime(newEnd, timezone);
+
     setBookings(prev => prev.map(b =>
       b.id === bookingId
-        ? { ...b, end_date: newEnd.toISOString() }
+        ? { ...b, end_date: utcEnd.toISOString() }
         : b
     ) as Booking[]);
 
     const { error } = await (supabase
       .from('bookings') as any)
       .update({
-        end_date: newEnd.toISOString()
+        end_date: utcEnd.toISOString()
       } as any)
       .eq('id', bookingId);
 
@@ -465,7 +511,7 @@ export const Bookings: React.FC = () => {
         : b
     );
     setBookings(updatedBookings as any);
-    toast.success(`Reagendado para ${formatInTimeZone(newStart, timezone, 'd MMM, HH:mm', { locale: ptBR })}`);
+    toast.success(`Reagendado para ${format(newStart, 'd MMM', { locale: ptBR })}, ${formatWallTime(newStart)}`);
 
     const { error } = await (supabase
       .from('bookings') as any)
@@ -798,7 +844,7 @@ export const Bookings: React.FC = () => {
                 {isDetails && (
                   <span className="text-sm font-normal text-slate-500 flex items-center gap-2">
                     <CalendarIcon size={14} />
-                    {selectedBooking && formatTime(selectedBooking.start_date, 'PPP')} - {selectedBooking && formatTime(selectedBooking.end_date, 'PPP')}
+                    {selectedBooking && format(toZonedTime(parseISO(selectedBooking.start_date), timezone), 'PPP', { locale: ptBR })} • {selectedBooking && formatWallTime(selectedBooking.start_date)} - {selectedBooking && formatWallTime(selectedBooking.end_date)}
                   </span>
                 )}
               </div>
@@ -1029,6 +1075,14 @@ export const Bookings: React.FC = () => {
 
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => setIsSalesHubOpen(true)}
+              className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white border-0 shadow-lg shadow-indigo-500/20"
+            >
+              <Sparkles size={18} />
+              <span className="hidden sm:inline">Sales Machine</span>
+            </Button>
+
             {/* Primary Action - Always Visible */}
             <Button
               onClick={() => handleOpenNewBooking()}
@@ -1231,13 +1285,20 @@ export const Bookings: React.FC = () => {
       {renderJobDetails()}
       {renderRouteModal()}
 
-      {/* Booking Modal */}
       <BookingModal
         isOpen={showBookingModal}
         onClose={() => setShowBookingModal(false)}
         onSave={() => { setShowBookingModal(false); fetchData(); }}
         booking={editingBooking}
         defaultDate={defaultBookingDate}
+        defaultHour={defaultBookingHour}
+        defaultMinute={defaultBookingMinute}
+      />
+
+      <SalesHub
+        isOpen={isSalesHubOpen}
+        onClose={() => setIsSalesHubOpen(false)}
+        onConvertToBooking={handleSalesToBooking}
       />
     </div>
   );

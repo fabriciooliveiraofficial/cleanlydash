@@ -50,15 +50,25 @@ interface DispatchTimelineProps {
   employees: Employee[]
   bookings: Booking[]
   onBookingUpdate?: (bookingId: string, updates: Partial<Booking>) => void
+  viewStartHour?: number
+  viewEndHour?: number
+  businessHours?: any
 }
 
-const START_HOUR = 0
-const END_HOUR = 23
 const HOUR_WIDTH = 120 // pixels per hour
 const SLOT_DURATION = 1 // 1-minute precision for ultra-smooth drag
 const SNAP_PIXELS = (SLOT_DURATION / 60) * HOUR_WIDTH // 2px for 1min snap
-export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }: DispatchTimelineProps) {
-  const { now: currentTime, timezone } = useTimezone()
+
+export function DispatchTimeline({
+  date,
+  employees,
+  bookings,
+  onBookingUpdate,
+  viewStartHour = 0,
+  viewEndHour = 23,
+  businessHours
+}: DispatchTimelineProps) {
+  const { now: currentTime, timezone, formatTime } = useTimezone()
   const [selectedBooking, setSelectedBooking] = React.useState<Booking | null>(null)
   const containerRef = React.useRef<HTMLDivElement>(null)
   const rowRefs = React.useRef<Map<string, HTMLDivElement>>(new Map())
@@ -127,14 +137,17 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
     return () => clearInterval(interval)
   }, [interaction])
 
-  const hours = Array.from({ length: 24 }, (_, i) => i)
+  // Generate hours based on props
+  const totalHours = viewEndHour - viewStartHour + 1;
+  const hours = Array.from({ length: totalHours }, (_, i) => viewStartHour + i)
 
   const unassignedBookings = bookings.filter(b => (b.resource_ids || []).length === 0)
   const assignedBookings = bookings.filter(b => (b.resource_ids || []).length > 0)
 
   const getXPosition = (timeStr: string) => {
     const start = toZonedTime(parseISO(timeStr), timezone)
-    const viewStart = startOfDay(date) // date is already zoned (now)
+    // Dynamic start of view based on prop
+    const viewStart = addMinutes(startOfDay(date), viewStartHour * 60)
     const diff = differenceInMinutes(start, viewStart)
     return (diff / 60) * HOUR_WIDTH
   }
@@ -204,7 +217,7 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
             const finalDelta = Math.min(snappedDelta, interaction.initialWidth - (HOUR_WIDTH * (SLOT_DURATION / 60)))
 
             const start = toZonedTime(parseISO(booking.start_time), timezone)
-            const viewStart = startOfDay(date)
+            const viewStart = addMinutes(startOfDay(date), viewStartHour * 60)
             // Current minutes relative to start
             const currentMins = differenceInMinutes(start, viewStart)
             const addedMins = (finalDelta / HOUR_WIDTH) * 60
@@ -236,6 +249,23 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
                 newResourceId = id
               }
             })
+          }
+
+          // Validation: Check current day business hours
+          const dayOfWeek = toZonedTime(newStart, timezone).getDay();
+          const dayConfig = businessHours?.[dayOfWeek];
+
+          if (dayConfig && dayConfig.active) {
+            const startStr = format(toZonedTime(newStart, timezone), 'HH:mm');
+            const endStr = format(toZonedTime(newEnd, timezone), 'HH:mm');
+
+            if (startStr < dayConfig.start || endStr > dayConfig.end) {
+              // Notify user about restriction
+              // Using alert because toast is not imported, or we could just skip update
+              return;
+            }
+          } else if (dayConfig && !dayConfig.active) {
+            return; // Target day is closed
           }
 
           onBookingUpdate(booking.id, {
@@ -302,7 +332,7 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
                 <div className="flex items-center gap-3 text-[10px] font-bold text-slate-500">
                   <span className="flex items-center gap-1">
                     <Clock size={12} className="text-indigo-400" />
-                    {format(toZonedTime(parseISO(booking.start_time), timezone), 'HH:mm')}
+                    {formatTime(booking.start_time, 'p_time')}
                   </span>
                   <span className="text-emerald-600 font-black">R${booking.price}</span>
                 </div>
@@ -316,7 +346,7 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
       <div className="flex-1 relative flex flex-col bg-white border rounded-2xl shadow-xl overflow-hidden">
         {/* Main Single Scroll Container for both H and V */}
         <div ref={containerRef} className="flex-1 overflow-auto custom-scrollbar">
-          <div className="min-w-[3104px] relative"> {/* 2880px (24h) + 224px (w-56) */}
+          <div className="relative" style={{ minWidth: `${(totalHours * HOUR_WIDTH) + 224}px` }}> {/* Dynamic Width */}
 
             {/* Real-time "Now" Indicator */}
             <div
@@ -364,8 +394,8 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
               <div className="flex flex-1">
                 {hours.map(hour => (
                   <div key={hour} className="min-w-[120px] p-3 text-center border-r last:border-0 border-slate-200 bg-slate-50/50">
-                    <span className="text-[10px] font-black text-slate-400">
-                      {hour}:00
+                    <span className="text-[10px] font-black text-slate-400 uppercase">
+                      {formatTime(setHours(startOfDay(date), hour), 'p_time')}
                     </span>
                   </div>
                 ))}
@@ -455,13 +485,11 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
                               // Drag Visuals (Ghost following mouse precisely)
                               ghostLeft = left + deltaX
                               ghostTop = top + deltaY
-
-                              // Snap prediction for label
                               const snappedDelta = Math.round(deltaX / SNAP_PIXELS) * SNAP_PIXELS
                               const start = toZonedTime(parseISO(booking.start_time), timezone)
                               const addedMins = (snappedDelta / HOUR_WIDTH) * 60
                               const predictedStart = addMinutes(start, addedMins)
-                              liveTimeLabel = format(predictedStart, 'HH:mm')
+                              liveTimeLabel = formatTime(predictedStart, 'p_time')
                             }
                           }
 
@@ -527,7 +555,7 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
                                 <div className="flex items-center justify-between text-[9px] font-bold opacity-80 pointer-events-none">
                                   <span className="flex items-center gap-1">
                                     <Clock size={10} />
-                                    {format(toZonedTime(parseISO(booking.start_time), timezone), 'HH:mm')}
+                                    {formatTime(booking.start_time, 'p_time')}
                                   </span>
                                   <span className="bg-white/50 px-1 rounded text-emerald-700 font-bold">R${booking.price}</span>
                                 </div>
@@ -596,7 +624,7 @@ export function DispatchTimeline({ date, employees, bookings, onBookingUpdate }:
                     <span className="text-[10px] font-bold text-slate-400 uppercase">Horário</span>
                     <div className="flex items-center gap-2 font-bold text-slate-900">
                       <Clock size={16} className="text-amber-500" />
-                      {format(toZonedTime(parseISO(selectedBooking.start_time), timezone), 'HH:mm')}
+                      {formatTime(selectedBooking.start_time, 'p_time')}
                     </div>
                   </div>
                   <div className="p-4 rounded-2xl border bg-white flex flex-col gap-1 shadow-sm">

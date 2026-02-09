@@ -14,8 +14,17 @@ CREATE TABLE IF NOT EXISTS public.push_subscriptions (
 -- Enable RLS for push_subscriptions
 ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can manage their own subscriptions" ON public.push_subscriptions
-    FOR ALL USING (auth.uid() = user_id);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT FROM pg_policies 
+        WHERE tablename = 'push_subscriptions' 
+        AND policyname = 'Users can manage their own subscriptions'
+    ) THEN
+        CREATE POLICY "Users can manage their own subscriptions" ON public.push_subscriptions
+            FOR ALL USING (auth.uid() = user_id);
+    END IF;
+END $$;
 
 -- 2. Enhance tenant_notification_settings (if not exists with correct columns)
 CREATE TABLE IF NOT EXISTS public.tenant_notification_settings (

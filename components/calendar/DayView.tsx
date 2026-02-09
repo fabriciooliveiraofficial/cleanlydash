@@ -28,7 +28,6 @@ interface DayViewProps {
     onBookingResize?: (bookingId: string, newEnd: Date) => void;
 }
 
-const HOURS = Array.from({ length: 24 }, (_, i) => i); // 0 to 23
 const HOUR_HEIGHT = 70; // pixels per hour
 const LONG_PRESS_DURATION = 400; // ms to trigger drag on mobile
 
@@ -40,8 +39,34 @@ export const DayView: React.FC<DayViewProps> = ({
     onBookingMove,
     onBookingResize
 }) => {
-    const { timezone, now: zonedNow, formatTime } = useTimezone();
+    const { timezone, now: zonedNow, formatTime, formatWallTime, timeFormat, businessHours } = useTimezone();
     const dayBookings = bookings.filter(b => isSameDay(toZonedTime(parseISO(b.start_date), timezone), currentDate));
+
+    // Calculate dynamic hours based on business settings
+    const HOURS = React.useMemo(() => {
+        if (!businessHours) return Array.from({ length: 24 }, (_, i) => i);
+
+        let minStart = 24;
+        let maxEnd = 0;
+        let hasActiveDay = false;
+
+        Object.values(businessHours).forEach((config: any) => {
+            if (config.active) {
+                hasActiveDay = true;
+                const startHour = parseInt(config.start.split(':')[0], 10);
+                const endHour = Math.ceil(parseInt(config.end.split(':')[0], 10) + (parseInt(config.end.split(':')[1], 10) / 60));
+                minStart = Math.min(minStart, startHour);
+                maxEnd = Math.max(maxEnd, endHour);
+            }
+        });
+
+        const start = minStart;
+        const end = maxEnd;
+
+        if (!hasActiveDay || start >= end) return Array.from({ length: 24 }, (_, i) => i);
+
+        return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+    }, [businessHours]);
 
     // Refs for touch handling
     const longPressTimer = useRef<NodeJS.Timeout | null>(null);
@@ -451,7 +476,7 @@ export const DayView: React.FC<DayViewProps> = ({
                         <div key={hour} className="flex border-b border-slate-100" style={{ minHeight: `${HOUR_HEIGHT}px` }}>
                             {/* Hour Label */}
                             <div className="w-20 flex-shrink-0 border-r border-slate-200 text-sm text-slate-400 text-right pr-3 pt-2 font-medium">
-                                {format(new Date().setHours(hour, 0), 'HH:mm')}
+                                {formatWallTime(hour)}
                             </div>
 
                             {/* Slot */}
@@ -492,7 +517,7 @@ export const DayView: React.FC<DayViewProps> = ({
                                             </Badge>
                                             <div className="bg-slate-900/90 text-[10px] text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
                                                 <Clock size={10} className="text-amber-400" />
-                                                {hour}:{dragOverMinute.toString().padStart(2, '0')}
+                                                {formatWallTime(hour, dragOverMinute)}
                                             </div>
                                         </div>
                                         <span className="text-xs font-black text-indigo-900 border-b border-indigo-200 truncate leading-none pb-1 mb-1">
@@ -558,7 +583,7 @@ export const DayView: React.FC<DayViewProps> = ({
                                             <div className="px-4 py-2 h-full flex flex-col pointer-events-none select-none">
                                                 <div className="flex items-center justify-between">
                                                     <div className="text-sm font-bold">
-                                                        {formatTime(booking.start_date, 'HH:mm')} - {formatTime(booking.end_date, 'HH:mm')}
+                                                        {formatTime(booking.start_date, 'p_time')} - {formatTime(booking.end_date, 'p_time')}
                                                     </div>
                                                     <Badge
                                                         className="px-2 py-0 text-[10px] uppercase font-bold bg-white/20"

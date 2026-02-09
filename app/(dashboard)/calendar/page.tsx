@@ -3,21 +3,21 @@ import { createClient } from '@/lib/supabase/server'
 import { KanbanBoard } from '@/components/booking/kanban-board'
 import { DispatchTimeline } from '@/components/calendar/dispatch-timeline'
 import { Button } from '@/components/ui/button'
-import { 
-  Plus, 
-  Calendar as CalendarIcon, 
-  Filter, 
-  LayoutGrid, 
-  ListTodo, 
+import {
+  Plus,
+  Calendar as CalendarIcon,
+  Filter,
+  LayoutGrid,
+  ListTodo,
   Map as MapIcon,
   Search
 } from 'lucide-react'
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogTrigger 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger
 } from "@/components/ui/dialog"
 import { BookingForm } from './booking-form'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -46,6 +46,30 @@ export default async function CalendarPage({ searchParams }: { searchParams: { v
     .in('role', ['cleaner', 'manager', 'owner'])
     .order('full_name', { ascending: true })
 
+  // Busca configurações globais (Business Hours)
+  const { data: userData } = await supabase.auth.getUser()
+  const { data: profile } = await supabase
+    .from('tenant_profiles')
+    .select('business_hours')
+    .eq('id', userData.user?.id)
+    .single()
+
+  const businessHours = profile?.business_hours as any
+
+  // Calculate Global Range for Timeline
+  let viewStartHour = 8
+  let viewEndHour = 18
+
+  if (businessHours) {
+    const activeDays = Object.values(businessHours).filter((day: any) => day.active)
+    if (activeDays.length > 0) {
+      const starts = activeDays.map((d: any) => parseInt(d.start.split(':')[0]))
+      const ends = activeDays.map((d: any) => parseInt(d.end.split(':')[0]))
+      viewStartHour = Math.min(...starts)
+      viewEndHour = Math.max(...ends)
+    }
+  }
+
   return (
     <div className="flex flex-col h-[calc(100vh-140px)] space-y-6 overflow-hidden">
       {/* Header Operational */}
@@ -58,13 +82,13 @@ export default async function CalendarPage({ searchParams }: { searchParams: { v
         <div className="flex items-center gap-3">
           <div className="relative hidden lg:block">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Pesquisar job..." 
+            <input
+              type="text"
+              placeholder="Pesquisar job..."
               className="pl-9 pr-4 py-2 border rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none w-48 bg-white"
             />
           </div>
-          
+
           <Dialog>
             <DialogTrigger asChild>
               <Button className="gap-2 bg-indigo-600 hover:bg-indigo-700 shadow-xl shadow-indigo-100 h-11 px-6 font-bold rounded-xl transition-all active:scale-95">
@@ -104,7 +128,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: { v
               </TabsTrigger>
             </Link>
           </TabsList>
-          
+
           <div className="flex items-center gap-1.5 px-3 border-l ml-auto">
             <Button variant="ghost" size="sm" className="h-9 px-4 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-indigo-600">Dia</Button>
             <Button variant="ghost" size="sm" className="h-9 px-4 text-[10px] font-black uppercase tracking-widest text-indigo-700 bg-indigo-50 rounded-lg">Semana</Button>
@@ -117,10 +141,13 @@ export default async function CalendarPage({ searchParams }: { searchParams: { v
         </div>
 
         <TabsContent value="dispatch" className="flex-1 min-h-0 mt-0 focus-visible:ring-0">
-          <DispatchTimeline 
-            date={new Date()} 
-            employees={(team || []) as any} 
-            bookings={(bookings || []) as any} 
+          <DispatchTimeline
+            date={new Date()}
+            employees={(team || []) as any}
+            bookings={(bookings || []) as any}
+            viewStartHour={viewStartHour}
+            viewEndHour={viewEndHour}
+            businessHours={businessHours}
           />
         </TabsContent>
 
@@ -134,9 +161,9 @@ export default async function CalendarPage({ searchParams }: { searchParams: { v
 
         <TabsContent value="map" className="flex-1 min-h-0 mt-0">
           <div className="h-full rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center text-slate-400 p-8 text-center">
-             <MapIcon size={48} className="mb-4 opacity-20" />
-             <p className="font-bold text-slate-500">Geolocalização em Tempo Real</p>
-             <p className="text-xs max-w-xs mt-2">Estamos integrando com a API do Google Maps para exibir a rota otimizada dos seus cleaners.</p>
+            <MapIcon size={48} className="mb-4 opacity-20" />
+            <p className="font-bold text-slate-500">Geolocalização em Tempo Real</p>
+            <p className="text-xs max-w-xs mt-2">Estamos integrando com a API do Google Maps para exibir a rota otimizada dos seus cleaners.</p>
           </div>
         </TabsContent>
       </Tabs>

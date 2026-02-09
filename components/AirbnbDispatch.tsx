@@ -17,6 +17,7 @@ export default function AirbnbDispatch() {
     const [date, setDate] = useState(now)
     const [employees, setEmployees] = useState([])
     const [bookings, setBookings] = useState([])
+    const [businessHours, setBusinessHours] = useState<{ start: string; end: string } | null>(null)
     const [loading, setLoading] = useState(true)
     const supabase = createClient()
 
@@ -47,6 +48,20 @@ export default function AirbnbDispatch() {
                 calendar_color: m.color || '#6366f1'
             }))
             setEmployees(mappedEmployees)
+
+            // 1.5 Fetch Business Hours
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const { data: profile } = await supabase
+                    .from('tenant_profiles')
+                    .select('business_hours')
+                    .eq('id', user.id)
+                    .single();
+
+                if (profile?.business_hours) {
+                    setBusinessHours(profile.business_hours as any);
+                }
+            }
 
             // 2. Fetch Bookings (Filtered for Airbnb/iCal)
             const dateStr = format(date, 'yyyy-MM-dd')
@@ -207,6 +222,8 @@ export default function AirbnbDispatch() {
                         employees={employees}
                         bookings={bookings}
                         onBookingUpdate={handleBookingUpdate}
+                        viewStartHour={businessHours?.start ? parseInt(businessHours.start.split(':')[0]) : 0}
+                        viewEndHour={businessHours?.end ? parseInt(businessHours.end.split(':')[0]) : 23}
                     />
                 )}
             </div>

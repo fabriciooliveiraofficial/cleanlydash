@@ -25,7 +25,7 @@ export const CleanerAppWrapper: React.FC = () => {
                     .from('user_roles')
                     .select('role')
                     .eq('user_id', session.user.id)
-                    .single();
+                    .maybeSingle();
 
                 // Also check team_members for custom_roles/app_access
                 const { data: member } = await supabase

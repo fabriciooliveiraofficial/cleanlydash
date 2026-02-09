@@ -17,34 +17,51 @@ CREATE TABLE IF NOT EXISTS public.booking_assignments (
 ALTER TABLE public.booking_assignments ENABLE ROW LEVEL SECURITY;
 
 -- Policies
-CREATE POLICY "Tenant read access" ON public.booking_assignments
-  FOR SELECT USING (
-    -- Access if user is tenant owner OR user is the assigned member
-    EXISTS (
-        SELECT 1 FROM public.bookings b 
-        WHERE b.id = booking_assignments.booking_id 
-        AND b.tenant_id = auth.uid()
-    )
-    OR
-    EXISTS (
-        SELECT 1 FROM public.team_members tm
-        WHERE tm.id = booking_assignments.member_id
-        AND tm.user_id = auth.uid()
-    )
-);
+-- Policies
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT FROM pg_policies 
+        WHERE tablename = 'booking_assignments' 
+        AND policyname = 'Tenant read access'
+    ) THEN
+        CREATE POLICY "Tenant read access" ON public.booking_assignments
+          FOR SELECT USING (
+            -- Access if user is tenant owner OR user is the assigned member
+            EXISTS (
+                SELECT 1 FROM public.bookings b 
+                WHERE b.id = booking_assignments.booking_id 
+                AND b.tenant_id = auth.uid()
+            )
+            OR
+            EXISTS (
+                SELECT 1 FROM public.team_members tm
+                WHERE tm.id = booking_assignments.member_id
+                AND tm.user_id = auth.uid()
+            )
+        );
+    END IF;
 
-CREATE POLICY "Tenant write access" ON public.booking_assignments
-  FOR ALL USING (
-    EXISTS (
-        SELECT 1 FROM public.bookings b 
-        WHERE b.id = booking_assignments.booking_id 
-        AND b.tenant_id = auth.uid()
-    )
-);
+    IF NOT EXISTS (
+        SELECT FROM pg_policies 
+        WHERE tablename = 'booking_assignments' 
+        AND policyname = 'Tenant write access'
+    ) THEN
+        CREATE POLICY "Tenant write access" ON public.booking_assignments
+          FOR ALL USING (
+            EXISTS (
+                SELECT 1 FROM public.bookings b 
+                WHERE b.id = booking_assignments.booking_id 
+                AND b.tenant_id = auth.uid()
+            )
+        );
+    END IF;
+END $$;
 
 -- Indices
-CREATE INDEX idx_booking_assignments_booking ON public.booking_assignments(booking_id);
-CREATE INDEX idx_booking_assignments_member ON public.booking_assignments(member_id);
+-- Indices
+CREATE INDEX IF NOT EXISTS idx_booking_assignments_booking ON public.booking_assignments(booking_id);
+CREATE INDEX IF NOT EXISTS idx_booking_assignments_member ON public.booking_assignments(member_id);
 
 -- TRIGGER FUNCTION: Prevent Overlap
 CREATE OR REPLACE FUNCTION public.check_assignment_overlap()
@@ -79,6 +96,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- TRIGGER
+DROP TRIGGER IF EXISTS trg_check_assignment_overlap ON public.booking_assignments;
 CREATE TRIGGER trg_check_assignment_overlap
 BEFORE INSERT OR UPDATE ON public.booking_assignments
 FOR EACH ROW

@@ -53,16 +53,48 @@ export function useSessionManager() {
         const client = getClientForRoute(route);
 
         try {
-            // Simply check if we have a valid session
+            // 1. Initial Check: Does the client already have a session?
             const { data: { session }, error } = await client.auth.getSession();
 
-            if (error || !session) {
-                console.log(`[SessionManager] No active session for ${route}`);
-                return false;
+            if (session) {
+                console.log(`[SessionManager] ✅ Session valid for ${route}:`, session.user.email);
+                return true;
             }
 
-            console.log(`[SessionManager] ✅ Session valid for ${route}:`, session.user.email);
-            return true;
+            // 2. Hydration Fallback: Check manual storage if client is empty
+            // This fixes the "Cleaner App Login Loop" where AuthFlow saves to localStorage
+            // but CleanerClient (isolated) doesn't see it in its own storage.
+            console.log(`[SessionManager] No active session for ${route}, checking manual storage...`);
+            const storageKey = STORAGE_KEYS[route];
+            // Safe check for localStorage (SSR safety)
+            const storedSessionStr = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null;
+
+            if (storedSessionStr) {
+                try {
+                    const storedSession = JSON.parse(storedSessionStr);
+                    if (storedSession && storedSession.refresh_token) {
+                        console.log(`[SessionManager] 🔄 Hydrating session for ${route} from manual storage...`);
+
+                        // Force hydration into the isolated client
+                        const { data: refreshData, error: refreshError } = await client.auth.setSession({
+                            access_token: storedSession.access_token,
+                            refresh_token: storedSession.refresh_token
+                        });
+
+                        if (!refreshError && refreshData.session) {
+                            console.log(`[SessionManager] ✅ Hydration successful for ${route}`);
+                            return true;
+                        } else {
+                            console.warn(`[SessionManager] Failed to hydrate session for ${route}:`, refreshError);
+                        }
+                    }
+                } catch (parseErr) {
+                    console.error(`[SessionManager] Failed to parse stored session for ${route}:`, parseErr);
+                }
+            }
+
+            console.log(`[SessionManager] ❌ No session found for ${route}`);
+            return false;
         } catch (err) {
             console.error(`[SessionManager] Error checking session for ${route}:`, err);
             return false;

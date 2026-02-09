@@ -26,10 +26,9 @@ const DAYS = [
     { value: 6, label: 'Sábado', short: 'Sáb' },
 ];
 
-const TIME_OPTIONS = [
-    '06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00',
-    '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'
-];
+const TIME_OPTIONS = Array.from({ length: 24 }, (_, i) =>
+    `${String(i).padStart(2, '0')}:00`
+);
 
 export const getDefaultSlots = (): AvailabilitySlot[] => DAYS.map(day => ({
     day_of_week: day.value,
@@ -44,13 +43,25 @@ export const InlineAvailabilityEditor: React.FC<InlineAvailabilityEditorProps> =
     onChange
 }) => {
     const [loading, setLoading] = useState(false);
+    const [businessHours, setBusinessHours] = useState<{ start: string; end: string } | null>(null);
     const supabase = createClient();
 
     useEffect(() => {
         if (memberId) {
             fetchAvailability();
         }
+        fetchBusinessHours();
     }, [memberId]);
+
+    const fetchBusinessHours = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+            const { data } = await supabase.from('tenant_profiles').select('business_hours').eq('id', user.id).single();
+            if (data?.business_hours) {
+                setBusinessHours(data.business_hours as any);
+            }
+        }
+    }
 
     const fetchAvailability = async () => {
         if (!memberId) return;
@@ -68,7 +79,14 @@ export const InlineAvailabilityEditor: React.FC<InlineAvailabilityEditorProps> =
             if (data && data.length > 0) {
                 const merged = DAYS.map(day => {
                     const existing = data.find((d: any) => d.day_of_week === day.value);
-                    return existing || value[day.value];
+                    if (existing) {
+                        return {
+                            ...existing,
+                            start_time: existing.start_time?.slice(0, 5),
+                            end_time: existing.end_time?.slice(0, 5)
+                        };
+                    }
+                    return value[day.value];
                 });
                 onChange(merged as AvailabilitySlot[]);
             }
@@ -87,10 +105,34 @@ export const InlineAvailabilityEditor: React.FC<InlineAvailabilityEditorProps> =
     };
 
     const updateTime = (dayIndex: number, field: 'start_time' | 'end_time', newValue: string) => {
+        const slot = value[dayIndex];
+        const otherValue = field === 'start_time' ? slot.end_time : slot.start_time;
+
+        if (field === 'start_time' && newValue >= otherValue) return;
+        if (field === 'end_time' && newValue <= otherValue) return;
+
+        if (businessHours) {
+            const dayConfig = businessHours[slot.day_of_week];
+            if (dayConfig && dayConfig.active) {
+                if (field === 'start_time' && newValue < dayConfig.start) return;
+                if (field === 'end_time' && newValue > dayConfig.end) return;
+            } else if (dayConfig && !dayConfig.active) {
+                return;
+            }
+        }
+
         const updated = value.map((slot, i) =>
             i === dayIndex ? { ...slot, [field]: newValue } : slot
         );
         onChange(updated);
+    };
+
+    const formatTimeOption = (timeStr: string) => {
+        const [hour, minute] = timeStr.split(':');
+        const h = parseInt(hour, 10);
+        const period = h >= 12 ? 'PM' : 'AM';
+        const h12 = h % 12 || 12;
+        return `${h12}:${minute} ${period}`;
     };
 
     const setAllWeekdays = () => {
@@ -144,8 +186,8 @@ export const InlineAvailabilityEditor: React.FC<InlineAvailabilityEditorProps> =
                 <div
                     key={index}
                     className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${slot.is_available
-                            ? 'border-emerald-200 bg-emerald-50/50'
-                            : 'border-slate-200 bg-slate-50/50'
+                        ? 'border-emerald-200 bg-emerald-50/50'
+                        : 'border-slate-200 bg-slate-50/50'
                         }`}
                 >
                     {/* Day Toggle */}
@@ -153,8 +195,8 @@ export const InlineAvailabilityEditor: React.FC<InlineAvailabilityEditorProps> =
                         type="button"
                         onClick={() => toggleDay(index)}
                         className={`w-14 py-2 rounded-lg text-xs font-bold transition-colors ${slot.is_available
-                                ? 'bg-emerald-600 text-white'
-                                : 'bg-slate-200 text-slate-500'
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-200 text-slate-500'
                             }`}
                     >
                         {DAYS[index].short}
@@ -167,9 +209,18 @@ export const InlineAvailabilityEditor: React.FC<InlineAvailabilityEditorProps> =
                                 onChange={e => updateTime(index, 'start_time', e.target.value)}
                                 className="flex-1 px-2 py-2 rounded-lg border border-slate-200 text-xs bg-white"
                             >
-                                {TIME_OPTIONS.map(time => (
-                                    <option key={time} value={time}>{time}</option>
-                                ))}
+                                {(() => {
+                                    const dayConfig = businessHours ? businessHours[slot.day_of_week] : null;
+                                    const options = TIME_OPTIONS.filter(time => {
+                                        if (!dayConfig || !dayConfig.active) return true;
+                                        return time >= dayConfig.start && time < dayConfig.end;
+                                    });
+                                    if (!options.includes(slot.start_time)) options.push(slot.start_time);
+                                    options.sort();
+                                    return options.map(time => (
+                                        <option key={time} value={time}>{formatTimeOption(time)}</option>
+                                    ));
+                                })()}
                             </select>
 
                             <span className="text-slate-400 text-xs">até</span>
@@ -179,9 +230,18 @@ export const InlineAvailabilityEditor: React.FC<InlineAvailabilityEditorProps> =
                                 onChange={e => updateTime(index, 'end_time', e.target.value)}
                                 className="flex-1 px-2 py-2 rounded-lg border border-slate-200 text-xs bg-white"
                             >
-                                {TIME_OPTIONS.map(time => (
-                                    <option key={time} value={time}>{time}</option>
-                                ))}
+                                {(() => {
+                                    const dayConfig = businessHours ? businessHours[slot.day_of_week] : null;
+                                    const options = TIME_OPTIONS.filter(time => {
+                                        if (!dayConfig || !dayConfig.active) return true;
+                                        return time > dayConfig.start && time <= dayConfig.end;
+                                    });
+                                    if (!options.includes(slot.end_time)) options.push(slot.end_time);
+                                    options.sort();
+                                    return options.map(time => (
+                                        <option key={time} value={time}>{formatTimeOption(time)}</option>
+                                    ));
+                                })()}
                             </select>
                         </>
                     ) : (

@@ -29,10 +29,9 @@ const DAYS = [
     { value: 6, label: 'Sábado', short: 'Sáb' },
 ];
 
-const TIME_OPTIONS = [
-    '06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00',
-    '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'
-];
+const TIME_OPTIONS = Array.from({ length: 24 }, (_, i) =>
+    `${String(i).padStart(2, '0')}:00`
+);
 
 const defaultSlots: AvailabilitySlot[] = DAYS.map(day => ({
     day_of_week: day.value,
@@ -52,11 +51,24 @@ export const AvailabilityEditor: React.FC<AvailabilityEditorProps> = ({
     const [saving, setSaving] = useState(false);
     const supabase = createClient();
 
+    const [businessHours, setBusinessHours] = useState<{ start: string; end: string } | null>(null);
+
     useEffect(() => {
         if (isOpen && memberId) {
             fetchAvailability();
+            fetchBusinessHours();
         }
     }, [isOpen, memberId]);
+
+    const fetchBusinessHours = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+            const { data } = await supabase.from('tenant_profiles').select('business_hours').eq('id', user.id).single();
+            if (data?.business_hours) {
+                setBusinessHours(data.business_hours as any);
+            }
+        }
+    }
 
     const fetchAvailability = async () => {
         setLoading(true);
@@ -73,7 +85,14 @@ export const AvailabilityEditor: React.FC<AvailabilityEditorProps> = ({
                 // Merge with defaults to ensure all days exist
                 const merged = DAYS.map(day => {
                     const existing = data.find((d: any) => d.day_of_week === day.value);
-                    return existing || defaultSlots[day.value];
+                    if (existing) {
+                        return {
+                            ...existing,
+                            start_time: existing.start_time?.slice(0, 5),
+                            end_time: existing.end_time?.slice(0, 5)
+                        };
+                    }
+                    return defaultSlots[day.value];
                 });
                 setSlots(merged as any);
             } else {
@@ -93,22 +112,79 @@ export const AvailabilityEditor: React.FC<AvailabilityEditorProps> = ({
         ));
     };
 
+    const isTimeWithinRange = (time: string, start: string, end: string) => {
+        return time >= start && time <= end;
+    }
+
     const updateTime = (dayIndex: number, field: 'start_time' | 'end_time', value: string) => {
+        const slot = slots[dayIndex];
+        const otherField = field === 'start_time' ? 'end_time' : 'start_time';
+        const otherValue = slot[otherField];
+
+        // Basic validation: Start must be before end
+        if (field === 'start_time' && value >= otherValue) {
+            toast.error('O início deve ser antes do término');
+            return;
+        }
+        if (field === 'end_time' && value <= otherValue) {
+            toast.error('O término deve ser depois do início');
+            return;
+        }
+
+        if (businessHours) {
+            const dayConfig = businessHours[slot.day_of_week];
+            if (dayConfig && dayConfig.active) {
+                if (field === 'start_time' && value < dayConfig.start) {
+                    toast.error(`Horário de início deve ser após ${formatTimeOption(dayConfig.start)}`);
+                    return;
+                }
+                if (field === 'end_time' && value > dayConfig.end) {
+                    toast.error(`Horário de término deve ser antes de ${formatTimeOption(dayConfig.end)}`);
+                    return;
+                }
+            } else if (dayConfig && !dayConfig.active) {
+                toast.error('A empresa está fechada neste dia');
+                return;
+            }
+        }
+
         setSlots(prev => prev.map((slot, i) =>
             i === dayIndex ? { ...slot, [field]: value } : slot
         ));
     };
 
+    const formatTimeOption = (timeStr: string) => {
+        const [hour, minute] = timeStr.split(':');
+        const h = parseInt(hour, 10);
+        const period = h >= 12 ? 'PM' : 'AM';
+        const h12 = h % 12 || 12;
+        return `${h12}:${minute} ${period}`;
+    };
+
     const handleSave = async () => {
         setSaving(true);
         try {
-            // Delete existing and insert fresh
-            await supabase
-                .from('team_availability')
-                .delete()
-                .eq('member_id', memberId);
+            // Final Validation against Global Business Hours
+            if (businessHours) {
+                const invalidSlots = slots.filter(s => {
+                    if (!s.is_available) return false;
+                    const dayConfig = businessHours[s.day_of_week];
+                    if (!dayConfig || !dayConfig.active) return true; // Closed day
+                    return s.start_time < dayConfig.start || s.end_time > dayConfig.end;
+                });
 
-            const toInsert = slots.map(slot => ({
+                if (invalidSlots.length > 0) {
+                    throw new Error(`Alguns horários estão fora do expediente permitido pela empresa.`);
+                }
+            }
+
+            const invalidRangeSlots = slots.filter(s => s.is_available && s.start_time >= s.end_time);
+            if (invalidRangeSlots.length > 0) {
+                throw new Error('O horário de início deve ser anterior ao horário de término em todos os dias ativos.');
+            }
+
+            // Upsert (Insert or Update) based on unique constraint (member_id, day_of_week)
+            const toUpsert = slots.map(slot => ({
                 member_id: memberId,
                 day_of_week: slot.day_of_week,
                 start_time: slot.start_time,
@@ -118,7 +194,7 @@ export const AvailabilityEditor: React.FC<AvailabilityEditorProps> = ({
 
             const { error } = await supabase
                 .from('team_availability')
-                .insert(toInsert as any);
+                .upsert(toUpsert, { onConflict: 'member_id, day_of_week' });
 
             if (error) throw error;
 
@@ -162,16 +238,16 @@ export const AvailabilityEditor: React.FC<AvailabilityEditorProps> = ({
                             <div
                                 key={index}
                                 className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${slot.is_available
-                                        ? 'border-emerald-200 bg-emerald-50/50'
-                                        : 'border-slate-200 bg-slate-50/50'
+                                    ? 'border-emerald-200 bg-emerald-50/50'
+                                    : 'border-slate-200 bg-slate-50/50'
                                     }`}
                             >
                                 {/* Day Toggle */}
                                 <button
                                     onClick={() => toggleDay(index)}
                                     className={`w-16 py-2 rounded-lg text-sm font-bold transition-colors ${slot.is_available
-                                            ? 'bg-emerald-600 text-white'
-                                            : 'bg-slate-200 text-slate-500'
+                                        ? 'bg-emerald-600 text-white'
+                                        : 'bg-slate-200 text-slate-500'
                                         }`}
                                 >
                                     {DAYS[index].short}
@@ -180,14 +256,29 @@ export const AvailabilityEditor: React.FC<AvailabilityEditorProps> = ({
                                 {slot.is_available ? (
                                     <>
                                         {/* Start Time */}
+
+
                                         <select
                                             value={slot.start_time}
                                             onChange={e => updateTime(index, 'start_time', e.target.value)}
                                             className="flex-1 px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white"
                                         >
-                                            {TIME_OPTIONS.map(time => (
-                                                <option key={time} value={time}>{time}</option>
-                                            ))}
+                                            {/* Get filtered options based on Business Hours */}
+                                            {(() => {
+                                                const dayConfig = businessHours ? businessHours[slot.day_of_week] : null;
+                                                const options = TIME_OPTIONS.filter(time => {
+                                                    if (!dayConfig || !dayConfig.active) return true; // Show all if no config (or fallback logic)
+                                                    return time >= dayConfig.start && time < dayConfig.end; // Start time can be equal to start, but must be less than end
+                                                });
+
+                                                // Ensure current value is included even if outside range (to prevent invisible selection)
+                                                if (!options.includes(slot.start_time)) options.push(slot.start_time);
+                                                options.sort();
+
+                                                return options.map(time => (
+                                                    <option key={time} value={time}>{formatTimeOption(time)}</option>
+                                                ));
+                                            })()}
                                         </select>
 
                                         <span className="text-slate-400">até</span>
@@ -198,9 +289,21 @@ export const AvailabilityEditor: React.FC<AvailabilityEditorProps> = ({
                                             onChange={e => updateTime(index, 'end_time', e.target.value)}
                                             className="flex-1 px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white"
                                         >
-                                            {TIME_OPTIONS.map(time => (
-                                                <option key={time} value={time}>{time}</option>
-                                            ))}
+                                            {/* Get filtered options for End Time */}
+                                            {(() => {
+                                                const dayConfig = businessHours ? businessHours[slot.day_of_week] : null;
+                                                const options = TIME_OPTIONS.filter(time => {
+                                                    if (!dayConfig || !dayConfig.active) return true;
+                                                    return time > dayConfig.start && time <= dayConfig.end; // End time must be greater than start, up to end
+                                                });
+
+                                                if (!options.includes(slot.end_time)) options.push(slot.end_time);
+                                                options.sort();
+
+                                                return options.map(time => (
+                                                    <option key={time} value={time}>{formatTimeOption(time)}</option>
+                                                ));
+                                            })()}
                                         </select>
                                     </>
                                 ) : (

@@ -208,7 +208,7 @@ export const CleanerApp: React.FC<CleanerAppProps> = ({ userName, userId: initia
     };
 
     const getDateLocale = () => {
-        const lang = i18n.language;
+        const lang = i18n.language || 'en';
         if (lang.includes('pt')) return ptBR;
         if (lang.includes('es')) return es;
         return enUS;

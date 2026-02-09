@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Edit2, Trash2, Tag, DollarSign, Package, Check, X, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Tag, DollarSign, Package, Check, X, AlertTriangle, Clock } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
 const supabase = createClient();
@@ -13,6 +13,7 @@ interface Addon {
     category: string;
     is_standalone: boolean;
     active: boolean;
+    duration_minutes: number;
     service_ids?: string[]; // Virtual field for UI
 }
 
@@ -37,6 +38,7 @@ export const AddonsManager: React.FC = () => {
         category: 'cleaning',
         is_standalone: true,
         active: true,
+        duration_minutes: 0,
         service_ids: []
     });
 
@@ -73,7 +75,6 @@ export const AddonsManager: React.FC = () => {
                 .select('*');
 
             // Merge links into addons
-            // Merge links into addons
             const addonsWithLinks = (addonsData as any[])?.map(addon => ({
                 ...addon,
                 service_ids: (links as any[])?.filter(l => l.addon_id === addon.id).map(l => l.service_id) || []
@@ -102,7 +103,6 @@ export const AddonsManager: React.FC = () => {
 
             if (editingAddon) {
                 // Update
-                // Update
                 const { error } = await (supabase
                     .from('addons') as any)
                     .update({
@@ -111,7 +111,8 @@ export const AddonsManager: React.FC = () => {
                         price: formData.price,
                         category: formData.category,
                         is_standalone: formData.is_standalone,
-                        active: formData.active
+                        active: formData.active,
+                        duration_minutes: formData.duration_minutes
                     } as any)
                     .eq('id', editingAddon.id);
                 if (error) throw error;
@@ -126,7 +127,8 @@ export const AddonsManager: React.FC = () => {
                         price: formData.price,
                         category: formData.category,
                         is_standalone: formData.is_standalone,
-                        active: formData.active
+                        active: formData.active,
+                        duration_minutes: formData.duration_minutes
                     } as any)
                     .select()
                     .single();
@@ -138,11 +140,6 @@ export const AddonsManager: React.FC = () => {
             if (addonId) {
                 // Delete existing links
                 await supabase.from('service_addons').delete().eq('addon_id', addonId);
-
-                // Insert new links if not standalone (or arguably even if standalone, but usually specifics matter more)
-                // Logic: If standalone, it appears for everyone. If NOT standalone, it MUST be linked to appear?
-                // Or: Linked = Recommended Upsell. Standalone = General List.
-                // Let's support linking regardless of standalone status (Allow recommending standalone items specifically).
 
                 if (formData.service_ids && formData.service_ids.length > 0) {
                     const links = formData.service_ids.map(sid => ({
@@ -186,6 +183,7 @@ export const AddonsManager: React.FC = () => {
                 category: 'cleaning',
                 is_standalone: true,
                 active: true,
+                duration_minutes: 0,
                 service_ids: []
             });
         }
@@ -236,7 +234,7 @@ export const AddonsManager: React.FC = () => {
                     </div>
                 ) : (
                     filteredAddons.map((addon) => (
-                        <div key={addon.id} className="group bg-white p-5 rounded-3xl border border-slate-100 hover:border-indigo-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden">
+                        <div key={addon.id} className="group bg-white p-5 rounded-3xl border border-slate-100 hover:border-indigo-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden flex flex-col">
                             <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
                                 <button
                                     onClick={() => openModal(addon)}
@@ -257,13 +255,21 @@ export const AddonsManager: React.FC = () => {
                                     }`}>
                                     <Tag size={20} />
                                 </div>
-                                <div className="text-right mt-1 mr-8 md:mr-0">
+                                <div className="text-right mt-1 mr-8 md:mr-0 flex flex-col items-end">
                                     <span className="block text-lg font-black text-slate-800">
                                         R$ {addon.price.toFixed(2)}
                                     </span>
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">
-                                        {addon.category}
-                                    </span>
+                                    <div className="flex items-center gap-1.5 mt-1">
+                                        {addon.duration_minutes > 0 && (
+                                            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg flex items-center gap-1">
+                                                <Clock size={10} />
+                                                {addon.duration_minutes}m
+                                            </span>
+                                        )}
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">
+                                            {addon.category}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
 
@@ -325,6 +331,18 @@ export const AddonsManager: React.FC = () => {
                                             className="w-full pl-9 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-slate-700"
                                             value={formData.price}
                                             onChange={e => setFormData({ ...formData, price: parseFloat(e.target.value) })}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">Duração (Min)</label>
+                                    <div className="relative">
+                                        <Clock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                        <input
+                                            type="number"
+                                            className="w-full pl-9 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-slate-700"
+                                            value={formData.duration_minutes}
+                                            onChange={e => setFormData({ ...formData, duration_minutes: parseInt(e.target.value) || 0 })}
                                         />
                                     </div>
                                 </div>

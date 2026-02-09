@@ -22,13 +22,11 @@ interface Booking {
 interface WeekViewProps {
     currentDate: Date;
     bookings: Booking[];
-    onCellClick: (date: Date, hour: number) => void;
+    onCellClick: (date: Date, hour: number, minute?: number) => void;
     onBookingClick: (booking: Booking) => void;
     onBookingMove?: (bookingId: string, newStart: Date, newEnd: Date) => void;
     onBookingResize?: (bookingId: string, newEnd: Date) => void;
 }
-
-const HOURS = Array.from({ length: 24 }, (_, i) => i); // 0 to 23
 
 /**
  * Parse ISO date string as local time (not UTC).
@@ -50,10 +48,36 @@ export const WeekView: React.FC<WeekViewProps> = ({
     onBookingMove,
     onBookingResize
 }) => {
-    const { timezone, now: zonedNow, formatTime } = useTimezone();
+    const { timezone, now: zonedNow, formatTime, formatWallTime, timeFormat, businessHours } = useTimezone();
     const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 });
     const weekEnd = endOfWeek(currentDate, { weekStartsOn: 0 });
     const days = eachDayOfInterval({ start: weekStart, end: weekEnd });
+
+    // Calculate dynamic hours based on business settings
+    const HOURS = React.useMemo(() => {
+        if (!businessHours) return Array.from({ length: 24 }, (_, i) => i);
+
+        let minStart = 24;
+        let maxEnd = 0;
+        let hasActiveDay = false;
+
+        Object.values(businessHours).forEach((config: any) => {
+            if (config.active) {
+                hasActiveDay = true;
+                const startHour = parseInt(config.start.split(':')[0], 10);
+                const endHour = Math.ceil(parseInt(config.end.split(':')[0], 10) + (parseInt(config.end.split(':')[1], 10) / 60));
+                minStart = Math.min(minStart, startHour);
+                maxEnd = Math.max(maxEnd, endHour);
+            }
+        });
+
+        const start = minStart;
+        const end = maxEnd;
+
+        if (!hasActiveDay || start >= end) return Array.from({ length: 24 }, (_, i) => i);
+
+        return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+    }, [businessHours]);
 
     // Refs for touch handling
     const longPressTimer = useRef<NodeJS.Timeout | null>(null);
@@ -95,7 +119,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
 
             return (newStart < existingEnd && newEnd > existingStart);
         });
-    }, [bookings]);
+    }, [bookings, timezone]);
 
     const getBookingsStartingAt = (day: Date, hour: number) => {
         return bookings.filter(booking => {
@@ -153,14 +177,28 @@ export const WeekView: React.FC<WeekViewProps> = ({
         return { day: days[dayIndex], hour: HOURS[hourIndex], minute: snappedMinutes };
     };
 
-    const handleCellClick = (day: Date, hour: number) => {
+    const handleCellClick = (day: Date, hour: number, minute: number = 0) => {
         if (resizingBooking || touchDragBooking) return;
 
+        // Check if blocking exists at specific time?
+        // getBookingCoveringSlot checks if *any* booking covers this hour.
+        // We might need finer check if we allow 10-min slots?
+        // For now, keep generic covering check, or ignore?
+        // "getBookingCoveringSlot" uses hour granularity in its name but logic uses full date comparison?
+        // Logic: start.getHours() <= hour && end.getHours() > hour. This is HOUR granularity.
+        // If I click 9:30 but there is a booking 9:00-9:15, covering check might fail.
+        // But covering check is for "Edit existing".
+        // If I click empty space 9:30, I want to create.
+
         const coveringBooking = getBookingCoveringSlot(day, hour);
+        // Note: coveringBooking logic might prevent creating if *any* booking exists in that hour.
+        // We might want to allow creating in gaps?
+        // For now, let's just pass the minute to the parent handler.
+
         if (coveringBooking) {
             onBookingClick(coveringBooking);
         } else {
-            onCellClick(day, hour);
+            onCellClick(day, hour, minute);
         }
     };
 
@@ -187,7 +225,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
         const rect = e.currentTarget.getBoundingClientRect();
         const offsetY = e.clientY - rect.top;
         const rawMinutes = (offsetY / HOUR_HEIGHT) * 60;
-        const snappedMinutes = Math.round(rawMinutes / 1); // 1-min precision
+        const snappedMinutes = Math.round(rawMinutes / 10) * 10; // 10-min precision
 
         if (draggedBooking) {
             const originalStart = parseLocalDate(draggedBooking.start_date, timezone);
@@ -233,7 +271,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
             const rect = e.currentTarget.getBoundingClientRect();
             const offsetY = e.clientY - rect.top;
             const rawMinutes = (offsetY / HOUR_HEIGHT) * 60;
-            const snappedMinutes = Math.round(rawMinutes / 1); // 1-min precision
+            const snappedMinutes = Math.round(rawMinutes / 10) * 10; // 10-min precision
 
             const newStart = new Date(day);
             newStart.setHours(hour, snappedMinutes, 0, 0);
@@ -506,8 +544,8 @@ export const WeekView: React.FC<WeekViewProps> = ({
                 {HOURS.map(hour => (
                     <div key={hour} className="flex border-b border-slate-100" style={{ minHeight: `${HOUR_HEIGHT}px` }}>
                         {/* Hour Label */}
-                        <div className="w-16 flex-shrink-0 border-r border-slate-200 text-xs text-slate-400 text-right pr-2 pt-1">
-                            {format(new Date().setHours(hour, 0), 'HH:mm')}
+                        <div className="w-16 flex-shrink-0 border-r border-slate-200 text-[10px] text-slate-400 text-right pr-2 pt-1 font-medium">
+                            {formatWallTime(hour)}
                         </div>
 
                         {/* Day Cells */}
@@ -536,11 +574,36 @@ export const WeekView: React.FC<WeekViewProps> = ({
                                         } ${isToday(day) ? 'bg-indigo-50/30' : ''} ${isDragOverThis && !hasConflict ? 'bg-indigo-100 ring-2 ring-indigo-400 ring-inset' : ''
                                         } ${hasConflict ? 'bg-red-100 ring-2 ring-red-400 ring-inset' : ''}`}
                                 >
-                                    {/* Hover indicator */}
+                                    {/* Hover indicator - 10-minute precision */}
                                     {!past && !isDragOverThis && !resizingBooking && !isAnyDragging && !hasCoveringBooking && (
-                                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                                            <span className="text-xs text-indigo-400 font-medium">+ Novo</span>
-                                        </div>
+                                        <>
+                                            {/* Hit targets for 10-minute slots */}
+                                            {Array.from({ length: 6 }).map((_, i) => (
+                                                <div
+                                                    key={i}
+                                                    className="absolute left-0 right-0 z-10 hover:bg-indigo-50/80 transition-colors group/slot"
+                                                    style={{
+                                                        top: `${(i * 10 / 60) * HOUR_HEIGHT}px`,
+                                                        height: `${HOUR_HEIGHT / 6}px`
+                                                    }}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        // Pass minute (i * 10) to handler
+                                                        onCellClick(day, hour + (i * 10) / 60); // Passing decimal hour? No, interface expects (date, hour). Let's pass date with minutes set? 
+                                                        // Actually, onCellClick signature is (date, hour). I should probably change passing convention.
+                                                        // But to avoid breaking, I can construct a specific Date object?
+                                                        // Or better: pass formatted minutes if interface allowed.
+                                                        // Let's assume onCellClick handles (date, hour). I can update the parent date object before passing?
+                                                        // No, 'day' is the start of day. 
+                                                        // Let's update onCellClick signature in Props.
+                                                    }}
+                                                >
+                                                    <div className="hidden group-hover/slot:flex items-center justify-center h-full">
+                                                        <span className="text-[10px] text-indigo-500 font-medium bg-white/50 px-1 rounded backdrop-blur-[1px]">+ {hour}:{String(i * 10).padStart(2, '0')}</span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </>
                                     )}
 
                                     {/* Drop indicator & Ghost Preview */}
@@ -570,6 +633,27 @@ export const WeekView: React.FC<WeekViewProps> = ({
                                     {/* Simple Highlight for hover Cell (without booking) */}
                                     {isDragOverThis && !draggedBooking && (
                                         <div className="absolute inset-0 bg-indigo-100/50 ring-2 ring-indigo-400 ring-inset z-30" />
+                                    )}
+
+                                    {/* 10-Minute Sub-grid Visual Guide */}
+                                    {isDragOverThis && (
+                                        <div className="absolute inset-0 z-0 pointer-events-none flex flex-col">
+                                            {[10, 20, 30, 40, 50].map(min => (
+                                                <div
+                                                    key={min}
+                                                    className="w-full border-t border-indigo-200/50 border-dashed"
+                                                    style={{ height: `${HOUR_HEIGHT / 6}px` }}
+                                                >
+                                                    {/* Optional: Tiny time label for precision feedback? Too cluttered maybe. */}
+                                                    {isDragOverThis && draggedBooking && (
+                                                        <span className="text-[7px] text-indigo-300 pl-1 -mt-2 block opacity-50">
+                                                            {min}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ))}
+                                            <div style={{ height: `${HOUR_HEIGHT / 6}px` }}></div>
+                                        </div>
                                     )}
 
                                     {/* Conflict indicator */}

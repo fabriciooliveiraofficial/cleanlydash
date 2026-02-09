@@ -79,7 +79,6 @@ export const SmtpSettings: React.FC = () => {
                 ...config,
                 // Legacy field for older clients
                 secure: config.encryption === 'ssl',
-                is_active: true,
                 updated_at: new Date().toISOString()
             }, { onConflict: 'user_id' });
 

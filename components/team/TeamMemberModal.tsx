@@ -132,13 +132,8 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
 
                 if (error) throw error;
 
-                // Save availability slots
-                await supabase
-                    .from('team_availability')
-                    .delete()
-                    .eq('member_id', member.id);
-
-                const availabilityToInsert = availabilitySlots.map(slot => ({
+                // Save availability slots (Upsert)
+                const availabilityToUpsert = availabilitySlots.map(slot => ({
                     member_id: member.id,
                     day_of_week: slot.day_of_week,
                     start_time: slot.start_time,
@@ -148,7 +143,7 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
 
                 await supabase
                     .from('team_availability')
-                    .insert(availabilityToInsert as any);
+                    .upsert(availabilityToUpsert, { onConflict: 'member_id, day_of_week' });
 
                 toast.success('Membro atualizado!');
                 onSave();

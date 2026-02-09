@@ -3,22 +3,23 @@
 
 import * as React from 'react'
 import { cn } from '@/lib/utils'
-import { 
-  Sheet, 
-  SheetContent, 
-  SheetHeader, 
-  SheetTitle 
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle
 } from "@/components/ui/sheet"
 // Added missing Button import
 import { Button } from '@/components/ui/button'
-import { 
-  User, 
-  Clock, 
-  MapPin, 
-  ExternalLink, 
+import {
+  User,
+  Clock,
+  MapPin,
+  ExternalLink,
   ChevronRight,
   ClipboardList
 } from 'lucide-react'
+import { useTimezone } from '@/contexts/TimezoneContext'
 
 interface TeamMember {
   id: string;
@@ -37,10 +38,37 @@ interface Booking {
   customers?: { name: string };
 }
 
-const HOURS = Array.from({ length: 11 }, (_, i) => i + 8) // 8am to 6pm
-
 export function DispatchView({ bookings, team }: { bookings: Booking[], team: TeamMember[] }) {
+  const { formatTime, formatWallTime, businessHours } = useTimezone()
   const [selectedBooking, setSelectedBooking] = React.useState<Booking | null>(null)
+
+  // Calculate HOURS based on business settings
+  const HOURS = React.useMemo(() => {
+    if (!businessHours) return Array.from({ length: 24 }, (_, i) => i);
+
+    let minStart = 24;
+    let maxEnd = 0;
+    let hasActiveDay = false;
+
+    Object.values(businessHours).forEach((config: any) => {
+      if (config.active) {
+        hasActiveDay = true;
+        const startHour = parseInt(config.start.split(':')[0], 10);
+        const endHour = Math.ceil(parseInt(config.end.split(':')[0], 10) + (parseInt(config.end.split(':')[1], 10) / 60));
+        minStart = Math.min(minStart, startHour);
+        maxEnd = Math.max(maxEnd, endHour);
+      }
+    });
+
+    const start = minStart;
+    const end = maxEnd;
+
+    if (!hasActiveDay || start >= end) return Array.from({ length: 24 }, (_, i) => i);
+
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  }, [businessHours])
+
+  const startHour = HOURS[0] || 0
 
   // Filtra agendamentos para um funcionário específico
   const getBookingsForMember = (memberId: string) => {
@@ -51,7 +79,6 @@ export function DispatchView({ bookings, team }: { bookings: Booking[], team: Te
   const getXPosition = (startTimeStr: string) => {
     const time = new Date(startTimeStr)
     const hours = time.getHours() + time.getMinutes() / 60
-    const startHour = 8
     const hourWidth = 100 // pixels por hora
     return Math.max(0, (hours - startHour) * hourWidth)
   }
@@ -67,7 +94,7 @@ export function DispatchView({ bookings, team }: { bookings: Booking[], team: Te
           {HOURS.map(hour => (
             <div key={hour} className="min-w-[100px] flex-1 p-3 text-center border-r last:border-0 border-slate-200">
               <span className="text-[10px] font-black text-slate-400">
-                {hour}:00
+                {formatWallTime(hour)}
               </span>
             </div>
           ))}
@@ -80,7 +107,7 @@ export function DispatchView({ bookings, team }: { bookings: Booking[], team: Te
           <div key={member.id} className="flex border-b last:border-0 hover:bg-slate-50/30 transition-colors group">
             {/* User Column */}
             <div className="w-56 p-4 border-r shrink-0 flex items-center gap-3 bg-white group-hover:bg-slate-50/50 transition-colors">
-              <div 
+              <div
                 className="h-8 w-8 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-sm"
                 style={{ backgroundColor: member.calendar_color || '#4f46e5' }}
               >
@@ -111,7 +138,7 @@ export function DispatchView({ bookings, team }: { bookings: Booking[], team: Te
                   key={booking.id}
                   onClick={() => setSelectedBooking(booking)}
                   className="absolute top-3 h-14 rounded-xl border-l-4 p-2.5 text-left shadow-sm transition-all hover:scale-[1.02] hover:shadow-md z-10"
-                  style={{ 
+                  style={{
                     left: `${getXPosition(booking.start_time)}px`,
                     width: '180px', // Largura padrão para jobs de 2h
                     backgroundColor: `${member.calendar_color}10`, // 10% opacity bg
@@ -125,7 +152,7 @@ export function DispatchView({ bookings, team }: { bookings: Booking[], team: Te
                     <div className="flex items-center justify-between text-[9px] font-medium text-slate-500 uppercase">
                       <span className="flex items-center gap-1">
                         <Clock size={10} />
-                        {new Date(booking.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        {formatTime(booking.start_time, 'p_time')}
                       </span>
                       <span className="font-bold text-indigo-600">R${booking.price}</span>
                     </div>
@@ -146,7 +173,7 @@ export function DispatchView({ bookings, team }: { bookings: Booking[], team: Te
               Detalhes do Job
             </SheetTitle>
           </SheetHeader>
-          
+
           {selectedBooking && (
             <div className="space-y-8">
               <div className="p-4 rounded-2xl bg-slate-50 border space-y-4">
@@ -165,7 +192,7 @@ export function DispatchView({ bookings, team }: { bookings: Booking[], team: Te
                   <span className="text-[10px] font-bold text-slate-400 uppercase">Horário</span>
                   <div className="flex items-center gap-2 font-bold text-slate-900">
                     <Clock size={16} className="text-amber-500" />
-                    {new Date(selectedBooking.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    {formatTime(selectedBooking.start_time, 'p_time')}
                   </div>
                 </div>
                 <div className="p-4 rounded-xl border bg-white flex flex-col gap-1">

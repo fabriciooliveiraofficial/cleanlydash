@@ -1,0 +1,30 @@
+﻿                                                                    Não
+                                                                </button>
+                                                            </div>
+
+                                                            <div className="text-[9px] text-slate-400 font-black uppercase tracking-widest text-center opacity-40">
+                                                                * O Agendamento 1 náo será alterado
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                    </div>
+                                )}
+                                </div>
+
+                                <div className="p-8 border-t border-slate-100 bg-slate-50/50 shrink-0">
+                                    <button
+                                        onClick={() => setShowDrawer(false)}
+                                        className="w-full py-4 bg-slate-900 text-white font-black uppercase tracking-[0.2em] rounded-2xl hover:bg-black transition-all shadow-2xl shadow-slate-300 active:scale-95"
+                                    >
+                                        Confirmar
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                </div>
+                );
+};
+
+                export default BookingModal;
