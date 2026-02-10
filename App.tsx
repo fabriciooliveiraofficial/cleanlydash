@@ -1,5 +1,5 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
-import { useSessionManager } from './hooks/use-session-manager';
+import React, { useState, useEffect, Suspense, lazy, useCallback } from 'react';
+import { useSessionManager, type RouteContext } from './hooks/use-session-manager';
 
 const TenantApp = lazy(() => import('./components/TenantApp').then(m => ({ default: m.TenantApp })));
 const PlatformApp = lazy(() => import('./components/PlatformApp').then(m => ({ default: m.PlatformApp })));
@@ -15,30 +15,48 @@ const App: React.FC = () => {
     migrateExistingSessions();
   }, [migrateExistingSessions]);
 
+  const getRouteContext = useCallback((path: string): RouteContext => {
+    if (path.startsWith('/platform') || path.startsWith('/admin/platform') || path.startsWith('/callback')) return 'platform';
+    if (path.startsWith('/cleaner')) return 'cleaner';
+    return 'tenant';
+  }, []);
+
   // Load appropriate session when route changes
   useEffect(() => {
+    let mounted = true;
     const loadSession = async () => {
-      const route = currentPath.startsWith('/platform') || currentPath.startsWith('/admin/platform') || currentPath.startsWith('/callback')
-        ? 'platform'
-        : currentPath.startsWith('/cleaner')
-          ? 'cleaner'
-          : 'tenant';
+      const route = getRouteContext(currentPath);
 
-      await loadSessionForRoute(route);
-      setSessionLoaded(true);
+      console.log(`[App] Ensuring session for route: ${route}`);
+      const success = await loadSessionForRoute(route);
+
+      if (mounted) {
+        setSessionLoaded(true);
+      }
     };
 
     loadSession();
-  }, [currentPath, loadSessionForRoute]);
+    return () => { mounted = false; };
+  }, [currentPath, loadSessionForRoute, getRouteContext]);
 
   useEffect(() => {
     const onLocationChange = () => {
-      setCurrentPath(window.location.pathname);
-      setSessionLoaded(false); // Reset to trigger session reload
+      const newPath = window.location.pathname;
+      const oldContext = getRouteContext(currentPath);
+      const newContext = getRouteContext(newPath);
+
+      if (newPath !== currentPath) {
+        setCurrentPath(newPath);
+
+        if (oldContext !== newContext) {
+          console.log(`[App] Switching context: ${oldContext} -> ${newContext}. Reloading session.`);
+          setSessionLoaded(false);
+        }
+      }
     };
     window.addEventListener('popstate', onLocationChange);
     return () => window.removeEventListener('popstate', onLocationChange);
-  }, []);
+  }, [currentPath, getRouteContext]);
 
   // Wait for session to load before rendering the app
   if (!sessionLoaded) {

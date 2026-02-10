@@ -28,10 +28,11 @@ export const SessionGuard: React.FC = () => {
         try {
             toast.dismiss();
             await supabase.auth.signOut();
-            window.location.href = '/auth?mode=login&reason=timeout';
+            // Allow the AuthStateChange listener to handle the UI update
+            // window.location.href = '/auth?mode=login&reason=timeout'; 
         } catch (error) {
             console.error("Logout error", error);
-            window.location.href = '/auth';
+            // window.location.href = '/auth';
         }
     };
 

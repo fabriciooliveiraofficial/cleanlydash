@@ -192,9 +192,9 @@ export default function AirbnbDispatch() {
                 </div>
 
                 <div className="flex items-center gap-3 w-full sm:w-auto">
-                    <Button variant="outline" className="gap-2 rounded-xl flex-1 sm:flex-none" onClick={() => setDate(now)}>
+                    <Button variant="outline" className="gap-2 rounded-xl flex-1 sm:flex-none" onClick={() => setDate(new Date())}>
                         <CalendarIcon size={18} />
-                        Hoje, {format(date, 'dd MMM')}
+                        Hoje, {formatInTimeZone(date, timezone, 'dd MMM')}
                     </Button>
                     <Button variant="outline" className="gap-2 rounded-xl flex-1 sm:flex-none">
                         <Filter size={18} />

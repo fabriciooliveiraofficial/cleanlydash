@@ -21,12 +21,24 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu.tsx';
 
-export const Customers: React.FC = () => {
+interface CustomersProps {
+  onSelectCustomer?: (id: string) => void;
+  searchQuery?: string;
+  onSearchChange?: (val: string) => void;
+  statusFilter?: 'all' | 'active' | 'inactive';
+  onStatusFilterChange?: (val: 'all' | 'active' | 'inactive') => void;
+}
+
+export const Customers: React.FC<CustomersProps> = ({
+  onSelectCustomer,
+  searchQuery = '',
+  onSearchChange,
+  statusFilter = 'all',
+  onStatusFilterChange
+}) => {
   const { t } = useTranslation();
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   const supabase = createClient();
   const { makeCall } = useTelnyx();
@@ -98,7 +110,7 @@ export const Customers: React.FC = () => {
             placeholder={t('crm.search_placeholder')}
             className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400 text-slate-700"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => onSearchChange?.(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && loadCustomers()}
           />
         </div>
@@ -111,13 +123,13 @@ export const Customers: React.FC = () => {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="rounded-xl">
-            <DropdownMenuItem onClick={() => setStatusFilter('all')}>
+            <DropdownMenuItem onClick={() => onStatusFilterChange?.('all')}>
               All Status
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setStatusFilter('active')}>
+            <DropdownMenuItem onClick={() => onStatusFilterChange?.('active')}>
               {t('crm.status_active')} only
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setStatusFilter('inactive')}>
+            <DropdownMenuItem onClick={() => onStatusFilterChange?.('inactive')}>
               {t('crm.status_inactive')} only
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -141,7 +153,11 @@ export const Customers: React.FC = () => {
               </tr>
             ) : customers.length > 0 ? (
               customers.map((customer) => (
-                <tr key={customer.id} className="group hover:bg-white/40 transition-colors duration-300">
+                <tr
+                  key={customer.id}
+                  className="group hover:bg-white/40 transition-colors duration-300 cursor-pointer"
+                  onClick={() => onSelectCustomer?.(customer.id)}
+                >
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-4">
                       <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-100 to-white border border-indigo-100/50 text-indigo-700 font-black text-lg shadow-sm group-hover:scale-105 transition-transform">

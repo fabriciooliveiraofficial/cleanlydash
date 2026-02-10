@@ -4,7 +4,7 @@ import { createPlatformClient } from '../lib/supabase/platform-client';
 import { createCleanerClient } from '../lib/supabase/cleaner-client';
 import type { Session } from '@supabase/supabase-js';
 
-type RouteContext = 'platform' | 'tenant' | 'cleaner';
+export type RouteContext = 'platform' | 'tenant' | 'cleaner';
 
 const STORAGE_KEYS = {
     platform: 'manual-session-platform',

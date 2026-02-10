@@ -14,40 +14,44 @@ export const SessionTracker: React.FC = () => {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
 
-            // 1. Atomic UPSERT for session tracking
-            // This prevents race conditions and 409 conflicts
-            const { error: upsertError } = await (supabase
-                .from('active_sessions') as any)
-                .upsert({
-                    user_id: user.id,
-                    session_id: currentSessionId,
-                    device_fingerprint: navigator.userAgent,
-                    last_active_at: new Date().toISOString()
-                }, {
-                    onConflict: 'user_id,session_id'
-                });
+            // 1. Resilient sync logic: Check if this exact session_id exists first
+            try {
+                const { data: existingSession } = await (supabase
+                    .from('active_sessions') as any)
+                    .select('id')
+                    .eq('session_id', currentSessionId)
+                    .maybeSingle();
 
-            if (upsertError) {
-                console.warn('Session Sync Error:', upsertError);
+                if (!existingSession) {
+                    const { error: upsertError } = await (supabase
+                        .from('active_sessions') as any)
+                        .upsert({
+                            user_id: user.id,
+                            session_id: currentSessionId,
+                            device_fingerprint: navigator.userAgent,
+                            last_active_at: new Date().toISOString()
+                        }, { onConflict: 'session_id' });
+
+                    if (upsertError) {
+                        console.warn('[SessionTracker] Initial sync warning:', upsertError.message);
+                    }
+                }
+            } catch (e) {
+                console.error('[SessionTracker] Critical sync error:', e);
             }
 
             // 2. Heartbeat Logic (Update Only)
             const updateHeartbeat = async () => {
-                // We only UPDATE. If the row is gone (deleted by another login), this returns count=0
                 const { error, count } = await (supabase
                     .from('active_sessions') as any)
                     .update({ last_active_at: new Date().toISOString() })
                     .eq('session_id', currentSessionId)
-                    .eq('user_id', user.id) // Security constraint
+                    .eq('user_id', user.id)
                     .select('id', { count: 'exact' });
 
                 if (count === 0) {
-                    // Session killed by another device
-                    console.warn("Session invalidated by concurrency control.");
-                    clearInterval(heartbeatInterval);
-                    alert("Sua sessão foi encerrada porque você entrou em outro dispositivo.\n\nPor segurança, apenas uma sessão ativa é permitida.");
-                    await supabase.auth.signOut();
-                    window.location.href = '/login'; // Force reload
+                    // Session record missing or deleted
+                    console.warn("[SessionTracker] Session heartbeat returned 0 records. Tracking may be inconsistent.");
                 }
             };
 

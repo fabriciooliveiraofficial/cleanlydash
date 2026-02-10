@@ -42,6 +42,7 @@ import { PortalTransition } from './support/PortalTransition.tsx';
 import { MirrorEmitter } from './support/MirrorEmitter.tsx';
 import { ReleaseGuard } from './system/ReleaseGuard.tsx';
 import { BookingConfirmation } from './sales/BookingConfirmation.tsx';
+import { CustomerDetail } from './crm/customer-detail/CustomerDetail.tsx';
 
 const TenantAppInner: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabType>(TabType.OVERVIEW);
@@ -56,6 +57,12 @@ const TenantAppInner: React.FC = () => {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
     const [isCommandMenuOpen, setIsCommandMenuOpen] = useState(false);
+    const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+
+    // CRM Persistence States
+    const [crmSearchQuery, setCrmSearchQuery] = useState('');
+    const [crmStatusFilter, setCrmStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+    const [crmDetailActiveTab, setCrmDetailActiveTab] = useState<'profile' | 'timeline' | 'appointments' | 'billing' | 'vault'>('profile');
 
     useEffect(() => {
         const handleComposeTrigger = () => {
@@ -80,12 +87,14 @@ const TenantAppInner: React.FC = () => {
                 // If role is null but user exists, it might be a race condition.
                 // Only redirect if role is explicitly loaded and invalid.
 
-                if (user && !role) {
-                    // User exists, but role is null? This implies "loading" or "error", but loading is false.
-                    // Let's assume this is the flicker state and DO NOTHING (wait for role).
-                    console.warn("[TenantApp] User present but role missing. Preventing flicker redirect.");
+                if (user && (!role || role === 'guest')) {
+                    // User exists, but role is null or default guest.
+                    // This is a transient state immediately after login where RoleContext
+                    // hasn't flipped its loading state yet or is just starting.
+                    // We DO NOTHING and wait for the actual role to load.
+                    console.log("[TenantApp] User present but role is guest/null. Waiting for permissions to avoid flicker.");
                 } else {
-                    // Real denial or Guest
+                    // Real denial or Guest (fully confirmed)
                     setView('landing');
                     if (user && role !== 'guest') {
                         toast.error("Acesso Negado: Sua função não possui permissão para o Dashboard desta empresa.");
@@ -105,7 +114,23 @@ const TenantAppInner: React.FC = () => {
         switch (activeTab) {
             case TabType.OVERVIEW: return <Overview />;
             case TabType.BOOKINGS: return <Bookings />;
-            case TabType.CUSTOMERS: return <Customers />;
+            case TabType.CUSTOMERS:
+                return selectedCustomerId ? (
+                    <CustomerDetail
+                        customerId={selectedCustomerId}
+                        onBack={() => setSelectedCustomerId(null)}
+                        activeTab={crmDetailActiveTab}
+                        onTabChange={setCrmDetailActiveTab}
+                    />
+                ) : (
+                    <Customers
+                        onSelectCustomer={setSelectedCustomerId}
+                        searchQuery={crmSearchQuery}
+                        onSearchChange={setCrmSearchQuery}
+                        statusFilter={crmStatusFilter}
+                        onStatusFilterChange={setCrmStatusFilter}
+                    />
+                );
             case TabType.TEAM: return <Team onNavigate={setActiveTab} />;
             case TabType.PAYROLL: return <PayrollDashboard />;
             case TabType.SETTINGS: return <Settings />;

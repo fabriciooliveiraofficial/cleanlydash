@@ -133,11 +133,11 @@ export const TimezoneProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     // Update "now" every minute
     useEffect(() => {
-        const updateNow = () => setNow(getZonedNow(timezone));
+        const updateNow = () => setNow(new Date());
         updateNow();
         const interval = setInterval(updateNow, 60000);
         return () => clearInterval(interval);
-    }, [timezone]);
+    }, []);
 
     const formatTime = (date: Date | string | number, formatStr: string) => {
         // Handle platform-standard time formatting

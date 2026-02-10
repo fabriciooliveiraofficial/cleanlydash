@@ -24,7 +24,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { parseISO, differenceInMinutes, startOfDay, setHours, addMinutes, format } from 'date-fns'
-import { toZonedTime, fromZonedTime } from 'date-fns-tz'
+import { toZonedTime, fromZonedTime, formatInTimeZone } from 'date-fns-tz'
 import { useTimezone } from '@/contexts/TimezoneContext'
 
 interface Employee {
@@ -87,7 +87,11 @@ export function DispatchTimeline({
     resizeSide?: 'left' | 'right'
   } | null>(null)
 
-  // Time is managed by TimezoneProvider
+  // Pre-calculate view start to ensure all coordinates are relative to the SAME midnight
+  const viewStartAbs = React.useMemo(() => {
+    const dateStr = formatInTimeZone(date, timezone, 'yyyy-MM-dd')
+    return fromZonedTime(`${dateStr}T${viewStartHour.toString().padStart(2, '0')}:00:00`, timezone)
+  }, [date, timezone, viewStartHour])
 
   // Navigation Helpers
   const scrollToNow = () => {
@@ -145,16 +149,13 @@ export function DispatchTimeline({
   const assignedBookings = bookings.filter(b => (b.resource_ids || []).length > 0)
 
   const getXPosition = (timeStr: string) => {
-    const start = toZonedTime(parseISO(timeStr), timezone)
-    // Dynamic start of view based on prop
-    const viewStart = addMinutes(startOfDay(date), viewStartHour * 60)
-    const diff = differenceInMinutes(start, viewStart)
+    const diff = differenceInMinutes(parseISO(timeStr), viewStartAbs)
     return (diff / 60) * HOUR_WIDTH
   }
 
   const getWidth = (startStr: string, endStr?: string | null) => {
-    const start = toZonedTime(parseISO(startStr), timezone)
-    const end = endStr ? toZonedTime(parseISO(endStr), timezone) : addMinutes(start, 60) // Default 1h if null
+    const start = parseISO(startStr)
+    const end = endStr ? parseISO(endStr) : addMinutes(start, 60)
     const diff = differenceInMinutes(end, start)
     return (diff / 60) * HOUR_WIDTH
   }
@@ -290,7 +291,7 @@ export function DispatchTimeline({
     }
   }, [interaction, bookings, onBookingUpdate, date])
 
-  const nowPosition = getXPosition(new Date().toISOString())
+  const nowPosition = getXPosition(currentTime.toISOString())
 
   return (
     <div className="flex h-full bg-slate-100/50 gap-4 p-4 overflow-hidden">
@@ -395,7 +396,7 @@ export function DispatchTimeline({
                 {hours.map(hour => (
                   <div key={hour} className="min-w-[120px] p-3 text-center border-r last:border-0 border-slate-200 bg-slate-50/50">
                     <span className="text-[10px] font-black text-slate-400 uppercase">
-                      {formatTime(setHours(startOfDay(date), hour), 'p_time')}
+                      {formatTime(addMinutes(viewStartAbs, (hour - viewStartHour) * 60), 'p_time')}
                     </span>
                   </div>
                 ))}

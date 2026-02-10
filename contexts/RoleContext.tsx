@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef, ReactNode, useCallback, useMemo } from 'react';
 import { createClient } from '../lib/supabase/client';
 import { AppRole, UserRoleContext } from '../types';
 
@@ -16,193 +16,198 @@ export function RoleProvider({ children, supabaseClient }: { children: ReactNode
     const supabase = supabaseClient || defaultSupabase;
     const isFetching = useRef(false);
 
-    useEffect(() => {
-        let mounted = true;
-        const initialLoadComplete = { current: false };
+    const initialLoadComplete = useRef(false);
+    const mounted = useRef(true);
 
+    useEffect(() => {
+        mounted.current = true;
+        return () => { mounted.current = false; };
+    }, []);
+
+    const fetchRole = useCallback(async (authUser: any | null, isInitialLoad: boolean = false) => {
+        // Only block concurrent fetches, but don't queue them
+        if (isFetching.current || !mounted.current) {
+            return;
+        }
+
+        try {
+            isFetching.current = true;
+
+            // Set loading true ONLY if we are in initial load and don't have a role yet.
+            // This prevents the "SIGNED_IN" event from flickering the UI when already logged in.
+            if (isInitialLoad && !role) {
+                setLoading(true);
+            }
+
+            if (mounted.current) {
+                setUser(authUser);
+            }
+
+            if (!authUser) {
+                console.log('RoleProvider: No active session');
+                if (mounted.current) {
+                    setRole('guest');
+                    setLoading(false);
+                    initialLoadComplete.current = true;
+                }
+                return;
+            }
+
+            console.log('RoleProvider: Fetching role for', authUser.email);
+
+            // Helper for timeout-wrapped queries
+            function timeoutPromise<T>(promise: PromiseLike<T>, ms: number = 5000): Promise<T> {
+                return Promise.race([
+                    promise,
+                    new Promise<never>((_, reject) =>
+                        setTimeout(() => reject(new Error('Query timeout')), ms)
+                    )
+                ]);
+            }
+
+            // Parallel fetching of potential roles for speed
+            const [teamMemberResult, tenantProfileResult, userRoleResult] = await Promise.allSettled([
+                timeoutPromise(supabase
+                    .from('team_members')
+                    .select('name, role, role_id, tenant_id, custom_roles(name, app_access)')
+                    .eq('user_id', authUser.id)
+                    .eq('status', 'active')
+                    .maybeSingle()),
+
+                timeoutPromise(supabase
+                    .from('tenant_profiles')
+                    .select('*')
+                    .eq('id', authUser.id)
+                    .maybeSingle()),
+
+                timeoutPromise(supabase
+                    .from('user_roles')
+                    .select('role')
+                    .eq('user_id', authUser.id)
+                    .maybeSingle())
+            ]);
+
+            if (!mounted.current) return;
+
+            // 1. Check Tenant Owner (Highest Priority)
+            if (tenantProfileResult.status === 'fulfilled' && (tenantProfileResult.value as any).data) {
+                const profile = (tenantProfileResult.value as any).data;
+                console.log('RoleProvider: Resolved as Tenant Owner');
+
+                let finalTenantId = authUser.id;
+                let finalRoleName = 'Owner';
+
+                // Portal Mode Override
+                const portalConfigRaw = sessionStorage.getItem('portal_mode_config');
+                if (portalConfigRaw) {
+                    try {
+                        const config = JSON.parse(portalConfigRaw);
+                        if (config.targetTenantId) {
+                            finalTenantId = config.targetTenantId;
+                            finalRoleName = `Portal: ${config.targetTenantName}`;
+                        }
+                    } catch (e) { }
+                }
+
+                setRole('super_admin');
+                setAppAccess('dashboard');
+                setName((profile as any).name);
+                setTenantId(finalTenantId);
+                setCustomRoleName(finalRoleName);
+                setLoading(false);
+                initialLoadComplete.current = true;
+                return;
+            }
+
+            // 2. Check Team Member
+            if (teamMemberResult.status === 'fulfilled' && (teamMemberResult.value as any).data) {
+                const member = (teamMemberResult.value as any).data;
+                console.log('RoleProvider: Resolved as Team Member');
+                const dbRole = (member as any).role as AppRole;
+                const dbAppAccess = (member as any).custom_roles?.app_access || (dbRole === 'cleaner' ? 'cleaner_app' : 'dashboard');
+
+                // Set role based on app_access
+                setRole(dbAppAccess === 'cleaner_app' ? 'cleaner' : dbRole);
+                setAppAccess(dbAppAccess as any);
+                setName((member as any).name);
+                setTenantId((member as any).tenant_id);
+                setCustomRoleName((member as any).custom_roles?.name);
+                setLoading(false);
+                initialLoadComplete.current = true;
+                return;
+            }
+
+            // 3. User Roles Fallback (e.g. for Platform Admins logging into Tenant)
+            if (userRoleResult.status === 'fulfilled' && (userRoleResult.value as any).data) {
+                const userRole = (userRoleResult.value as any).data;
+                console.log('RoleProvider: User Role identified:', (userRole as any).role);
+
+                const dbRole = (userRole as any).role as AppRole;
+
+                let finalTenantId = (dbRole === 'super_admin' || dbRole === 'property_owner') ? authUser.id : null;
+                let finalRoleName = null;
+
+                // Portal Mode Override for Platform Admins
+                const portalConfigRaw = sessionStorage.getItem('portal_mode_config');
+                if (portalConfigRaw && dbRole === 'super_admin') {
+                    try {
+                        const config = JSON.parse(portalConfigRaw);
+                        if (config.targetTenantId) {
+                            finalTenantId = config.targetTenantId;
+                            finalRoleName = `Portal: ${config.targetTenantName}`;
+                        }
+                    } catch (e) { }
+                }
+
+                if (dbRole === 'super_admin' && tenantProfileResult.status === 'fulfilled' && !(tenantProfileResult.value as any).data) {
+                    // If they are a Platform Admin in Portal Mode, allow the Tenant Dashboard
+                    if (!portalConfigRaw) {
+                        console.warn('RoleProvider: Platform Admin blocked from Tenant Dashboard');
+                        setRole('guest');
+                        setAppAccess(null);
+                        setLoading(false);
+                        initialLoadComplete.current = true;
+                        return;
+                    }
+                }
+
+                setRole(dbRole);
+                setAppAccess(dbRole === 'cleaner' ? 'cleaner_app' : 'dashboard');
+                setTenantId(finalTenantId);
+                setCustomRoleName(finalRoleName);
+                setLoading(false);
+                initialLoadComplete.current = true;
+                return;
+            }
+
+            // 4. Default Guest
+            console.log('RoleProvider: No specific role found, defaulting to guest');
+            setRole('guest');
+            setLoading(false);
+            initialLoadComplete.current = true;
+
+        } catch (err: any) {
+            console.error('RoleProvider Critical Execution Error:', err);
+            if (mounted.current) {
+                setRole(prev => prev || 'guest');
+                setLoading(false);
+                initialLoadComplete.current = true;
+            }
+        } finally {
+            isFetching.current = false;
+        }
+    }, [supabase, role, loading]);
+
+    useEffect(() => {
         // Safety timeout to prevent infinite loading
         const timeoutId = setTimeout(() => {
-            if (mounted && loading && !initialLoadComplete.current) {
+            if (mounted.current && loading && !initialLoadComplete.current) {
                 console.warn('RoleProvider: Safety timeout triggered - forcing loading completion');
                 setLoading(false);
                 if (!role) setRole('guest');
                 initialLoadComplete.current = true;
             }
         }, 8000); // 8 seconds max wait
-
-        async function fetchRole(authUser: any | null, isInitialLoad: boolean = false) {
-            // Only block concurrent fetches, but don't queue them
-            if (isFetching.current) {
-                return;
-            }
-
-            try {
-                isFetching.current = true;
-
-                // Only set loading true on initial load if we haven't loaded yet
-                if (isInitialLoad && mounted && !initialLoadComplete.current) {
-                    setLoading(true);
-                }
-
-                if (mounted) {
-                    setUser(authUser);
-                }
-
-                if (!authUser) {
-                    console.log('RoleProvider: No active session');
-                    if (mounted) {
-                        setRole('guest');
-                        setLoading(false);
-                        initialLoadComplete.current = true;
-                    }
-                    return;
-                }
-
-                console.log('RoleProvider: Fetching role for', authUser.email);
-
-                // Helper for timeout-wrapped queries
-                function timeoutPromise<T>(promise: PromiseLike<T>, ms: number = 5000): Promise<T> {
-                    return Promise.race([
-                        promise,
-                        new Promise<never>((_, reject) =>
-                            setTimeout(() => reject(new Error('Query timeout')), ms)
-                        )
-                    ]);
-                }
-
-                // Parallel fetching of potential roles for speed
-                const [teamMemberResult, tenantProfileResult, userRoleResult] = await Promise.allSettled([
-                    timeoutPromise(supabase
-                        .from('team_members')
-                        .select('name, role, role_id, tenant_id, custom_roles(name, app_access)')
-                        .eq('user_id', authUser.id)
-                        .eq('status', 'active')
-                        .maybeSingle()),
-
-                    timeoutPromise(supabase
-                        .from('tenant_profiles')
-                        .select('*')
-                        .eq('id', authUser.id)
-                        .maybeSingle()),
-
-                    timeoutPromise(supabase
-                        .from('user_roles')
-                        .select('role')
-                        .eq('user_id', authUser.id)
-                        .maybeSingle())
-                ]);
-
-                if (!mounted) return;
-
-                // 1. Check Tenant Owner (Highest Priority)
-                if (tenantProfileResult.status === 'fulfilled' && (tenantProfileResult.value as any).data) {
-                    const profile = (tenantProfileResult.value as any).data;
-                    console.log('RoleProvider: Resolved as Tenant Owner');
-
-                    let finalTenantId = authUser.id;
-                    let finalRoleName = 'Owner';
-
-                    // Portal Mode Override
-                    const portalConfigRaw = sessionStorage.getItem('portal_mode_config');
-                    if (portalConfigRaw) {
-                        try {
-                            const config = JSON.parse(portalConfigRaw);
-                            if (config.targetTenantId) {
-                                finalTenantId = config.targetTenantId;
-                                finalRoleName = `Portal: ${config.targetTenantName}`;
-                            }
-                        } catch (e) { }
-                    }
-
-                    setRole('super_admin');
-                    setAppAccess('dashboard');
-                    setName((profile as any).name);
-                    setTenantId(finalTenantId);
-                    setCustomRoleName(finalRoleName);
-                    setLoading(false);
-                    initialLoadComplete.current = true;
-                    return;
-                }
-
-                // 2. Check Team Member
-                if (teamMemberResult.status === 'fulfilled' && (teamMemberResult.value as any).data) {
-                    const member = (teamMemberResult.value as any).data;
-                    console.log('RoleProvider: Resolved as Team Member');
-                    const dbRole = (member as any).role as AppRole;
-                    const dbAppAccess = (member as any).custom_roles?.app_access || (dbRole === 'cleaner' ? 'cleaner_app' : 'dashboard');
-
-                    // Set role based on app_access
-                    // TenantApp will handle the view logic based on app_access
-                    setRole(dbAppAccess === 'cleaner_app' ? 'cleaner' : dbRole);
-                    setAppAccess(dbAppAccess as any);
-                    setName((member as any).name);
-                    setTenantId((member as any).tenant_id);
-                    setCustomRoleName((member as any).custom_roles?.name);
-                    setLoading(false);
-                    initialLoadComplete.current = true;
-                    return;
-                }
-
-                // 3. User Roles Fallback (e.g. for Platform Admins logging into Tenant)
-                if (userRoleResult.status === 'fulfilled' && (userRoleResult.value as any).data) {
-                    const userRole = (userRoleResult.value as any).data;
-                    console.log('RoleProvider: User Role identified:', (userRole as any).role);
-
-                    const dbRole = (userRole as any).role as AppRole;
-
-                    let finalTenantId = (dbRole === 'super_admin' || dbRole === 'property_owner') ? authUser.id : null;
-                    let finalRoleName = customRoleName;
-
-                    // Portal Mode Override for Platform Admins
-                    const portalConfigRaw = sessionStorage.getItem('portal_mode_config');
-                    if (portalConfigRaw && dbRole === 'super_admin') {
-                        try {
-                            const config = JSON.parse(portalConfigRaw);
-                            if (config.targetTenantId) {
-                                finalTenantId = config.targetTenantId;
-                                finalRoleName = `Portal: ${config.targetTenantName}`;
-                            }
-                        } catch (e) { }
-                    }
-
-                    if (dbRole === 'super_admin' && tenantProfileResult.status === 'fulfilled' && !(tenantProfileResult.value as any).data) {
-                        // If they are a Platform Admin in Portal Mode, allow the Tenant Dashboard
-                        if (!portalConfigRaw) {
-                            console.warn('RoleProvider: Platform Admin blocked from Tenant Dashboard');
-                            setRole('guest');
-                            setAppAccess(null);
-                            setLoading(false);
-                            initialLoadComplete.current = true;
-                            return;
-                        }
-                    }
-
-                    setRole(dbRole);
-                    setAppAccess(dbRole === 'cleaner' ? 'cleaner_app' : 'dashboard');
-                    setTenantId(finalTenantId);
-                    setCustomRoleName(finalRoleName);
-                    setLoading(false);
-                    initialLoadComplete.current = true;
-                    return;
-                }
-
-                // 4. Default Guest
-                console.log('RoleProvider: No specific role found, defaulting to guest');
-                setRole('guest');
-                setLoading(false);
-                initialLoadComplete.current = true;
-
-            } catch (err: any) {
-                console.error('RoleProvider Critical Execution Error:', err);
-                if (mounted) {
-                    setRole(prev => prev || 'guest');
-                    setLoading(false);
-                    initialLoadComplete.current = true;
-                }
-            } finally {
-                isFetching.current = false;
-            }
-        }
 
         // Use onAuthStateChange to wait for session restoration from localStorage
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -213,7 +218,7 @@ export function RoleProvider({ children, supabaseClient }: { children: ReactNode
             } else if (event === 'SIGNED_IN') {
                 fetchRole(session?.user ?? null, true);
             } else if (event === 'TOKEN_REFRESHED') {
-                if (session?.user && mounted) {
+                if (session?.user && mounted.current) {
                     setUser(session.user);
                 }
             } else if (event === 'SIGNED_OUT') {
@@ -225,11 +230,10 @@ export function RoleProvider({ children, supabaseClient }: { children: ReactNode
         });
 
         return () => {
-            mounted = false;
             clearTimeout(timeoutId);
             subscription.unsubscribe();
         };
-    }, []);
+    }, [fetchRole, loading, role, supabase.auth]);
 
     const isAdmin = role === 'super_admin';
     const isOwner = role === 'property_owner' || role === 'super_admin';
