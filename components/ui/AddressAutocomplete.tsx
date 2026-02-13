@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { MapPin, Loader2, X, Search } from 'lucide-react';
 import { Input } from './input';
 
@@ -24,6 +25,7 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     placeholder = 'Enter address...',
     disabled = false
 }) => {
+    const { t } = useTranslation();
     const [inputValue, setInputValue] = useState(value);
     const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -55,12 +57,12 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
 
         setIsLoading(true);
         try {
-            // Use Nominatim API (OpenStreetMap) for geocoding - free and no API key required
+            // Use Nominatim API (OpenStreetMap) for geocoding - force English results
             const response = await fetch(
                 `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`,
                 {
                     headers: {
-                        'Accept-Language': 'pt-BR,en',
+                        'Accept-Language': 'en',
                         'User-Agent': 'Cleanlydash/1.0' // Required by Nominatim ToS
                     }
                 }
@@ -118,7 +120,7 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
                     value={inputValue}
                     onChange={handleInputChange}
                     onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
-                    placeholder={placeholder}
+                    placeholder={placeholder || t('common.enter_address')}
                     disabled={disabled}
                     className="pl-10 pr-10"
                 />
@@ -161,8 +163,8 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
             {showDropdown && inputValue.length >= 3 && suggestions.length === 0 && !isLoading && (
                 <div className="absolute z-50 w-full mt-1 bg-white rounded-xl shadow-xl border border-slate-200 p-4 text-center">
                     <Search className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-                    <p className="text-sm text-slate-500">No addresses found</p>
-                    <p className="text-xs text-slate-400 mt-1">Try a different search term</p>
+                    <p className="text-sm text-slate-500">{t('common.no_addresses')}</p>
+                    <p className="text-xs text-slate-400 mt-1">{t('common.try_different_search')}</p>
                 </div>
             )}
         </div>

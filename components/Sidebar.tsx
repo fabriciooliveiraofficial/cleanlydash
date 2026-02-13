@@ -46,23 +46,23 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen, onClo
     { id: TabType.BOOKINGS, icon: CalendarDays, label: t('sidebar.bookings'), permission: PERMISSIONS.TASKS_VIEW },
     { id: TabType.AIRBNB_CENTER, icon: LayoutGrid, label: t('sidebar.airbnb_center'), permission: PERMISSIONS.TASKS_VIEW },
     { id: TabType.CUSTOMERS, icon: Users, label: t('sidebar.customers'), permission: PERMISSIONS.CUSTOMERS_VIEW },
-    { id: TabType.TEAM, icon: Users, label: t('sidebar.team', { defaultValue: 'Equipe' }), permission: PERMISSIONS.TEAM_VIEW },
-    { id: TabType.PAYROLL, icon: WalletIcon, label: t('sidebar.payroll', { defaultValue: 'Folha Pagamento' }), permission: PERMISSIONS.PAYROLL_VIEW },
-    { id: TabType.MAP_VIEW, icon: Map, label: t('sidebar.map', { defaultValue: 'Mapa' }), permission: PERMISSIONS.TASKS_VIEW },
-    { id: TabType.WALLET, icon: WalletIcon, label: t('sidebar.wallet', { defaultValue: 'Carga de Créditos' }), permission: PERMISSIONS.FINANCE_VIEW_BALANCE },
-    { id: TabType.FINANCE, icon: DollarSign, label: t('sidebar.finance', { defaultValue: 'Financeiro' }), permission: PERMISSIONS.FINANCE_VIEW_BALANCE },
+    { id: TabType.TEAM, icon: Users, label: t('sidebar.team', { defaultValue: 'Team' }), permission: PERMISSIONS.TEAM_VIEW },
+    { id: TabType.PAYROLL, icon: WalletIcon, label: t('sidebar.payroll', { defaultValue: 'Payroll' }), permission: PERMISSIONS.PAYROLL_VIEW },
+    { id: TabType.MAP_VIEW, icon: Map, label: t('sidebar.map', { defaultValue: 'Map' }), permission: PERMISSIONS.TASKS_VIEW },
+    { id: TabType.WALLET, icon: WalletIcon, label: t('sidebar.wallet', { defaultValue: 'Refill Balance' }), permission: PERMISSIONS.FINANCE_VIEW_BALANCE },
+    { id: TabType.FINANCE, icon: DollarSign, label: t('sidebar.finance', { defaultValue: 'Finance' }), permission: PERMISSIONS.FINANCE_VIEW_BALANCE },
     {
       id: TabType.TELEPHONY_HUB,
       icon: PhoneCall,
-      label: 'Telefonia',
+      label: t('sidebar.telephony', { defaultValue: 'Telephony' }),
       permission: PERMISSIONS.CUSTOMERS_VIEW,
       subItems: [
-        { id: TabType.TELEPHONY_HUB, label: 'Dashboard CRM' },
-        { id: TabType.TELEPHONY, label: 'Inbox Unificada' },
+        { id: TabType.TELEPHONY_HUB, label: t('sidebar.telephony_dashboard', { defaultValue: 'CRM Dashboard' }) },
+        { id: TabType.TELEPHONY, label: t('sidebar.unified_inbox', { defaultValue: 'Unified Inbox' }) },
       ]
     },
-    { id: TabType.SUPPORT, icon: LifeBuoy, label: t('sidebar.support', { defaultValue: 'Ajuda & Suporte' }), permission: PERMISSIONS.TASKS_VIEW }, // Basic permission for now
-    { id: TabType.RESOURCES, icon: Package, label: t('sidebar.resources', { defaultValue: 'Recursos' }), permission: PERMISSIONS.TEAM_VIEW },
+    { id: TabType.SUPPORT, icon: LifeBuoy, label: t('sidebar.support', { defaultValue: 'Help & Support' }), permission: PERMISSIONS.TASKS_VIEW }, // Basic permission for now
+    { id: TabType.RESOURCES, icon: Package, label: t('sidebar.resources', { defaultValue: 'Resources' }), permission: PERMISSIONS.TEAM_VIEW },
     { id: TabType.AI_INSIGHTS, icon: Sparkles, label: t('sidebar.ai_insights', { defaultValue: 'AI Insights' }), permission: PERMISSIONS.SETTINGS_VIEW }, // Admin level
   ];
 
@@ -128,8 +128,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen, onClo
                 <Settings size={20} />
               </div>
             </div>
-            <p className="text-[11px] font-medium text-slate-400">Sem itens disponíveis</p>
-            <p className="text-[10px] text-slate-300 px-4 leading-relaxed">Verifique suas permissões com o administrador.</p>
+            <p className="text-[11px] font-medium text-slate-400">{t('common.no_items', { defaultValue: 'No items available' })}</p>
+            <p className="text-[10px] text-slate-300 px-4 leading-relaxed">{t('common.check_permissions', { defaultValue: 'Check your permissions with the administrator.' })}</p>
           </div>
         )}
 
@@ -202,12 +202,12 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen, onClo
         )}
         <button
           onClick={handleSignOut}
-          title={isCollapsed ? "Encerrar Sessão" : undefined}
+          title={isCollapsed ? t('sidebar.sign_out', { defaultValue: 'Sign Out' }) : undefined}
           className={`flex w-full items-center gap-3 rounded-xl py-3 text-[13px] font-semibold text-rose-500 hover:bg-rose-500/10 transition-colors ${isCollapsed ? 'justify-center px-0' : 'px-4'
             }`}
         >
           <LogOut size={18} />
-          {!isCollapsed && <span>Encerrar Sessão</span>}
+          {!isCollapsed && <span>{t('sidebar.sign_out', { defaultValue: 'Sign Out' })}</span>}
         </button>
 
         {/* Toggle Collapse Button (Desktop Only) */}
@@ -227,7 +227,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, isOpen, onClo
     <>
       {/* Desktop Sidebar */}
       <aside
-        className={`glass-panel m-4 hidden flex-col rounded-2xl md:flex sticky top-4 h-[calc(100vh-32px)] z-40 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-20' : 'w-64'
+        className={`bg-white/80 backdrop-blur-xl border-r border-slate-200 hidden flex-col md:flex sticky top-0 h-screen z-40 transition-all duration-300 ease-in-out ${isCollapsed ? 'w-20' : 'w-64'
           }`}
       >
         {contentMarkup}

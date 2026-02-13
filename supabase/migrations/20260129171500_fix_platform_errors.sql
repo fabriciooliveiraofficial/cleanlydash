@@ -26,6 +26,8 @@ ALTER TABLE public.active_sessions ADD CONSTRAINT active_sessions_user_id_contex
 DROP POLICY IF EXISTS "Allow Admins read access" ON public.platform_settings;
 
 -- Create comprehensive policy for Super Admins
+DROP POLICY IF EXISTS "Allow Super Admins full access" ON public.platform_settings;
+
 CREATE POLICY "Allow Super Admins full access"
     ON public.platform_settings
     FOR ALL

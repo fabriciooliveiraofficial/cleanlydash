@@ -29,8 +29,9 @@ export const SessionTracker: React.FC = () => {
                             user_id: user.id,
                             session_id: currentSessionId,
                             device_fingerprint: navigator.userAgent,
-                            last_active_at: new Date().toISOString()
-                        }, { onConflict: 'session_id' });
+                            last_active_at: new Date().toISOString(),
+                            context: 'tenant' // Default context
+                        }, { onConflict: 'user_id, context' });
 
                     if (upsertError) {
                         console.warn('[SessionTracker] Initial sync warning:', upsertError.message);

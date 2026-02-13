@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import {
     ChevronLeft,
@@ -325,7 +326,9 @@ const translations = {
 };
 
 export const FeaturesPage: React.FC<FeaturesPageProps> = ({ onBack, onStart }) => {
-    const [lang, setLang] = useState<Language>('en');
+    const { i18n } = useTranslation();
+    const normalizedLang = (i18n.language || 'en').split('-')[0] as Language;
+    const [lang, setLang] = useState<Language>(translations[normalizedLang] ? normalizedLang : 'en');
     const t = translations[lang];
 
     return (

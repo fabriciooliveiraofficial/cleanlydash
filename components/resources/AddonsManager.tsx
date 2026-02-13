@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, Edit2, Trash2, Tag, DollarSign, Package, Check, X, AlertTriangle, Clock } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '@/lib/utils/format';
+import { toast } from 'sonner';
 
 const supabase = createClient();
-import { toast } from 'sonner';
 
 interface Addon {
     id: string;
@@ -23,6 +25,7 @@ interface Service {
 }
 
 export const AddonsManager: React.FC = () => {
+    const { t, i18n } = useTranslation();
     const [addons, setAddons] = useState<Addon[]>([]);
     const [services, setServices] = useState<Service[]>([]);
     const [loading, setLoading] = useState(true);
@@ -82,7 +85,7 @@ export const AddonsManager: React.FC = () => {
 
             setAddons(addonsWithLinks);
         } catch (error: any) {
-            toast.error('Erro ao carregar add-ons');
+            toast.error(t('finance.actions.error_loading_addons'));
             console.error(error);
         } finally {
             setLoading(false);
@@ -150,7 +153,7 @@ export const AddonsManager: React.FC = () => {
                 }
             }
 
-            toast.success(editingAddon ? 'Add-on atualizado!' : 'Add-on criado!');
+            toast.success(editingAddon ? t('catalog.addon_updated') : t('catalog.addon_created'));
             closeModal();
             fetchData();
         } catch (error: any) {
@@ -208,7 +211,7 @@ export const AddonsManager: React.FC = () => {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
                     <input
                         type="text"
-                        placeholder="Buscar add-ons..."
+                        placeholder={t('catalog.search_addons')}
                         className="pl-10 pr-4 py-2 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none w-64 text-sm font-medium text-slate-600"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -219,18 +222,18 @@ export const AddonsManager: React.FC = () => {
                     className="flex items-center gap-2 bg-slate-900 text-white px-5 py-2.5 rounded-2xl hover:bg-black transition-all shadow-lg shadow-slate-200 active:scale-95 font-bold text-sm"
                 >
                     <Plus size={18} />
-                    Novo Add-on
+                    {t('catalog.new_addon')}
                 </button>
             </div>
 
             {/* List */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {loading ? (
-                    <div className="col-span-full py-12 text-center text-slate-400">Carregando...</div>
+                    <div className="col-span-full py-12 text-center text-slate-400">{t('common.loading')}</div>
                 ) : filteredAddons.length === 0 ? (
                     <div className="col-span-full py-12 text-center text-slate-400 flex flex-col items-center gap-2">
                         <Package size={32} className="opacity-20" />
-                        <p>Nenhum add-on encontrado.</p>
+                        <p>{t('catalog.no_addons_found')}</p>
                     </div>
                 ) : (
                     filteredAddons.map((addon) => (
@@ -257,7 +260,7 @@ export const AddonsManager: React.FC = () => {
                                 </div>
                                 <div className="text-right mt-1 mr-8 md:mr-0 flex flex-col items-end">
                                     <span className="block text-lg font-black text-slate-800">
-                                        R$ {addon.price.toFixed(2)}
+                                        {formatCurrency(addon.price)}
                                     </span>
                                     <div className="flex items-center gap-1.5 mt-1">
                                         {addon.duration_minutes > 0 && (
@@ -275,7 +278,7 @@ export const AddonsManager: React.FC = () => {
 
                             <h3 className="font-bold text-slate-800 text-lg mb-1">{addon.name}</h3>
                             <p className="text-slate-500 text-sm leading-relaxed mb-4 line-clamp-2 min-h-[40px]">
-                                {addon.description || 'Sem descrição.'}
+                                {addon.description || t('catalog.no_description')}
                             </p>
 
                             <div className="flex flex-wrap gap-2 mt-auto">
@@ -287,7 +290,7 @@ export const AddonsManager: React.FC = () => {
                                 {addon.service_ids && addon.service_ids.length > 0 && (
                                     <span className="text-[10px] font-bold px-2 py-1 bg-indigo-50 text-indigo-600 rounded-lg border border-indigo-100 flex items-center gap-1">
                                         <Package size={10} />
-                                        {addon.service_ids.length} Serviços
+                                        {addon.service_ids.length} {t('catalog.services')}
                                     </span>
                                 )}
                             </div>
@@ -312,19 +315,19 @@ export const AddonsManager: React.FC = () => {
                         <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">Nome</label>
+                                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">{t('common.name')}</label>
                                     <input
                                         type="text"
                                         className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-slate-700"
-                                        placeholder="Ex: Limpeza de Forno"
+                                        placeholder={t('catalog.addon_name_placeholder')}
                                         value={formData.name}
                                         onChange={e => setFormData({ ...formData, name: e.target.value })}
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">Preço (R$)</label>
+                                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">{t('catalog.price_label')}</label>
                                     <div className="relative">
-                                        <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">{i18n.language === 'pt' ? 'R$' : '$'}</span>
                                         <input
                                             type="number"
                                             step="0.01"
@@ -335,7 +338,7 @@ export const AddonsManager: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">Duração (Min)</label>
+                                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">{t('catalog.duration')}</label>
                                     <div className="relative">
                                         <Clock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                                         <input
@@ -349,26 +352,26 @@ export const AddonsManager: React.FC = () => {
                             </div>
 
                             <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase ml-1">Descrição</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase ml-1">{t('common.description')}</label>
                                 <textarea
                                     className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-medium text-slate-600 min-h-[80px]"
-                                    placeholder="Descreva o que está incluso neste add-on..."
+                                    placeholder={t('catalog.addon_description_placeholder')}
                                     value={formData.description}
                                     onChange={e => setFormData({ ...formData, description: e.target.value })}
                                 />
                             </div>
 
                             <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-500 uppercase ml-1">Categoria</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase ml-1">{t('common.category')}</label>
                                 <select
                                     className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-slate-700"
                                     value={formData.category}
                                     onChange={e => setFormData({ ...formData, category: e.target.value })}
                                 >
-                                    <option value="cleaning">Limpeza</option>
-                                    <option value="laundry">Lavanderia</option>
-                                    <option value="organization">Organização</option>
-                                    <option value="extra">Extra / Outros</option>
+                                    <option value="cleaning">{t('catalog.category_cleaning')}</option>
+                                    <option value="laundry">{t('catalog.category_laundry')}</option>
+                                    <option value="organization">{t('catalog.category_organization')}</option>
+                                    <option value="extra">{t('catalog.category_extra')}</option>
                                 </select>
                             </div>
 
@@ -381,8 +384,8 @@ export const AddonsManager: React.FC = () => {
                                         onChange={e => setFormData({ ...formData, is_standalone: e.target.checked })}
                                     />
                                     <div>
-                                        <span className="block text-sm font-bold text-slate-700">Item Standalone (Universal)</span>
-                                        <span className="text-xs text-slate-400">Pode ser adicionado a qualquer serviço (ex: Taxa de Pet).</span>
+                                        <span className="block text-sm font-bold text-slate-700">{t('catalog.standalone_addon')}</span>
+                                        <span className="text-xs text-slate-400">{t('catalog.standalone_addon_description')}</span>
                                     </div>
                                 </label>
 
@@ -394,14 +397,14 @@ export const AddonsManager: React.FC = () => {
                                         onChange={e => setFormData({ ...formData, active: e.target.checked })}
                                     />
                                     <div>
-                                        <span className="block text-sm font-bold text-slate-700">Ativo</span>
-                                        <span className="text-xs text-slate-400">Disponível para novos agendamentos.</span>
+                                        <span className="block text-sm font-bold text-slate-700">{t('common.active')}</span>
+                                        <span className="text-xs text-slate-400">{t('catalog.active_description')}</span>
                                     </div>
                                 </label>
                             </div>
 
                             <div className="space-y-3">
-                                <label className="text-xs font-bold text-slate-500 uppercase ml-1 block">Vincular a Serviços (Recomendação)</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase ml-1 block">{t('catalog.link_to_services')}</label>
                                 <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto custom-scrollbar p-1">
                                     {services.map(service => (
                                         <label key={service.id} className={`
@@ -431,7 +434,7 @@ export const AddonsManager: React.FC = () => {
                                 </div>
                                 <p className="text-[10px] text-slate-400 italic">
                                     <AlertTriangle size={10} className="inline mr-1" />
-                                    Itens vinculados aparecem com destaque quando o serviço é selecionado.
+                                    {t('catalog.link_to_services_description')}
                                 </p>
                             </div>
 

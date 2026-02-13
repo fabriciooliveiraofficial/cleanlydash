@@ -15,17 +15,21 @@ ON CONFLICT (id) DO UPDATE SET
 -- Ideally we should prefix with `tenant_id`. Let's assume the frontend uploads to `{customer_phone}/{filename}` is okay for now, but RLS checking phone number ownership is hard without a lookup.
 -- SIMPLIFIED POLICY: Authenticated users can upload anywhere in this bucket. (Improvements: restrict path to tenant_id)
 
+-- 18. Authenticated users can upload attachments
+DROP POLICY IF EXISTS "Authenticated users can upload attachments" ON storage.objects;
 CREATE POLICY "Authenticated users can upload attachments"
 ON storage.objects FOR INSERT
 TO authenticated
 WITH CHECK ( bucket_id = 'attachments' );
 
 -- Authenticated users can update/delete their own uploads (owner)
+DROP POLICY IF EXISTS "Users can update own attachments" ON storage.objects;
 CREATE POLICY "Users can update own attachments"
 ON storage.objects FOR UPDATE
 TO authenticated
 USING ( bucket_id = 'attachments' AND owner = auth.uid() );
 
+DROP POLICY IF EXISTS "Users can delete own attachments" ON storage.objects;
 CREATE POLICY "Users can delete own attachments"
 ON storage.objects FOR DELETE
 TO authenticated
@@ -33,6 +37,7 @@ USING ( bucket_id = 'attachments' AND owner = auth.uid() );
 
 -- Public/Authenticated users can view (since it's a public bucket for MMS, media_url needs to be accessible by Telnyx)
 -- Telnyx needs to reach it, so it MUST be Public.
+DROP POLICY IF EXISTS "Anyone can view attachments" ON storage.objects;
 CREATE POLICY "Anyone can view attachments"
 ON storage.objects FOR SELECT
 TO public

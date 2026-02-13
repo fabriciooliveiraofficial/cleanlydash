@@ -12,6 +12,8 @@ import { createClient } from '../lib/supabase/client.ts';
 import { AddFundsDialog } from './wallet/add-funds-dialog.tsx';
 import { Card } from './ui/card.tsx';
 import { useRole } from '../hooks/use-role';
+import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '../lib/utils/format';
 
 
 export const Wallet: React.FC = () => {
@@ -20,6 +22,7 @@ export const Wallet: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
   const { tenant_id: tenantId } = useRole();
+  const { t, i18n } = useTranslation();
 
   async function fetchWallet() {
     if (!tenantId) return;
@@ -64,10 +67,10 @@ export const Wallet: React.FC = () => {
           <div className="relative z-10">
             <div className="flex items-center gap-2 mb-10 text-indigo-300">
               <Sparkles size={18} />
-              <span className="text-xs font-black uppercase tracking-widest">Saldo de Tokens</span>
+              <span className="text-xs font-black uppercase tracking-widest">{t('wallet.balance_title')}</span>
             </div>
             <h2 className="text-4xl md:text-6xl font-black tracking-tighter mb-8 md:mb-10 flex items-baseline gap-2">
-              {balance} <span className="text-xl md:text-2xl font-bold text-indigo-400">Tokens</span>
+              {balance} <span className="text-xl md:text-2xl font-bold text-indigo-400">{t('wallet.tokens')}</span>
             </h2>
             <div className="flex gap-4">
               <AddFundsDialog onSuccess={fetchWallet} />
@@ -78,15 +81,15 @@ export const Wallet: React.FC = () => {
         {/* Financial Summary */}
         <Card className="rounded-3xl md:rounded-[2.5rem] border-slate-100 shadow-xl p-6 md:p-8 flex flex-col justify-between">
           <div className="space-y-6">
-            <h3 className="font-black text-slate-900 flex items-center gap-2"><DollarSign size={18} className="text-indigo-600" /> Valor Estimado</h3>
+            <h3 className="font-black text-slate-900 flex items-center gap-2"><DollarSign size={18} className="text-indigo-600" /> {t('wallet.estimated_value')}</h3>
             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-              <div className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Poder de Compra</div>
+              <div className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">{t('wallet.buying_power')}</div>
               <div className="text-2xl font-black text-slate-900">
-                ≈ ${(balance * 0.10).toFixed(2)}
+                ≈ {formatCurrency(balance * 0.10)}
               </div>
             </div>
             <p className="text-xs text-slate-400 leading-relaxed">
-              1 Token = $0.10 em serviços de IA (Roteirização, Visão, Voz).
+              {t('wallet.token_desc')}
             </p>
           </div>
         </Card>
@@ -97,7 +100,7 @@ export const Wallet: React.FC = () => {
       {/* Transaction History */}
       <div className="rounded-3xl md:rounded-[2.5rem] border bg-white shadow-sm overflow-hidden">
         <div className="p-6 md:p-8 border-b flex items-center justify-between bg-slate-50/50">
-          <h3 className="text-lg font-black text-slate-900 flex items-center gap-2"><History size={20} className="text-slate-400" /> Histórico de Transações</h3>
+          <h3 className="text-lg font-black text-slate-900 flex items-center gap-2"><History size={20} className="text-slate-400" /> {t('wallet.history_title')}</h3>
         </div>
         <div className="divide-y divide-slate-100">
           {ledger.length > 0 ? ledger.map((tx) => (
@@ -108,16 +111,16 @@ export const Wallet: React.FC = () => {
                   {tx.amount > 0 ? <ArrowDownLeft size={20} /> : <ArrowUpRight size={20} />}
                 </div>
                 <div>
-                  <p className="font-bold text-slate-900">{tx.description || 'Transação'}</p>
-                  <p className="text-[10px] text-slate-400 uppercase font-bold">{new Date(tx.created_at).toLocaleDateString()}</p>
+                  <p className="font-bold text-slate-900">{tx.description || t('wallet.transaction_default')}</p>
+                  <p className="text-[10px] text-slate-400 uppercase font-bold">{new Date(tx.created_at).toLocaleDateString(i18n.language === 'pt' ? 'pt-BR' : 'en-US')}</p>
                 </div>
               </div>
               <div className={`text-lg font-black ${tx.amount > 0 ? 'text-emerald-600' : 'text-slate-900'}`}>
-                {tx.amount > 0 ? '+' : ''} {Math.abs(tx.amount)} Tokens
+                {tx.amount > 0 ? '+' : ''} {Math.abs(tx.amount)} {t('wallet.tokens')}
               </div>
             </div>
           )) : (
-            <div className="p-20 text-center text-slate-400 italic">Nenhuma transação registrada.</div>
+            <div className="p-20 text-center text-slate-400 italic">{t('wallet.no_transactions')}</div>
           )}
         </div>
       </div>

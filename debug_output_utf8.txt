@@ -1,0 +1,4 @@
+﻿[dotenv@17.2.3] injecting env (4) from .env -- tip: Ô£à audit secrets and track compliance: https://dotenvx.com/ops
+URL: https://jjbokilvurxztqiwvxhy.supabase.co
+Searching for 'Adam Kate'...
+No customer found matching 'Adam Kate'

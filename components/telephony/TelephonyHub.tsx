@@ -68,9 +68,9 @@ export const TelephonyHub: React.FC = () => {
                         <div className="p-2 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-200">
                             <Phone size={24} />
                         </div>
-                        Telephony Hub
+                        {t('sidebar.telephony', 'Telephony')} Hub
                     </h1>
-                    <p className="text-slate-500 font-medium mt-1">Sua central de comando World-Class Call Center.</p>
+                    <p className="text-slate-500 font-medium mt-1">{t('telephony.subtitle')}</p>
                 </div>
 
                 <div className="flex bg-slate-100 p-1.5 rounded-2xl shadow-inner border border-slate-200/50">
@@ -97,6 +97,7 @@ export const TelephonyHub: React.FC = () => {
 };
 
 const TelephonyDashboard: React.FC = () => {
+    const { t } = useTranslation();
     const [stats, setStats] = useState({
         callsCount: 0,
         callsDuration: 0,
@@ -221,36 +222,36 @@ const TelephonyDashboard: React.FC = () => {
             {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <StatCard
-                    title="Chamadas Efetivas"
+                    title={t('telephony.stats.calls_title')}
                     value={stats.callsCount.toLocaleString()}
-                    trend="Atividade"
+                    trend={t('telephony.stats.activity')}
                     icon={Phone}
                     iconBg="bg-blue-600 shadow-blue-100"
-                    description={`${(stats.callsDuration / 60).toFixed(0)} min consumidos`}
+                    description={t('telephony.stats.min_consumed', { count: (stats.callsDuration / 60).toFixed(0) } as any)}
                 />
                 <StatCard
-                    title="SMS & RCS"
+                    title={t('telephony.stats.sms_title')}
                     value={stats.smsCount.toLocaleString()}
-                    trend="Mensagens"
+                    trend={t('telephony.stats.messages')}
                     icon={MessageSquare}
                     iconBg="bg-indigo-600 shadow-indigo-100"
-                    description="Total enviado/recebido"
+                    description={t('telephony.stats.total_sent_received')}
                 />
                 <StatCard
-                    title="Custo Acumulado"
+                    title={t('telephony.stats.cost_title')}
                     value={`$ ${stats.totalCost.toFixed(2)}`}
                     trend="USD"
                     icon={DollarSign}
                     iconBg="bg-emerald-600 shadow-emerald-100"
-                    description="Ciclo Atual"
+                    description={t('telephony.stats.current_cycle')}
                 />
                 <StatCard
-                    title="Cota Restante"
+                    title={t('telephony.stats.remaining_quota_title')}
                     value={`$ ${(stats.voiceBudget + stats.smsBudget - stats.totalCost).toFixed(2)}`}
-                    trend="Disponível"
+                    trend={t('telephony.stats.available')}
                     icon={Zap}
                     iconBg="bg-amber-500 shadow-amber-100"
-                    description="Até renovação"
+                    description={t('telephony.stats.until_renewal')}
                 />
             </div>
 
@@ -261,9 +262,9 @@ const TelephonyDashboard: React.FC = () => {
                         <div>
                             <h3 className="font-black text-slate-800 flex items-center gap-2 uppercase tracking-widest text-xs">
                                 <BarChart3 size={16} className="text-indigo-600" />
-                                Fluxo de Custos Operacionais
+                                {t('telephony.chart.title')}
                             </h3>
-                            <p className="text-xs text-slate-400 mt-1 font-medium">Visualização diária do consumo (USD)</p>
+                            <p className="text-xs text-slate-400 mt-1 font-medium">{t('telephony.chart.subtitle')}</p>
                         </div>
                     </div>
                     <div className="p-8 h-[350px] w-full">
@@ -280,7 +281,7 @@ const TelephonyDashboard: React.FC = () => {
                                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 600 }} tickFormatter={(v) => `$${v}`} />
                                 <Tooltip
                                     contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', fontWeight: 'bold' }}
-                                    formatter={(v: any) => [`$ ${v}`, 'Custo']}
+                                    formatter={(v: any) => [`$ ${v}`, t('telephony.chart.cost_label')]}
                                 />
                                 <Area type="monotone" dataKey="cost" stroke="#6366f1" strokeWidth={4} fillOpacity={1} fill="url(#colorCost)" />
                             </AreaChart>
@@ -292,19 +293,19 @@ const TelephonyDashboard: React.FC = () => {
                 <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-8 flex flex-col h-full">
                     <h3 className="font-black text-slate-800 flex items-center gap-2 uppercase tracking-widest text-xs mb-8">
                         <Zap size={16} className="text-amber-500" />
-                        Utilização por Cota
+                        {t('telephony.quota.title')}
                     </h3>
                     <div className="flex-1 flex flex-col justify-center">
                         <div className="space-y-6">
                             <CostProgressBar
-                                label="Voz (Minutos)"
+                                label={t('telephony.quota.voice')}
                                 value={stats.voiceSpend}
                                 budget={stats.voiceBudget}
                                 percentage={Math.min(100, (stats.voiceSpend / stats.voiceBudget) * 100)}
                                 color="bg-indigo-500"
                             />
                             <CostProgressBar
-                                label="Mensagens (SMS/RCS)"
+                                label={t('telephony.quota.sms')}
                                 value={stats.smsSpend}
                                 budget={stats.smsBudget}
                                 percentage={Math.min(100, (stats.smsSpend / stats.smsBudget) * 100)}
@@ -313,7 +314,7 @@ const TelephonyDashboard: React.FC = () => {
                         </div>
 
                         <div className="mt-10 p-4 bg-slate-50 rounded-2xl border border-slate-100 italic text-[10px] text-slate-400 leading-relaxed">
-                            Note: O uso é interrompido automaticamente quando a cota de consumo atinge 100% do limite do plano.
+                            {t('telephony.quota.note')}
                         </div>
                     </div>
                 </div>
@@ -327,19 +328,19 @@ const TelephonyDashboard: React.FC = () => {
                         <Phone size={120} />
                     </div>
                     <div className="relative z-10">
-                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400 mb-6 italic">Seu Plano de Telefonia</h4>
+                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400 mb-6 italic">{t('telephony.plan.title')}</h4>
                         <div className="space-y-6">
                             <div className="flex justify-between items-center bg-white/5 p-4 rounded-2xl border border-white/10">
-                                <span className="text-sm font-bold opacity-60">Mensalidade do Plano</span>
+                                <span className="text-sm font-bold opacity-60">{t('telephony.plan.monthly_fee')}</span>
                                 <span className="text-lg font-black font-mono">$ 99.00/mês</span>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="p-4 bg-white/10 rounded-2xl border border-white/5">
-                                    <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-1">Custo Chamada Out</p>
+                                    <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-1">{t('telephony.plan.call_out_cost')}</p>
                                     <p className="text-sm font-black italic">$ {parseFloat(prices.voice).toFixed(2)} / min</p>
                                 </div>
                                 <div className="p-4 bg-white/10 rounded-2xl border border-white/5">
-                                    <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-1">Custo SMS / RCS</p>
+                                    <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-1">{t('telephony.plan.sms_cost')}</p>
                                     <p className="text-sm font-black italic">$ {parseFloat(prices.sms).toFixed(2)} / msg</p>
                                 </div>
                             </div>
@@ -349,7 +350,7 @@ const TelephonyDashboard: React.FC = () => {
 
                 <div className="bg-white rounded-[2rem] border border-slate-200 p-8 flex flex-col justify-between shadow-sm">
                     <div>
-                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-4">Números Ativos</h4>
+                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-4">{t('telephony.numbers.title')}</h4>
                         {activeNumber ? (
                             <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
                                 <div className="h-10 w-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-lg shadow-indigo-100">
@@ -357,9 +358,9 @@ const TelephonyDashboard: React.FC = () => {
                                 </div>
                                 <div className="flex-1">
                                     <p className="text-base font-black text-slate-900">{activeNumber}</p>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase">Universal Voice/SMS</p>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase">{t('telephony.numbers.universal')}</p>
                                 </div>
-                                <Button variant="ghost" size="sm" className="text-emerald-600 font-bold hover:bg-emerald-50">Online</Button>
+                                <Button variant="ghost" size="sm" className="text-emerald-600 font-bold hover:bg-emerald-50">{t('status.online')}</Button>
                             </div>
                         ) : (
                             <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
@@ -367,15 +368,15 @@ const TelephonyDashboard: React.FC = () => {
                                     <Phone size={20} />
                                 </div>
                                 <div className="flex-1">
-                                    <p className="text-base font-black text-slate-900">Nenhum número ativo</p>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase">Verifique Configurações</p>
+                                    <p className="text-base font-black text-slate-900">{t('telephony.numbers.none')}</p>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase">{t('telephony.numbers.check_settings')}</p>
                                 </div>
-                                <Button variant="ghost" size="sm" className="text-indigo-600 font-bold hover:bg-indigo-50">Configurar</Button>
+                                <Button variant="ghost" size="sm" className="text-indigo-600 font-bold hover:bg-indigo-50">{t('common.configure')}</Button>
                             </div>
                         )}
                     </div>
                     <Button className="w-full h-12 bg-slate-900 hover:bg-black text-white font-black uppercase tracking-widest text-xs mt-6 rounded-2xl shadow-xl shadow-slate-100">
-                        Gerenciar Assinatua & Checkout
+                        {t('telephony.manage_subscription')}
                     </Button>
                 </div>
             </div>
@@ -437,6 +438,7 @@ import { ContactActionMenu } from './ContactActionMenu';
 import { QuickSmsModal } from './QuickSmsModal';
 
 const TelephonyLogs: React.FC = () => {
+    const { t, i18n } = useTranslation();
     const [selectedCall, setSelectedCall] = useState<any>(null);
     const [logs, setLogs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -479,13 +481,13 @@ const TelephonyLogs: React.FC = () => {
                 <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                     <h3 className="font-black text-slate-800 uppercase tracking-widest text-xs flex items-center gap-2">
                         <History size={16} className="text-indigo-600" />
-                        Histórico Detalhado
+                        {t('telephony.logs.detailed_history')}
                     </h3>
                     <div className="flex gap-2">
                         <select className="bg-white border border-slate-200 text-[10px] font-bold uppercase py-1 px-3 rounded-lg outline-none cursor-pointer hover:border-indigo-300">
-                            <option>Hoje</option>
-                            <option>Ontem</option>
-                            <option>Últimos 7 dias</option>
+                            <option>{t('common.today')}</option>
+                            <option>{t('common.yesterday')}</option>
+                            <option>{t('common.last_7_days')}</option>
                         </select>
                     </div>
                 </div>
@@ -501,8 +503,8 @@ const TelephonyLogs: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
-                            {loading ? <tr><td colSpan={5} className="p-4 text-center text-slate-400">Carregando...</td></tr> :
-                                logs.length === 0 ? <tr><td colSpan={5} className="p-4 text-center text-slate-400">Nenhum registro encontrado</td></tr> :
+                            {loading ? <tr><td colSpan={5} className="p-4 text-center text-slate-400">{t('common.loading')}</td></tr> :
+                                logs.length === 0 ? <tr><td colSpan={5} className="p-4 text-center text-slate-400">{t('common.no_items')}</td></tr> :
                                     logs.map((log: any) => {
                                         const otherPartyNumber = log.direction === 'outbound' ? log.to_number : log.from_number;
                                         return (
@@ -518,7 +520,7 @@ const TelephonyLogs: React.FC = () => {
                                                                 <div className="h-8 w-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
                                                                     <Phone size={14} />
                                                                 </div>
-                                                                <span className="text-xs font-bold text-slate-600">Ligação</span>
+                                                                <span className="text-xs font-bold text-slate-600">{t('telephony.logs.call')}</span>
                                                             </>
                                                         ) : (
                                                             <>
@@ -537,10 +539,10 @@ const TelephonyLogs: React.FC = () => {
                                                                 className="text-sm font-bold text-slate-900 hover:text-indigo-600 hover:underline transition-all text-left"
                                                                 onClick={(e) => e.stopPropagation()}
                                                             >
-                                                                {otherPartyNumber || 'Desconhecido'}
+                                                                {otherPartyNumber || t('common.unknown')}
                                                             </button>
                                                         </ContactActionMenu>
-                                                        <span className="text-[10px] text-slate-400 font-medium">{log.direction === 'outbound' ? 'Enviada' : 'Recebida'}</span>
+                                                        <span className="text-[10px] text-slate-400 font-medium">{log.direction === 'outbound' ? t('telephony.logs.sent') : t('telephony.logs.received')}</span>
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4">
@@ -550,7 +552,7 @@ const TelephonyLogs: React.FC = () => {
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <span className="text-xs font-medium text-slate-400 tracking-tight">
-                                                        {formatTime(log.created_at, "d 'de' MMM, HH:mm")}
+                                                        {formatTime(log.created_at, i18n.language === 'pt' ? "d 'de' MMM, HH:mm" : "MMM d, h:mm a")}
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4 text-right">
@@ -564,7 +566,7 @@ const TelephonyLogs: React.FC = () => {
                                                                 // Trigger call via Telnyx context
                                                                 window.dispatchEvent(new CustomEvent('quick-call', { detail: { number: otherPartyNumber } }));
                                                             }}
-                                                            title="Ligar"
+                                                            title={t('telephony.actions.call')}
                                                         >
                                                             <Phone size={14} />
                                                         </Button>
@@ -576,7 +578,7 @@ const TelephonyLogs: React.FC = () => {
                                                                 e.stopPropagation();
                                                                 window.dispatchEvent(new CustomEvent('quick-sms', { detail: { number: otherPartyNumber } }));
                                                             }}
-                                                            title="Enviar SMS"
+                                                            title={t('telephony.actions.send_sms')}
                                                         >
                                                             <MessageSquare size={14} />
                                                         </Button>
@@ -589,10 +591,10 @@ const TelephonyLogs: React.FC = () => {
                     </table>
                 </div>
                 <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">{logs.length} registros</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">{logs.length} {t('common.records')}</p>
                     <div className="flex gap-2">
-                        <Button variant="outline" size="sm" disabled className="h-8 text-xs font-bold border-slate-200 opacity-50 cursor-not-allowed">Ant</Button>
-                        <Button variant="outline" size="sm" disabled className="h-8 text-xs font-bold border-slate-200 opacity-50 cursor-not-allowed">Próx</Button>
+                        <Button variant="outline" size="sm" disabled className="h-8 text-xs font-bold border-slate-200 opacity-50 cursor-not-allowed">{t('common.prev')}</Button>
+                        <Button variant="outline" size="sm" disabled className="h-8 text-xs font-bold border-slate-200 opacity-50 cursor-not-allowed">{t('common.next')}</Button>
                     </div>
                 </div>
             </div>
@@ -608,7 +610,7 @@ const TelephonyLogs: React.FC = () => {
                     <CallRecapCard log={selectedCall} />
 
                     <div className="mt-6 bg-slate-900 rounded-[2rem] p-8 text-white">
-                        <h5 className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-400 mb-4">Playback da Gravação</h5>
+                        <h5 className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-400 mb-4">{t('telephony.recap.playback')}</h5>
                         <div className="flex items-center gap-4 bg-white/10 p-4 rounded-2xl border border-white/5">
                             <Button size="sm" className="h-10 w-10 bg-white text-slate-900 rounded-full">▶</Button>
                             <div className="flex-1 h-1.5 bg-white/20 rounded-full overflow-hidden">

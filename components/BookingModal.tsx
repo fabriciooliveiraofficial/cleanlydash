@@ -1657,36 +1657,40 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-hidden">
                 <div className={`bg-white rounded-3xl shadow-2xl w-full max-w-2xl animate-in zoom-in-95 max-h-[92vh] flex flex-col transition-all duration-500 ${showDrawer ? 'scale-[0.98] opacity-90 -translate-x-32' : ''}`}>
 
-                    {/* Header: Premium Redesign */}
-                    <div className="px-8 py-7 border-b border-slate-100 flex justify-between items-center bg-gradient-to-br from-white via-indigo-50/30 to-purple-50/30 rounded-t-[32px] relative overflow-hidden shrink-0">
+                    {/* Header: Compact Premium Redesign */}
+                    <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-gradient-to-br from-white via-indigo-50/30 to-purple-50/30 rounded-t-[32px] relative overflow-hidden shrink-0">
                         <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 blur-[80px] rounded-full -mr-20 -mt-20"></div>
                         <div className="absolute top-0 left-0 w-48 h-48 bg-purple-500/5 blur-[80px] rounded-full -ml-16 -mt-16"></div>
 
-                        <div className="flex items-center gap-4 relative z-10">
-                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-600 to-indigo-700 flex items-center justify-center text-white shadow-[0_8px_20px_-6px_rgba(79,70,229,0.5)]">
-                                {isEditMode ? <Edit2 size={24} /> : <Calendar size={24} />}
+                        <div className="flex items-center gap-3 relative z-10">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-indigo-700 flex items-center justify-center text-white shadow-[0_8px_20px_-6px_rgba(79,70,229,0.5)]">
+                                {isEditMode ? <Edit2 size={20} /> : <Calendar size={20} />}
                             </div>
                             <div>
-                                <h3 className="font-black text-2xl text-slate-800 tracking-tight leading-none">
+                                <h3 className="font-bold text-lg text-slate-800 tracking-tight leading-none">
                                     {isEditMode ? t('booking_modal.edit_title') : t('booking_modal.new_title')}
                                 </h3>
-                                <div className="flex items-center gap-2 mt-2">
-                                    <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full uppercase tracking-widest">{t('booking_modal.subtitle')}</span>
-                                    <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{isEditMode ? 'Management ID: #' + (formData.id?.slice(0, 8)) : 'Smart Sales Assistant'}</span>
+                                <div className="flex items-center gap-2 mt-1.5">
+                                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full uppercase tracking-widest">{t('booking_modal.subtitle')}</span>
+                                    {isEditMode && (
+                                        <>
+                                            <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">#{formData.id?.slice(0, 8)}</span>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         </div>
                         <button
                             onClick={onClose}
-                            className="w-11 h-11 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100/50 rounded-2xl transition-all active:scale-95 group relative z-10"
+                            className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100/50 rounded-xl transition-all active:scale-95 group relative z-10"
                         >
-                            <X size={20} className="group-hover:rotate-90 transition-transform duration-300" />
+                            <X size={18} className="group-hover:rotate-90 transition-transform duration-300" />
                         </button>
                     </div>
 
-                    {/* Main Content Area: Spacious & Structured */}
-                    <div className="flex-1 overflow-y-auto p-10 space-y-12 custom-scrollbar bg-white rounded-b-[32px]">
+                    {/* Main Content Area: Compact & Structured */}
+                    <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-white rounded-b-[32px]">
 
                         {/* Section: Serviço e Valores - World-Class Redesign */}
                         <div className="space-y-6">
@@ -1699,46 +1703,46 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                 <div className="space-y-3">
 
 
-                                    {/* Summary Card: Premium Design */}
+                                    {/* Summary Card: Compact Premium Design */}
                                     {formData.service_id ? (
                                         <div
                                             onClick={() => {
                                                 setDrawerMode('service');
                                                 setShowDrawer(true);
                                             }}
-                                            className="p-6 rounded-[28px] bg-gradient-to-br from-indigo-50 to-white border-2 border-indigo-100 shadow-sm hover:border-indigo-300 transition-all cursor-pointer group relative overflow-hidden active:scale-[0.99]"
+                                            className="p-4 rounded-3xl bg-gradient-to-br from-indigo-50 to-white border border-indigo-100 shadow-sm hover:border-indigo-300 transition-all cursor-pointer group relative overflow-hidden active:scale-[0.99]"
                                         >
                                             <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                                                <Sparkles size={40} className="text-indigo-600" />
+                                                <Sparkles size={32} className="text-indigo-600" />
                                             </div>
 
                                             <div className="flex justify-between items-start relative z-10">
-                                                <div className="flex gap-4">
-                                                    <div className="w-12 h-12 rounded-2xl bg-white border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-sm group-hover:scale-110 transition-transform">
-                                                        <Search size={24} />
+                                                <div className="flex gap-3">
+                                                    <div className="w-10 h-10 rounded-xl bg-white border border-indigo-50 flex items-center justify-center text-indigo-600 shadow-sm group-hover:scale-110 transition-transform">
+                                                        <Search size={20} />
                                                     </div>
                                                     <div>
-                                                        <h4 className="text-lg font-black text-slate-800 tracking-tight leading-none mb-2 group-hover:text-indigo-600 transition-colors">
+                                                        <h4 className="text-base font-bold text-slate-800 tracking-tight leading-none mb-1.5 group-hover:text-indigo-600 transition-colors">
                                                             {getSelectedService()?.name || t('booking_modal.select_service')}
                                                         </h4>
                                                         <div className="flex items-center gap-2">
-                                                            <span className="px-2 py-0.5 bg-indigo-600 text-[10px] font-black text-white rounded-lg uppercase tracking-widest">{getSelectedServiceCategory() || 'Cleanly'}</span>
-                                                            <span className="text-xs text-slate-400 font-bold flex items-center gap-1.5 ml-1">
-                                                                <Clock size={12} className="text-slate-300" />
+                                                            <span className="px-1.5 py-0.5 bg-indigo-100/50 text-indigo-700 text-[10px] font-bold rounded-md uppercase tracking-wide">{getSelectedServiceCategory() || 'Cleanly'}</span>
+                                                            <span className="text-xs text-slate-400 flex items-center gap-1">
+                                                                <Clock size={11} className="text-slate-300" />
                                                                 {getSelectedService()?.duration_minutes || 0} min
                                                             </span>
                                                         </div>
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
-                                                    <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">{t('booking_modal.price_label')}</div>
-                                                    <div className="text-2xl font-black text-indigo-700 tracking-tight">R$ {formData.price || 0}</div>
+                                                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">{t('booking_modal.price_label')}</div>
+                                                    <div className="text-xl font-bold text-indigo-700 tracking-tight">R$ {formData.price || 0}</div>
                                                 </div>
                                             </div>
 
-                                            <div className="mt-5 pt-4 border-t border-indigo-50/50 flex justify-between items-center relative z-10">
+                                            <div className="mt-3 pt-3 border-t border-indigo-50 flex justify-between items-center relative z-10">
                                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest group-hover:text-indigo-500 transition-colors">{t('booking_modal.change_service')}</span>
-                                                <ChevronRight size={18} className="text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all" />
+                                                <ChevronRight size={14} className="text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all" />
                                             </div>
                                         </div>
                                     ) : (
@@ -1747,12 +1751,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                                 setDrawerMode('service');
                                                 setShowDrawer(true);
                                             }}
-                                            className="w-full p-8 rounded-[28px] border-2 border-dashed border-slate-200 bg-slate-50 text-slate-400 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600 transition-all group flex flex-col items-center gap-3 active:scale-[0.99]"
+                                            className="w-full p-5 rounded-3xl border border-dashed border-slate-300 bg-slate-50 text-slate-400 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 transition-all group flex items-center justify-center gap-3 active:scale-[0.99]"
                                         >
-                                            <div className="w-14 h-14 rounded-full bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
-                                                <Plus size={28} />
+                                            <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
+                                                <Plus size={16} />
                                             </div>
-                                            <span className="text-sm font-black uppercase tracking-widest">{t('booking_modal.select_service')}</span>
+                                            <span className="text-xs font-bold uppercase tracking-widest">{t('booking_modal.select_service')}</span>
                                         </button>
                                     )}
                                 </div>
@@ -2022,7 +2026,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
                         {/* Right Column: Schedule Card & Notes - Consolidated below */}
 
-                        {/* Schedule Summary Card */}
+                        {/* Schedule Summary Card: Compact */}
                         <div
                             onClick={() => {
                                 if (!isStaffAssigned) {
@@ -2032,21 +2036,21 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                 setDrawerMode('schedule');
                                 setShowDrawer(true);
                             }}
-                            className={`p-5 rounded-3xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white shadow-xl shadow-indigo-100 transition-all group shrink-0 ${!isStaffAssigned ? 'opacity-40 cursor-not-allowed grayscale' : 'cursor-pointer hover:scale-[1.02] active:scale-[0.98]'}`}
+                            className={`p-4 rounded-3xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white shadow-xl shadow-indigo-100 transition-all group shrink-0 ${!isStaffAssigned ? 'opacity-40 cursor-not-allowed grayscale' : 'cursor-pointer hover:scale-[1.02] active:scale-[0.98]'}`}
                         >
-                            <div className="flex justify-between items-start mb-4">
-                                <div className="p-2.5 bg-white/20 rounded-2xl backdrop-blur-md">
-                                    <Clock size={20} />
+                            <div className="flex justify-between items-start mb-3">
+                                <div className="p-2 bg-white/20 rounded-xl backdrop-blur-md">
+                                    <Clock size={18} />
                                 </div>
-                                <div className="px-3 py-1 bg-white/20 rounded-full text-[10px] font-black uppercase tracking-widest backdrop-blur-md">
+                                <div className="px-3 py-1 bg-white/20 rounded-full text-[9px] font-bold uppercase tracking-widest backdrop-blur-md">
                                     {formData.recurrence_type === 'none' ? t('booking_modal.type_single') : t('booking_modal.type_recurring')}
                                 </div>
                             </div>
 
                             {formData.start_date ? (
                                 <div>
-                                    <div className="text-2xl font-black">{format(new Date(`${formData.start_date}T00:00:00`), "dd 'de' MMM", { locale: ptBR })}</div>
-                                    <div className="text-white/80 font-bold flex items-center gap-1.5 mt-1">
+                                    <div className="text-xl font-bold">{format(new Date(`${formData.start_date}T00:00:00`), "dd 'de' MMM", { locale: ptBR })}</div>
+                                    <div className="text-white/80 text-xs font-medium flex items-center gap-1.5 mt-1">
                                         <span>{formatWallTime(formData.start_time)}</span>
                                         <span className="opacity-40">•</span>
                                         <span>{formData.duration_minutes}min</span>
@@ -2059,15 +2063,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                     </div>
                                 </div>
                             ) : (
-                                <div className="py-2">
-                                    <div className="text-lg font-bold">{t('booking_modal.time_undefined')}</div>
+                                <div className="py-1">
+                                    <div className="text-base font-bold">{t('booking_modal.time_undefined')}</div>
                                     <div className="text-white/60 text-xs">{t('booking_modal.click_to_configure')}</div>
                                 </div>
                             )}
 
-                            <div className="mt-5 pt-4 border-t border-white/10 flex justify-between items-center group-hover:border-white/20 transition-colors">
-                                <span className="text-[10px] font-bold uppercase tracking-widest text-white/70">{t('booking_modal.configure_schedule')}</span>
-                                <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                            <div className="mt-4 pt-3 border-t border-white/10 flex justify-between items-center group-hover:border-white/20 transition-colors">
+                                <span className="text-[9px] font-bold uppercase tracking-widest text-white/70">{t('booking_modal.change_date')}</span>
+                                <ChevronRight size={16} className="group-hover:translate-x-1 transition-transform" />
                             </div>
                         </div>
 
@@ -2233,15 +2237,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                             </div>
                         </div>
 
-                        {/* Footer: Unified Premium Redesign */}
-                        <div className="px-10 py-7 bg-slate-50 border-t border-slate-100 flex items-center justify-between rounded-b-[32px] shrink-0">
+                        {/* Footer: Compact Premium Redesign */}
+                        <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-between rounded-b-[32px] shrink-0">
                             <div className="flex flex-col">
                                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">{t('booking_modal.total_label')}</span>
                                 <div className="flex items-center gap-2">
                                     {formData.recurrence_type !== 'none' && (
                                         <div className="flex flex-col">
-                                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Inicial</span>
-                                            <span className="text-lg font-black text-indigo-700">R$ {calculateEstimate({
+                                            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Inicial</span>
+                                            <span className="text-sm font-black text-indigo-700">R$ {calculateEstimate({
                                                 service: getSelectedService() ? { ...getSelectedService()!, price_default: formData.price } : null,
                                                 selectedTaskIds: [],
                                                 availableTasks: [],
@@ -2252,13 +2256,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                         </div>
                                     )}
                                     {formData.recurrence_type !== 'none' && (
-                                        <div className="w-[1px] h-8 bg-slate-200 mx-2" />
+                                        <div className="w-[1px] h-6 bg-slate-200 mx-2" />
                                     )}
                                     <div className="flex flex-col">
                                         {formData.recurrence_type !== 'none' && (
-                                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{formData.recurrence_type === 'weekly' ? 'Semanal' : formData.recurrence_type === 'biweekly' ? 'Quinzenal' : 'Mensal'}</span>
+                                            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">{formData.recurrence_type === 'weekly' ? 'Semanal' : formData.recurrence_type === 'biweekly' ? 'Quinzenal' : 'Mensal'}</span>
                                         )}
-                                        <span className={`${formData.recurrence_type !== 'none' ? 'text-lg' : 'text-2xl'} font-black text-indigo-700`}>
+                                        <span className={`${formData.recurrence_type !== 'none' ? 'text-base' : 'text-xl'} font-black text-indigo-700`}>
                                             R$ {(formData.recurrence_type !== 'none' ? (
                                                 calculateEstimate({
                                                     service: services.find(s => s.id === (formData.recurrence_service_id || formData.service_id)) ? {
@@ -2278,39 +2282,39 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                                     </div>
                                 </div>
                             </div>
-                            <div className="flex gap-4">
+                            <div className="flex gap-3">
                                 <button
                                     onClick={handleSendQuote}
                                     disabled={sendingQuote || saving || !formData.customer_id || !formData.service_id}
-                                    className="px-6 py-3 bg-white border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 rounded-2xl transition-all text-sm flex items-center gap-2 shadow-sm active:scale-95 disabled:opacity-50"
+                                    className="px-4 py-2.5 bg-white border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 rounded-xl transition-all text-xs flex items-center gap-2 shadow-sm active:scale-95 disabled:opacity-50"
                                 >
                                     {sendingQuote ? (
-                                        <div className="w-4 h-4 border-2 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin"></div>
+                                        <div className="w-3 h-3 border-2 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin"></div>
                                     ) : (
-                                        <Mail size={18} className="text-indigo-500" />
+                                        <Mail size={14} className="text-indigo-500" />
                                     )}
-                                    Enviar Orçamento
+                                    Orçamento
                                 </button>
-                                <button onClick={onClose} className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-200 rounded-2xl transition-colors text-sm">
+                                <button onClick={onClose} className="px-5 py-2.5 text-slate-500 font-bold hover:bg-slate-200 rounded-xl transition-colors text-xs">
                                     {t('booking_modal.cancel_button')}
                                 </button>
                                 {isEditMode && (
                                     <button
                                         onClick={handleDeleteClick}
-                                        className="px-4 py-3 text-rose-500 font-bold hover:bg-rose-50 rounded-2xl transition-colors text-sm flex items-center gap-2"
+                                        className="px-3 py-2.5 text-rose-500 font-bold hover:bg-rose-50 rounded-xl transition-colors text-xs flex items-center gap-2"
                                     >
-                                        <Trash2 size={18} />
+                                        <Trash2 size={14} />
                                     </button>
                                 )}
                                 <button
                                     onClick={handleSave}
                                     disabled={saving || !formData.customer_id || !formData.assigned_to || !formData.service_id || !formData.start_date || !formData.start_time}
-                                    className={`px-8 py-3 bg-indigo-600 text-white font-black rounded-2xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-indigo-100 transition-all active:scale-95 flex items-center gap-2 text-sm ${(!formData.customer_id || !formData.assigned_to || !formData.service_id || !formData.start_date || !formData.start_time) ? 'grayscale' : ''}`}
+                                    className={`px-6 py-2.5 bg-indigo-600 text-white font-black rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-100 transition-all active:scale-95 flex items-center gap-2 text-xs ${(!formData.customer_id || !formData.assigned_to || !formData.service_id || !formData.start_date || !formData.start_time) ? 'grayscale' : ''}`}
                                 >
                                     {saving ? (
-                                        <span className="flex items-center gap-2"><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> {t('booking_modal.saving')}</span>
+                                        <span className="flex items-center gap-2"><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> {t('booking_modal.saving')}</span>
                                     ) : (
-                                        <>{isEditMode ? t('booking_modal.save_changes') : t('booking_modal.confirm_booking')} <ChevronRight size={18} /></>
+                                        <>{isEditMode ? t('booking_modal.save_changes') : t('booking_modal.confirm_booking')} <ChevronRight size={14} /></>
                                     )}
                                 </button>
                             </div>

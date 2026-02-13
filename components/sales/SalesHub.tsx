@@ -8,6 +8,9 @@ import { createClient } from '../../lib/supabase/client';
 import { calculateEstimate, Service, Task, Addon, Discount } from '../../lib/sales/EstimateCalculator';
 import { toast } from 'sonner';
 
+import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '@/lib/utils/format';
+
 interface SalesHubProps {
     isOpen: boolean;
     onClose: () => void;
@@ -15,6 +18,7 @@ interface SalesHubProps {
 }
 
 export const SalesHub: React.FC<SalesHubProps> = ({ isOpen, onClose, onConvertToBooking }) => {
+    const { t, i18n } = useTranslation();
     const [services, setServices] = useState<Service[]>([]);
     const [addons, setAddons] = useState<Addon[]>([]);
     const [categories, setCategories] = useState<any[]>([]);
@@ -448,7 +452,7 @@ export const SalesHub: React.FC<SalesHubProps> = ({ isOpen, onClose, onConvertTo
                                                                         {cat.name}
                                                                     </span>
                                                                 </div>
-                                                                <div className={`text-[10px] font-bold ${selectedServiceId === s.id ? 'text-indigo-100' : 'text-slate-400'}`}>{s.duration_minutes} min • From ${s.price_default}</div>
+                                                                <div className={`text-[10px] font-bold ${selectedServiceId === s.id ? 'text-indigo-100' : 'text-slate-400'}`}>{s.duration_minutes} min • From {new Intl.NumberFormat(i18n.language === 'pt' ? 'pt-BR' : 'en-US', { style: 'currency', currency: i18n.language === 'pt' ? 'BRL' : 'USD' }).format(s.price_default)}</div>
                                                             </div>
                                                             <ChevronRight size={18} className={`transition-transform group-hover:translate-x-1 ${selectedServiceId === s.id ? 'text-white' : 'text-slate-300'}`} />
                                                         </button>
@@ -497,7 +501,7 @@ export const SalesHub: React.FC<SalesHubProps> = ({ isOpen, onClose, onConvertTo
                                                                                 </span>
                                                                             )}
                                                                         </div>
-                                                                        <div className={`text-[10px] font-bold ${selectedServiceId === s.id ? 'text-indigo-100' : 'text-slate-400'}`}>{s.duration_minutes} min • From ${s.price_default}</div>
+                                                                        <div className={`text-[10px] font-bold ${selectedServiceId === s.id ? 'text-indigo-100' : 'text-slate-400'}`}>{s.duration_minutes} min • From {new Intl.NumberFormat(i18n.language === 'pt' ? 'pt-BR' : 'en-US', { style: 'currency', currency: i18n.language === 'pt' ? 'BRL' : 'USD' }).format(s.price_default)}</div>
                                                                     </div>
                                                                     <ChevronRight size={18} className={`transition-transform group-hover:translate-x-1 ${selectedServiceId === s.id ? 'text-white' : 'text-slate-300'}`} />
                                                                 </button>
@@ -563,7 +567,9 @@ export const SalesHub: React.FC<SalesHubProps> = ({ isOpen, onClose, onConvertTo
                                         >
                                             <div className={`text-xs font-black ${selectedAddonIds.includes(a.id) ? 'text-indigo-900' : 'text-slate-800'}`}>{a.name}</div>
                                             <div className="flex items-center justify-center gap-2 mt-1">
-                                                <span className={`text-[10px] font-bold ${selectedAddonIds.includes(a.id) ? 'text-indigo-400' : 'text-slate-400'}`}>R$ {a.price}</span>
+                                                <span className={`text-[10px] font-bold ${selectedAddonIds.includes(a.id) ? 'text-indigo-400' : 'text-slate-400'}`}>
+                                                    {new Intl.NumberFormat(i18n.language === 'pt' ? 'pt-BR' : 'en-US', { style: 'currency', currency: i18n.language === 'pt' ? 'BRL' : 'USD' }).format(a.price)}
+                                                </span>
                                                 {a.duration_minutes > 0 && (
                                                     <span className="text-[9px] font-bold text-indigo-400 flex items-center gap-1">
                                                         <Clock size={8} />
@@ -800,7 +806,7 @@ export const SalesHub: React.FC<SalesHubProps> = ({ isOpen, onClose, onConvertTo
                                                                     <div className="text-xs font-bold">{s.name}</div>
                                                                     <div className="text-[9px] font-bold text-slate-400">{s.duration_minutes} min</div>
                                                                 </div>
-                                                                <div className="text-[10px] font-black text-indigo-400">R$ {s.price_default}</div>
+                                                                <div className="text-[10px] font-black text-indigo-400">{formatCurrency(s.price_default)}</div>
                                                             </button>
                                                         ))}
                                                     </div>
@@ -833,7 +839,7 @@ export const SalesHub: React.FC<SalesHubProps> = ({ isOpen, onClose, onConvertTo
                                                                         <div className="text-xs font-bold">{s.name}</div>
                                                                         <div className="text-[9px] font-bold text-slate-400">{s.duration_minutes} min</div>
                                                                     </div>
-                                                                    <div className="text-[10px] font-black text-indigo-400">R$ {s.price_default}</div>
+                                                                    <div className="text-[10px] font-black text-indigo-400">{formatCurrency(s.price_default)}</div>
                                                                 </button>
                                                             ))}
                                                         </div>
@@ -865,27 +871,27 @@ export const SalesHub: React.FC<SalesHubProps> = ({ isOpen, onClose, onConvertTo
                                         <span className="text-[10px] font-black text-rose-500 uppercase bg-rose-50 px-2 py-0.5 rounded">Initial Visit</span>
                                         <div className="flex items-center gap-2">
                                             {estimate.discountAmount > 0 && (
-                                                <span className="text-xs text-rose-300 line-through font-bold">R$ {estimate.subtotal.toFixed(2)}</span>
+                                                <span className="text-xs text-rose-300 line-through font-bold">{formatCurrency(estimate.subtotal)}</span>
                                             )}
                                             <h3 className="text-2xl font-black text-slate-800 tracking-tighter">
-                                                R$ {estimate.total.toFixed(2)}
+                                                {formatCurrency(estimate.total)}
                                             </h3>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-3">
                                         <span className="text-[10px] font-black text-indigo-500 uppercase bg-indigo-50 px-2 py-0.5 rounded">Recurring</span>
                                         <h3 className="text-xl font-bold text-slate-500 tracking-tight">
-                                            R$ {recurringEstimate.total.toFixed(2)} <span className="text-[10px] font-bold text-slate-400">/ visit</span>
+                                            {formatCurrency(recurringEstimate.total)} <span className="text-[10px] font-bold text-slate-400">/ visit</span>
                                         </h3>
                                     </div>
                                 </div>
                             ) : (
                                 <div className="flex items-center gap-3">
                                     {estimate.discountAmount > 0 && (
-                                        <span className="text-sm text-rose-300 line-through font-bold">R$ {estimate.subtotal.toFixed(2)}</span>
+                                        <span className="text-sm text-rose-300 line-through font-bold">{formatCurrency(estimate.subtotal)}</span>
                                     )}
                                     <h3 className="text-4xl font-black text-indigo-700 tracking-tighter">
-                                        R$ {estimate.total.toFixed(2)}
+                                        {formatCurrency(estimate.total)}
                                     </h3>
                                 </div>
                             )}

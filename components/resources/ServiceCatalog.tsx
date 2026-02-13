@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { createClient } from '../../lib/supabase/client';
-import { Plus, Trash2, ClipboardList, Clock, DollarSign, GripVertical, Check, Pencil } from 'lucide-react';
+import { Plus, Trash2, ClipboardList, Clock, DollarSign, GripVertical, Check, Pencil, Search, Edit2, CheckCircle2, ChevronDown, ChevronRight, Info, AlertCircle, Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '../../lib/utils/format';
 import { toast } from 'sonner';
 
 interface Service {
@@ -44,6 +46,7 @@ interface Room {
 }
 
 export const ServiceCatalog: React.FC = () => {
+    const { t, i18n } = useTranslation();
     const [services, setServices] = useState<Service[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
@@ -151,7 +154,7 @@ export const ServiceCatalog: React.FC = () => {
     };
 
     const handleSave = async () => {
-        if (!formData.name) return toast.error("Nome é obrigatório");
+        if (!formData.name) return toast.error(t('catalog.name_required'));
 
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
@@ -199,7 +202,7 @@ export const ServiceCatalog: React.FC = () => {
                 );
             }
 
-            toast.success(editingService ? "Serviço atualizado!" : "Serviço criado com sucesso!");
+            toast.success(editingService ? t('catalog.service_updated') : t('catalog.service_created'));
         }
 
         closeModal();
@@ -207,10 +210,10 @@ export const ServiceCatalog: React.FC = () => {
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm("Deletar este serviço?")) return;
+        if (!confirm(t('catalog.confirm_delete_service'))) return;
         const { error } = await supabase.from('services').delete().eq('id', id);
-        if (error) toast.error("Erro ao deletar");
-        else { toast.success("Serviço deletado"); setServices(services.filter(s => (s as any).id !== id)); }
+        if (error) toast.error(t('common.error_deleting'));
+        else { toast.success(t('catalog.service_deleted')); setServices(services.filter(s => (s as any).id !== id)); }
     };
 
     const toggleTaskSelection = (taskId: string) => {
@@ -222,12 +225,12 @@ export const ServiceCatalog: React.FC = () => {
     };
 
     const toggleRoomSelection = (roomId: string) => {
-        if (!filterCategory) return toast.error("Selecione uma categoria primeiro");
+        if (!filterCategory) return toast.error(t('catalog.select_category_first'));
 
         const targetTasks = availableTasks.filter(t => t.category_id === filterCategory && t.room_id === roomId);
         const targetIds = targetTasks.map(t => t.id);
 
-        if (targetIds.length === 0) return toast.error("Nenhuma tarefa para esta combinação");
+        if (targetIds.length === 0) return toast.error(t('catalog.no_tasks_available'));
 
         const allSelected = targetIds.every(id => selectedTaskIds.includes(id));
 
@@ -263,11 +266,11 @@ export const ServiceCatalog: React.FC = () => {
         <div>
             <div className="flex justify-between items-center mb-6">
                 <div>
-                    <h2 className="text-xl font-bold text-slate-800">Meus Serviços</h2>
-                    <p className="text-sm text-slate-500">Pacotes de limpeza e manutenção oferecidos.</p>
+                    <h2 className="text-xl font-bold text-slate-800">{t('catalog.my_services')}</h2>
+                    <p className="text-sm text-slate-500">{t('catalog.my_services_subtitle')}</p>
                 </div>
                 <button onClick={() => openModal()} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-500/20">
-                    <Plus size={18} />Novo Serviço
+                    <Plus size={18} />{t('catalog.new_service')}
                 </button>
             </div>
 
@@ -276,7 +279,7 @@ export const ServiceCatalog: React.FC = () => {
             ) : services.length === 0 ? (
                 <div className="text-center py-20 bg-slate-50 rounded-2xl border border-dashed border-slate-300">
                     <ClipboardList className="mx-auto h-12 w-12 text-slate-300 mb-3" />
-                    <p className="text-slate-500 font-medium">Nenhum serviço definido.</p>
+                    <p className="text-slate-500 font-medium">{t('catalog.no_services')}</p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -294,19 +297,19 @@ export const ServiceCatalog: React.FC = () => {
                                         </button>
                                     </div>
                                 </div>
-                                <p className="text-sm text-slate-500 mb-4 line-clamp-2">{service.description || "Sem descrição"}</p>
+                                <p className="text-sm text-slate-500 mb-4 line-clamp-2">{service.description || t('catalog.no_description')}</p>
                                 <div className="flex items-center gap-4 text-sm font-medium text-slate-600">
                                     <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-md">
                                         <Clock size={14} className="text-indigo-500" />{service.duration_minutes} min
                                     </div>
                                     <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-md">
-                                        <DollarSign size={14} className="text-emerald-500" />R$ {service.price_default}
+                                        <DollarSign size={14} className="text-emerald-500" />{formatCurrency(service.price_default)}
                                     </div>
                                 </div>
                             </div>
                             <div className="bg-slate-50 px-5 py-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
                                 <span>ID: {service.id.slice(0, 8)}...</span>
-                                <span className="font-semibold text-indigo-600 cursor-pointer hover:underline" onClick={() => openModal(service)}>Ver Detalhes</span>
+                                <span className="font-semibold text-indigo-600 cursor-pointer hover:underline" onClick={() => openModal(service)}>{t('catalog.view_details')}</span>
                             </div>
                         </div>
                     ))}
@@ -318,31 +321,31 @@ export const ServiceCatalog: React.FC = () => {
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl animate-in zoom-in-95 flex flex-col max-h-[90vh]">
                         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 rounded-t-2xl shrink-0">
-                            <h3 className="font-bold text-lg text-slate-800">{editingService ? 'Editar Serviço' : 'Criar Novo Serviço'}</h3>
+                            <h3 className="font-bold text-lg text-slate-800">{editingService ? t('catalog.edit_service') : t('catalog.create_new_service')}</h3>
                             <button onClick={closeModal} className="text-slate-400 hover:text-slate-600">✕</button>
                         </div>
 
                         <div className="p-6 overflow-y-auto custom-scrollbar space-y-6">
                             {/* Basics */}
                             <div className="space-y-4">
-                                <h4 className="font-bold text-slate-700 flex items-center gap-2 text-sm uppercase tracking-wider"><ClipboardList size={16} /> Detalhes Gerais</h4>
+                                <h4 className="font-bold text-slate-700 flex items-center gap-2 text-sm uppercase tracking-wider"><ClipboardList size={16} /> {t('catalog.general_details')}</h4>
                                 <div className="grid grid-cols-1 gap-4">
                                     <div>
-                                        <label className="block text-sm font-semibold text-slate-700 mb-1">Nome do Serviço</label>
-                                        <input type="text" placeholder="Ex: Faxina Completa" className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">{t('catalog.service_name')}</label>
+                                        <input type="text" placeholder={t('catalog.service_name_placeholder')} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-semibold text-slate-700 mb-1">Descrição</label>
-                                        <textarea placeholder="O que está incluso..." className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none h-20 resize-none" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">{t('common.description')}</label>
+                                        <textarea placeholder={t('catalog.description_placeholder')} className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none h-20 resize-none" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-semibold text-slate-700 mb-1">Categoria do Serviço</label>
+                                        <label className="block text-sm font-semibold text-slate-700 mb-1">{t('catalog.service_category')}</label>
                                         <select
                                             className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                                             value={formData.category_id || ''}
                                             onChange={e => setFormData({ ...formData, category_id: e.target.value || null })}
                                         >
-                                            <option value="">Sem Categoria</option>
+                                            <option value="">{t('catalog.no_category')}</option>
                                             {categories.map(cat => (
                                                 <option key={cat.id} value={cat.id}>{cat.name}</option>
                                             ))}
@@ -350,11 +353,11 @@ export const ServiceCatalog: React.FC = () => {
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label className="block text-sm font-semibold text-slate-700 mb-1">Preço Base (R$)</label>
+                                            <label className="block text-sm font-semibold text-slate-700 mb-1">{t('catalog.base_price')}</label>
                                             <input type="number" className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none" value={formData.price_default} onChange={e => setFormData({ ...formData, price_default: parseFloat(e.target.value) || 0 })} />
                                         </div>
                                         <div>
-                                            <label className="block text-sm font-semibold text-slate-700 mb-1">Duração (Min)</label>
+                                            <label className="block text-sm font-semibold text-slate-700 mb-1">{t('catalog.duration_label')}</label>
                                             <input type="number" step="15" className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none" value={formData.duration_minutes} onChange={e => setFormData({ ...formData, duration_minutes: parseInt(e.target.value) || 60 })} />
                                         </div>
                                     </div>
@@ -370,7 +373,7 @@ export const ServiceCatalog: React.FC = () => {
                                         onClick={() => setShowDrawer(true)}
                                         className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 bg-indigo-50 px-3 py-1.5 rounded-full transition-colors"
                                     >
-                                        {selectedTaskIds.length > 0 ? 'Editar Checklist' : 'Configurar Checklist'}
+                                        {selectedTaskIds.length > 0 ? t('catalog.edit_checklist') : t('catalog.configure_checklist')}
                                     </button>
                                 </div>
 
@@ -381,8 +384,8 @@ export const ServiceCatalog: React.FC = () => {
                                                 {selectedTaskIds.length}
                                             </div>
                                             <div>
-                                                <p className="text-sm font-bold text-slate-700 leading-tight">Tarefas Selecionadas</p>
-                                                <p className="text-xs text-slate-400">Distribuídas em {selectedRooms.length} cômodos</p>
+                                                <p className="text-sm font-bold text-slate-700 leading-tight">{t('catalog.selected_tasks')}</p>
+                                                <p className="text-xs text-slate-400">{t('catalog.distributed_in_rooms', { count: selectedRooms.length })}</p>
                                             </div>
                                         </div>
                                         <div className="flex flex-wrap gap-1.5">
@@ -399,8 +402,8 @@ export const ServiceCatalog: React.FC = () => {
                                         className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center cursor-pointer hover:border-indigo-300 hover:bg-slate-50 transition-all group"
                                     >
                                         <Plus className="mx-auto text-slate-300 group-hover:text-indigo-400 mb-2" size={24} />
-                                        <p className="text-sm font-medium text-slate-400 group-hover:text-indigo-600">Nenhuma tarefa selecionada</p>
-                                        <p className="text-[10px] text-slate-400 uppercase font-bold mt-1">Clique para começar a montar o checklist</p>
+                                        <p className="text-sm font-medium text-slate-400 group-hover:text-indigo-600">{t('catalog.no_tasks_selected')}</p>
+                                        <p className="text-[10px] text-slate-400 uppercase font-bold mt-1">{t('catalog.click_to_start_checklist')}</p>
                                     </div>
                                 )}
                             </div>
@@ -408,13 +411,13 @@ export const ServiceCatalog: React.FC = () => {
                             {/* Inventory Section */}
                             <div className="pt-4 border-t border-slate-100">
                                 <div className="flex justify-between items-center mb-4">
-                                    <h4 className="font-bold text-slate-700 flex items-center gap-2 text-sm uppercase tracking-wider"><Plus size={16} className="text-orange-500" /> Inventário Padrão</h4>
+                                    <h4 className="font-bold text-slate-700 flex items-center gap-2 text-sm uppercase tracking-wider"><Plus size={16} className="text-orange-500" /> {t('catalog.standard_inventory')}</h4>
                                     <button
                                         type="button"
                                         onClick={() => setShowInventoryDrawer(true)}
                                         className="text-xs font-bold text-orange-600 hover:text-orange-700 flex items-center gap-1 bg-orange-50 px-3 py-1.5 rounded-full transition-colors"
                                     >
-                                        {serviceInventory.length > 0 ? 'Editar Inventário' : 'Definir Inventário'}
+                                        {serviceInventory.length > 0 ? t('catalog.edit_inventory') : t('catalog.define_inventory')}
                                     </button>
                                 </div>
 
@@ -441,8 +444,8 @@ export const ServiceCatalog: React.FC = () => {
                                         className="border-2 border-dashed border-orange-100 rounded-xl p-8 text-center cursor-pointer hover:border-orange-200 hover:bg-orange-50/30 transition-all group"
                                     >
                                         <Plus className="mx-auto text-orange-200 group-hover:text-orange-400 mb-2" size={24} />
-                                        <p className="text-sm font-medium text-orange-400 group-hover:text-orange-600">Nenhum item definido</p>
-                                        <p className="text-[10px] text-orange-400 uppercase font-bold mt-1">Defina o que o cleaner deve conferir por padrão</p>
+                                        <p className="text-sm font-medium text-orange-400 group-hover:text-orange-600">{t('catalog.no_items_defined')}</p>
+                                        <p className="text-[10px] text-orange-400 uppercase font-bold mt-1">{t('catalog.define_what_cleaner_checks')}</p>
                                     </div>
                                 )}
                             </div>
@@ -450,15 +453,15 @@ export const ServiceCatalog: React.FC = () => {
 
                         <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between rounded-b-2xl shrink-0">
                             <div className="flex flex-col">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total do Serviço</span>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('catalog.service_total')}</span>
                                 <div className="flex items-center gap-2">
-                                    <span className="text-sm text-slate-500 line-through">R$ {formData.price_default}</span>
-                                    <span className="text-xl font-black text-indigo-700">R$ {totalPrice.toFixed(2)}</span>
+                                    <span className="text-sm text-slate-500 line-through">{formatCurrency(formData.price_default)}</span>
+                                    <span className="text-xl font-black text-indigo-700">{formatCurrency(totalPrice)}</span>
                                 </div>
                             </div>
                             <div className="flex gap-3">
-                                <button onClick={closeModal} className="px-4 py-2 text-slate-600 font-semibold hover:bg-slate-200 rounded-lg transition-colors">Cancelar</button>
-                                <button onClick={handleSave} className="px-8 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 transition-all active:scale-95">{editingService ? 'Salvar Alterações' : 'Criar Serviço'}</button>
+                                <button onClick={closeModal} className="px-4 py-2 text-slate-600 font-semibold hover:bg-slate-200 rounded-lg transition-colors">{t('common.cancel')}</button>
+                                <button onClick={handleSave} className="px-8 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 transition-all active:scale-95">{editingService ? t('common.save_changes') : t('catalog.create_service')}</button>
                             </div>
                         </div>
                     </div>
@@ -472,8 +475,8 @@ export const ServiceCatalog: React.FC = () => {
                     <div className="relative w-full max-w-xl bg-white shadow-2xl h-full flex flex-col animate-in slide-in-from-right duration-300">
                         <div className="px-6 py-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
                             <div>
-                                <h3 className="font-black text-slate-800 uppercase tracking-tight text-lg">Configurar Checklist</h3>
-                                <p className="text-xs text-slate-500 font-medium leading-none mt-1">Selecione as tarefas que compõem este serviço</p>
+                                <h3 className="font-black text-slate-800 uppercase tracking-tight text-lg">{t('catalog.configure_checklist_title')}</h3>
+                                <p className="text-xs text-slate-500 font-medium leading-none mt-1">{t('catalog.select_tasks_desc')}</p>
                             </div>
                             <button onClick={() => setShowDrawer(false)} className="p-2 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-slate-600 shadow-sm transition-all active:scale-95">✕</button>
                         </div>
@@ -483,14 +486,14 @@ export const ServiceCatalog: React.FC = () => {
                             <div>
                                 <label className="block text-xs font-black text-slate-400 uppercase mb-2 tracking-widest flex items-center gap-2 italic">
                                     <span className="bg-slate-800 text-white h-4 w-4 rounded-full flex items-center justify-center not-italic text-[10px]">1</span>
-                                    Filtre por Categoria
+                                    {t('catalog.filter_category_label')}
                                 </label>
                                 <select
                                     className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-bold bg-indigo-50/30 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                                     value={filterCategory}
                                     onChange={(e) => setFilterCategory(e.target.value)}
                                 >
-                                    <option value="">Todas as Categorias</option>
+                                    <option value="">{t('catalog.all_categories')}</option>
                                     {categories.map(cat => (
                                         <option key={cat.id} value={cat.id}>{cat.name}</option>
                                     ))}
@@ -501,11 +504,11 @@ export const ServiceCatalog: React.FC = () => {
                             <div>
                                 <label className="block text-xs font-black text-slate-400 uppercase mb-3 tracking-widest flex items-center gap-2 italic">
                                     <span className="bg-slate-800 text-white h-4 w-4 rounded-full flex items-center justify-center not-italic text-[10px]">2</span>
-                                    Seleção por Cômodo
+                                    {t('catalog.select_by_room_label')}
                                 </label>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                     {roomsWithTasks.length === 0 ? (
-                                        <p className="col-span-full text-xs text-slate-400 italic bg-slate-50 p-4 rounded-xl text-center border border-dashed">Nenhum cômodo disponível para esta categoria.</p>
+                                        <p className="col-span-full text-xs text-slate-400 italic bg-slate-50 p-4 rounded-xl text-center border border-dashed">{t('catalog.no_rooms_available')}</p>
                                     ) : (
                                         roomsWithTasks.map(room => {
                                             const roomTaskIds = availableTasks.filter(t => t.room_id === room.id && (!filterCategory || t.category_id === filterCategory)).map(t => t.id);
@@ -526,7 +529,7 @@ export const ServiceCatalog: React.FC = () => {
                                                 >
                                                     {room.name}
                                                     <span className={`text-[10px] font-medium opacity-60 ${isSelected ? 'text-white' : 'text-slate-400'}`}>
-                                                        {roomTaskIds.length} itens
+                                                        {t('catalog.items_count', { count: roomTaskIds.length })}
                                                     </span>
                                                 </button>
                                             );
@@ -540,13 +543,13 @@ export const ServiceCatalog: React.FC = () => {
                                 <div className="px-4 py-3 bg-slate-800 text-white flex justify-between items-center italic">
                                     <span className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2 not-italic">
                                         <span className="bg-white text-slate-800 h-4 w-4 rounded-full flex items-center justify-center text-[10px]">3</span>
-                                        Ajuste Fino
+                                        {t('catalog.fine_adjustment')}
                                     </span>
-                                    <span className="text-[10px] font-bold opacity-75 uppercase">{filterCategory ? categories.find(c => c.id === filterCategory)?.name : 'Todas'}</span>
+                                    <span className="text-[10px] font-bold opacity-75 uppercase">{filterCategory ? categories.find(c => c.id === filterCategory)?.name : t('catalog.all')}</span>
                                 </div>
                                 <div className="divide-y divide-slate-100 max-h-[400px] overflow-y-auto custom-scrollbar">
                                     {filteredTasks.length === 0 ? (
-                                        <p className="text-center text-slate-400 text-xs py-12 px-6">Escolha uma categoria para listar as tarefas.</p>
+                                        <p className="text-center text-slate-400 text-xs py-12 px-6">{t('catalog.select_category_desc')}</p>
                                     ) : (
                                         filteredTasks.map(task => (
                                             <div key={task.id} onClick={() => toggleTaskSelection(task.id)} className={`p-4 cursor-pointer flex items-center justify-between group transition-all ${selectedTaskIds.includes(task.id) ? 'bg-indigo-50/30' : 'hover:bg-slate-50'}`}>
@@ -556,7 +559,7 @@ export const ServiceCatalog: React.FC = () => {
                                                     </span>
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-[9px] font-bold text-slate-400 uppercase bg-slate-100 px-1.5 py-0.5 rounded">
-                                                            {rooms.find(r => r.id === task.room_id)?.name || 'Geral'}
+                                                            {rooms.find(r => r.id === task.room_id)?.name || t('catalog.general_room')}
                                                         </span>
                                                         {((task as any).price || 0) > 0 && (
                                                             <span className="text-[9px] font-black text-emerald-600 uppercase">
@@ -573,8 +576,8 @@ export const ServiceCatalog: React.FC = () => {
                                     )}
                                 </div>
                                 <div className="p-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center text-[10px] font-black text-slate-400 uppercase tracking-tighter">
-                                    <span>{selectedTaskIds.length} tarefas selecionadas</span>
-                                    <span className="text-indigo-600">+ R$ {totalSelectedPrice.toFixed(2)} acumulado</span>
+                                    <span>{t('catalog.tasks_selected', { count: selectedTaskIds.length })}</span>
+                                    <span className="text-indigo-600">+ {formatCurrency(totalSelectedPrice)} {t('catalog.accumulated')}</span>
                                 </div>
                             </div>
                         </div>
@@ -584,7 +587,7 @@ export const ServiceCatalog: React.FC = () => {
                                 onClick={() => setShowDrawer(false)}
                                 className="w-full py-4 bg-slate-800 text-white font-black uppercase tracking-widest rounded-2xl hover:bg-slate-900 transition-all shadow-xl shadow-slate-200 active:scale-[0.98]"
                             >
-                                Concluído
+                                {t('catalog.completed')}
                             </button>
                         </div>
                     </div>
@@ -598,8 +601,8 @@ export const ServiceCatalog: React.FC = () => {
                     <div className="relative w-full max-w-md bg-white shadow-2xl h-full flex flex-col animate-in slide-in-from-right duration-300">
                         <div className="px-6 py-5 border-b border-orange-100 bg-orange-50 flex justify-between items-center shrink-0">
                             <div>
-                                <h3 className="font-black text-orange-800 uppercase tracking-tight text-lg">Inventário do Serviço</h3>
-                                <p className="text-xs text-orange-600 font-medium leading-none mt-1">Selecione os itens e quantidades padrão</p>
+                                <h3 className="font-black text-orange-800 uppercase tracking-tight text-lg">{t('catalog.service_inventory')}</h3>
+                                <p className="text-xs text-orange-600 font-medium leading-none mt-1">{t('catalog.select_items_desc')}</p>
                             </div>
                             <button onClick={() => setShowInventoryDrawer(false)} className="p-2 bg-white border border-orange-200 rounded-xl text-orange-400 hover:text-orange-600 shadow-sm">✕</button>
                         </div>
@@ -650,7 +653,7 @@ export const ServiceCatalog: React.FC = () => {
                                                         onClick={() => setServiceInventory([...serviceInventory, { item_id: item.id, quantity: 1, name: item.name, unit: item.unit }])}
                                                         className="px-4 py-2 bg-indigo-600 text-white text-[10px] font-black uppercase rounded-lg shadow-lg shadow-indigo-200 active:scale-95 transition-all"
                                                     >
-                                                        Adicionar
+                                                        {t('catalog.add_item')}
                                                     </button>
                                                 )}
                                             </div>
@@ -665,7 +668,7 @@ export const ServiceCatalog: React.FC = () => {
                                 onClick={() => setShowInventoryDrawer(false)}
                                 className="w-full py-4 bg-orange-600 text-white font-black uppercase tracking-widest rounded-2xl hover:bg-orange-700 transition-all shadow-xl shadow-orange-100 active:scale-[0.98]"
                             >
-                                Confirmar Itens
+                                {t('catalog.confirm_items')}
                             </button>
                         </div>
                     </div>

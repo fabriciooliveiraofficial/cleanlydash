@@ -22,6 +22,7 @@ ALTER TABLE public.data_imports ENABLE ROW LEVEL SECURITY;
 
 -- 3. RLS Policies
 -- Tenants can view their own imports
+DROP POLICY IF EXISTS "Tenants view own imports" ON public.data_imports;
 CREATE POLICY "Tenants view own imports"
     ON public.data_imports
     FOR SELECT
@@ -31,8 +32,6 @@ CREATE POLICY "Tenants view own imports"
             WHERE user_id = auth.uid()
         )
         OR 
-        -- Fallback for direct auth.uid() if tenant_id is linked differently in this system's evolution
-        -- Assuming user_roles is the source of truth for tenant linkage as seen in previous files
         EXISTS (
              SELECT 1 FROM public.tenant_profiles tp
              JOIN public.user_roles ur ON ur.user_id = auth.uid()
@@ -41,6 +40,7 @@ CREATE POLICY "Tenants view own imports"
     );
 
 -- Users can insert imports for their tenant
+DROP POLICY IF EXISTS "Users insert own imports" ON public.data_imports;
 CREATE POLICY "Users insert own imports"
     ON public.data_imports
     FOR INSERT
@@ -52,6 +52,7 @@ CREATE POLICY "Users insert own imports"
     );
 
 -- Users can update (e.g. mark as rolled_back) their own imports
+DROP POLICY IF EXISTS "Users update own imports" ON public.data_imports;
 CREATE POLICY "Users update own imports"
     ON public.data_imports
     FOR UPDATE

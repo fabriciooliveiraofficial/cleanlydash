@@ -4,8 +4,10 @@ import { createClient } from '../../lib/supabase/client';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { format, parseISO } from 'date-fns';
+import { useTranslation } from 'react-i18next';
 
 export const PublicInvoicePage: React.FC = () => {
+    const { t, i18n } = useTranslation();
     const [invoice, setInvoice] = useState<any>(null);
     const [tenant, setTenant] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -26,7 +28,7 @@ export const PublicInvoicePage: React.FC = () => {
                 // 1. Try fetching from 'invoices' (Booking-based)
                 const { data: bookingInvoice, error: bookingError } = await supabase
                     .from('invoices')
-                    .select('*, customers(*), bookings(*, services(*))')
+                    .select('*, customers(*), bookings(*, services(*)), invoice_lines(*)')
                     .eq('id', id)
                     .maybeSingle();
 
@@ -49,9 +51,8 @@ export const PublicInvoicePage: React.FC = () => {
                     setInvoice({
                         ...data,
                         isManual: true,
-                        // Map fields to match UI expectations where possible
                         customers: {
-                            name: data.customer_name || 'Cliente',
+                            name: data.customer_name || 'Customer',
                             email: data.customer_email || ''
                         },
                         bookings: {
@@ -62,12 +63,11 @@ export const PublicInvoicePage: React.FC = () => {
                     return;
                 }
 
-                // If neither found
-                throw new Error("Invoice not found in either table");
+                throw new Error("Invoice not found");
 
             } catch (err) {
                 console.error("Error fetching invoice:", err);
-                toast.error("Fatura não encontrada.");
+                toast.error(t('finance.public_invoice.not_found'));
             } finally {
                 setLoading(false);
             }
@@ -83,7 +83,7 @@ export const PublicInvoicePage: React.FC = () => {
         };
 
         fetchInvoice();
-    }, []);
+    }, [t]);
 
     const handleCopy = (text: string, type: string) => {
         navigator.clipboard.writeText(text);
@@ -97,8 +97,8 @@ export const PublicInvoicePage: React.FC = () => {
             const { data, error } = await supabase.functions.invoke('create-payment-request', {
                 body: {
                     amount: invoice.amount,
-                    currency: 'brl',
-                    description: `Fatura INV-${invoice.id.slice(0, 6).toUpperCase()}`,
+                    currency: invoice.currency || 'usd',
+                    description: `Invoice INV-${invoice.id.slice(0, 6).toUpperCase()}`,
                     customer_email: invoice.customers?.email,
                     customer_name: invoice.customers?.name
                 }
@@ -110,7 +110,7 @@ export const PublicInvoicePage: React.FC = () => {
             }
         } catch (err: any) {
             console.error(err);
-            toast.error("Erro ao iniciar pagamento Stripe: " + err.message);
+            toast.error(t('finance.public_invoice.pay_error') || "Error initiating payment: " + err.message);
         } finally {
             setLoading(false);
         }
@@ -131,15 +131,20 @@ export const PublicInvoicePage: React.FC = () => {
                     <div className="bg-slate-100 h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-6">
                         <FileText size={40} className="text-slate-400" />
                     </div>
-                    <h2 className="text-2xl font-black text-slate-800 mb-2">Invoice Not Found</h2>
-                    <p className="text-slate-500 mb-6">Either the link is invalid or the invoice expired.</p>
-                    <Button onClick={() => window.location.reload()} className="w-full">Try Again</Button>
+                    <h2 className="text-2xl font-black text-slate-800 mb-2">{t('finance.public_invoice.not_found')}</h2>
+                    <p className="text-slate-500 mb-6">{t('finance.public_invoice.not_found_desc')}</p>
+                    <Button onClick={() => window.location.reload()} className="w-full">{t('common.retry') || "Try Again"}</Button>
                 </div>
             </div>
         );
     }
 
     const isPaid = invoice.status === 'paid';
+    const currency = invoice.currency || 'usd';
+    const formatter = new Intl.NumberFormat(i18n.language, {
+        style: 'currency',
+        currency: currency,
+    });
 
     return (
         <div className="min-h-screen bg-slate-50 py-6 px-4 md:py-20">
@@ -153,28 +158,28 @@ export const PublicInvoicePage: React.FC = () => {
                                 <div>
                                     <div className="text-indigo-400 font-black text-[10px] uppercase tracking-[0.3em] mb-2">{tenant?.company_name || 'Cleanlydash'}</div>
                                     <h1 className="text-4xl font-black tracking-tight flex items-center gap-3">
-                                        Fatura <span className="opacity-30">#</span>{invoice.id.slice(0, 6).toUpperCase()}
+                                        {t('finance.public_invoice.invoice_prefix') || 'Invoice'} <span className="opacity-30">#</span>{invoice.id.slice(0, 6).toUpperCase()}
                                     </h1>
                                 </div>
                                 {isPaid ? (
                                     <div className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-6 py-2 rounded-full font-black uppercase tracking-widest text-xs backdrop-blur-md">
-                                        Paga
+                                        {t('finance.public_invoice.paid')}
                                     </div>
                                 ) : (
                                     <div className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-6 py-2 rounded-full font-black uppercase tracking-widest text-xs backdrop-blur-md">
-                                        Em Aberto
+                                        {t('finance.public_invoice.open')}
                                     </div>
                                 )}
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 md:gap-8 mt-6 md:mt-10">
                                 <div>
-                                    <div className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">Para o Cliente</div>
+                                    <div className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">{t('finance.public_invoice.bill_to')}</div>
                                     <div className="font-bold text-lg">{invoice.customers?.name}</div>
                                     <div className="text-sm text-white/60">{invoice.customers?.email}</div>
                                 </div>
                                 <div>
-                                    <div className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">Data de Emissão</div>
+                                    <div className="text-[10px] font-black text-white/40 uppercase tracking-widest mb-1">{t('finance.public_invoice.invoice_date')}</div>
                                     <div className="font-bold text-lg">{format(parseISO(invoice.created_at), 'dd MMM, yyyy')}</div>
                                 </div>
                             </div>
@@ -182,40 +187,67 @@ export const PublicInvoicePage: React.FC = () => {
 
                         {/* Summary */}
                         <div className="p-6 md:p-10 space-y-8 md:space-y-10">
-                            <div className="space-y-4">
-                                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                    <Receipt size={14} /> Detalhes do Serviço
-                                </h3>
-                                <div className="bg-slate-50 p-5 md:p-6 rounded-3xl border border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-0">
-                                    <div className="flex items-center gap-4">
-                                        <div className="h-14 w-14 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center text-indigo-600">
-                                            <Calendar size={28} />
-                                        </div>
-                                        <div>
-                                            <div className="font-black text-slate-800 text-lg">{invoice.bookings?.services?.name || 'Serviço Profissional'}</div>
-                                            <div className="text-xs text-slate-500 font-bold flex items-center gap-1.5 mt-1">
-                                                <MapPin size={12} /> {invoice.bookings?.customers?.address || 'Property Location'}
-                                                {invoice.bookings?.services?.duration_minutes && (
-                                                    <>
-                                                        <span className="mx-1 opacity-30">•</span>
-                                                        <Clock size={12} className="text-slate-400" /> {invoice.bookings.services.duration_minutes} min
-                                                    </>
-                                                )}
+                            {invoice.invoice_lines && invoice.invoice_lines.length > 0 ? (
+                                <div className="space-y-4">
+                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                        <Receipt size={14} /> {t('finance.public_invoice.items_title')}
+                                    </h3>
+                                    <div className="bg-slate-50 rounded-3xl border border-slate-100 overflow-hidden">
+                                        {invoice.invoice_lines.map((line: any, idx: number) => (
+                                            <div key={idx} className="flex justify-between items-center p-4 border-b last:border-0 border-slate-200/50">
+                                                <div>
+                                                    <div className="font-bold text-slate-800 text-sm">{line.description}</div>
+                                                    <div className="text-[10px] uppercase font-bold text-slate-400">{t('finance.public_invoice.qty_prefix') || 'Qty'}: {line.quantity} • {formatter.format(line.amount)}</div>
+                                                </div>
+                                                <div className="font-black text-slate-900">
+                                                    {formatter.format(Number(line.amount) * Number(line.quantity))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                        <div className="p-5 bg-slate-100/50 flex justify-between items-center">
+                                            <div className="text-xs font-black text-slate-500 uppercase tracking-widest">{t('finance.public_invoice.total_label')}</div>
+                                            <div className="text-2xl font-black text-slate-900">
+                                                {formatter.format(invoice.amount)}
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="text-left sm:text-right w-full sm:w-auto pl-[4.5rem] sm:pl-0">
-                                        <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Total</div>
-                                        <div className="text-2xl font-black text-slate-900">R$ {invoice.amount?.toFixed(2)}</div>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                        <Receipt size={14} /> {t('finance.public_invoice.details_title')}
+                                    </h3>
+                                    <div className="bg-slate-50 p-5 md:p-6 rounded-3xl border border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-0">
+                                        <div className="flex items-center gap-4">
+                                            <div className="h-14 w-14 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center text-indigo-600">
+                                                <Calendar size={28} />
+                                            </div>
+                                            <div>
+                                                <div className="font-black text-slate-800 text-lg">{invoice.bookings?.services?.name || t('finance.public_invoice.default_service_name') || 'Professional Service'}</div>
+                                                <div className="text-xs text-slate-500 font-bold flex items-center gap-1.5 mt-1">
+                                                    <MapPin size={12} /> {invoice.bookings?.customers?.address || 'Property Location'}
+                                                    {invoice.bookings?.services?.duration_minutes && (
+                                                        <>
+                                                            <span className="mx-1 opacity-30">•</span>
+                                                            <Clock size={12} className="text-slate-400" /> {invoice.bookings.services.duration_minutes} min
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="text-left sm:text-right w-full sm:w-auto pl-[4.5rem] sm:pl-0">
+                                            <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{t('finance.public_invoice.total_label')}</div>
+                                            <div className="text-2xl font-black text-slate-900">{formatter.format(invoice.amount)}</div>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            )}
 
                             {/* Service Description */}
                             {invoice.bookings?.services?.description && (
                                 <div className="space-y-4">
                                     <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                        <FileText size={14} /> Descrição do Serviço
+                                        <FileText size={14} /> {t('finance.public_invoice.desc_label')}
                                     </h3>
                                     <div className="bg-slate-50 p-6 rounded-3xl text-sm text-slate-600 leading-relaxed border border-slate-100">
                                         {invoice.bookings.services.description}
@@ -227,7 +259,7 @@ export const PublicInvoicePage: React.FC = () => {
                             {(invoice.checklist_snapshot?.length > 0) && (
                                 <div className="space-y-4">
                                     <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                        <CheckCircle2 size={14} /> Checklist de Qualidade
+                                        <CheckCircle2 size={14} /> {t('finance.public_invoice.checklist_title')}
                                     </h3>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         {invoice.checklist_snapshot.map((item: any, idx: number) => (
@@ -249,14 +281,14 @@ export const PublicInvoicePage: React.FC = () => {
                             {!invoice.checklist_snapshot?.length && !invoice.isManual && (
                                 <div className="space-y-4">
                                     <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                        <CheckCircle2 size={14} /> Resumo da Execução
+                                        <CheckCircle2 size={14} /> {t('finance.public_invoice.execution_summary')}
                                     </h3>
                                     <div className="grid grid-cols-2 gap-3">
                                         {[
-                                            { title: 'Ambientes Limpos' },
-                                            { title: 'Fotos de Checklist' },
-                                            { title: 'Inventário Verificado' },
-                                            { title: 'Seguro Ativo' }
+                                            { title: t('finance.public_invoice.summary_clean') || 'Spaces Cleaned' },
+                                            { title: t('finance.public_invoice.summary_photos') || 'Checklist Photos' },
+                                            { title: t('finance.public_invoice.summary_inventory') || 'Inventory Verified' },
+                                            { title: t('finance.public_invoice.summary_insurance') || 'Insurance Active' }
                                         ].map((item: any, idx: number) => (
                                             <div key={idx} className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-2xl">
                                                 <div className="h-6 w-6 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
@@ -276,8 +308,8 @@ export const PublicInvoicePage: React.FC = () => {
                 {!isPaid && (
                     <div className="md:col-span-2 space-y-6">
                         <div className="bg-white rounded-3xl md:rounded-[2.5rem] shadow-xl p-6 md:p-8 animate-in slide-in-from-right duration-700">
-                            <h2 className="text-2xl font-black text-slate-800 mb-2">Pagar Agora</h2>
-                            <p className="text-sm text-slate-500 mb-8">Escolha sua forma de pagamento preferida para liquidar esta fatura.</p>
+                            <h2 className="text-2xl font-black text-slate-800 mb-2">{t('finance.public_invoice.pay_now')}</h2>
+                            <p className="text-sm text-slate-500 mb-8">{t('finance.public_invoice.pay_now_desc')}</p>
 
                             <div className="space-y-4">
                                 {/* Stripe Button */}
@@ -291,7 +323,7 @@ export const PublicInvoicePage: React.FC = () => {
                                             <div className="h-12 w-12 bg-white/20 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
                                                 <CreditCard size={24} />
                                             </div>
-                                            <div className="text-left font-black tracking-tight text-lg">Cartão de Crédito</div>
+                                            <div className="text-left font-black tracking-tight text-lg">{t('finance.public_invoice.credit_card')}</div>
                                         </div>
                                         <ChevronRight size={24} className="opacity-40" />
                                     </button>
@@ -300,7 +332,7 @@ export const PublicInvoicePage: React.FC = () => {
                                 {/* Manual Methods */}
                                 {(tenant?.zelle_email || tenant?.venmo_user || tenant?.check_payable_to) && (
                                     <div className="pt-6 space-y-4 border-t border-slate-100">
-                                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-2">Transferência Manual</h4>
+                                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-2">{t('finance.public_invoice.manual_transfer')}</h4>
 
                                         {tenant.zelle_email && (
                                             <div className="bg-slate-50 p-5 rounded-3xl border border-slate-100 group">
@@ -345,7 +377,7 @@ export const PublicInvoicePage: React.FC = () => {
                         {/* Customer Support Info */}
                         <div className="bg-indigo-50/50 border border-indigo-100 rounded-3xl p-6 text-center">
                             <p className="text-xs text-indigo-700/70 font-medium italic">
-                                "Obrigado por utilizar nossos serviços profissionais. <br />Dúvidas? Entre em contato pelo nosso atendimento."
+                                {t('finance.public_invoice.support_msg')}
                             </p>
                         </div>
                     </div>
@@ -357,11 +389,11 @@ export const PublicInvoicePage: React.FC = () => {
                             <div className="h-24 w-24 bg-emerald-500 text-white rounded-full flex items-center justify-center shadow-xl shadow-emerald-100 mx-auto mb-8">
                                 <CheckCircle2 size={48} strokeWidth={3} />
                             </div>
-                            <h2 className="text-3xl font-black text-slate-800 mb-2">Fatura Quitada</h2>
-                            <p className="text-slate-500 font-medium mb-10">Obrigado! O pagamento foi processado com sucesso.</p>
+                            <h2 className="text-3xl font-black text-slate-800 mb-2">{t('finance.public_invoice.invoice_paid')}</h2>
+                            <p className="text-slate-500 font-medium mb-10">{t('finance.public_invoice.success_desc')}</p>
 
                             <Button className="w-full h-14 bg-slate-900 border-none rounded-2xl font-bold tracking-tight shadow-lg" onClick={() => window.print()}>
-                                Baixar Comprovante
+                                {t('finance.public_invoice.download_receipt')}
                             </Button>
                         </div>
                     </div>
@@ -373,5 +405,4 @@ export const PublicInvoicePage: React.FC = () => {
     );
 };
 
-// Mock Toaster if not available or just use from sonner
 import { Toaster } from 'sonner';

@@ -4,13 +4,13 @@
 import * as React from 'react'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
   DialogDescription,
-  DialogTrigger 
+  DialogTrigger
 } from '@/components/ui/dialog'
 import { ManualInvoiceForm } from '@/app/(dashboard)/invoices/manual-invoice-form'
 
@@ -29,7 +29,7 @@ export function CreateInvoiceDialog({ customers }: CreateInvoiceDialogProps) {
           Gerar Fatura Manual
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md rounded-3xl">
+      <DialogContent className="sm:max-w-2xl rounded-3xl">
         <DialogHeader>
           <DialogTitle className="text-xl font-black">Nova Fatura Avulsa</DialogTitle>
           <DialogDescription>

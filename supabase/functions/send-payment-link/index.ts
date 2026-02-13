@@ -55,13 +55,39 @@ serve(async (req) => {
         console.log(`[send-payment-link] Processing for Invoice: ${invoice_id} by User: ${user.email}`);
 
         // 3. Fetch Invoice Details
-        const { data: invoice, error: invError } = await adminClient
+        let invoice = null;
+        let isHybrid = false;
+
+        // Try tenant_invoices (Manual) first
+        const { data: manualInv } = await adminClient
             .from('tenant_invoices')
             .select('*')
             .eq('id', invoice_id)
-            .single();
+            .maybeSingle();
 
-        if (invError || !invoice) throw new Error("Invoice not found");
+        if (manualInv) {
+            invoice = manualInv;
+            isHybrid = false;
+        } else {
+            // Try invoices (Hybrid)
+            const { data: hybridInv } = await adminClient
+                .from('invoices')
+                .select('*, customers(name, email)')
+                .eq('id', invoice_id)
+                .maybeSingle();
+
+            if (hybridInv) {
+                invoice = {
+                    ...hybridInv,
+                    customer_name: hybridInv.customers?.name,
+                    customer_email: hybridInv.customers?.email,
+                    description: hybridInv.description || `Invoice for ${hybridInv.customers?.name || 'Customer'}`
+                };
+                isHybrid = true;
+            }
+        }
+
+        if (!invoice) throw new Error("Invoice not found in either table");
 
         // Start Tenant Context Check
         // Ensure the invoice belongs to a tenant that the user is part of

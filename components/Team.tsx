@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { createClient } from '../lib/supabase/client';
 import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '@/lib/utils/format';
 import {
     Users,
     UserPlus,
@@ -356,7 +357,7 @@ export const Team: React.FC<TeamProps> = (props) => {
                             className="gap-2 bg-indigo-600 hover:bg-indigo-700"
                         >
                             <UserPlus size={18} />
-                            <span className="hidden sm:inline">Adicionar Membro</span>
+                            <span className="hidden sm:inline">{t('team.add_member', 'Add Member')}</span>
                         </Button>
                     ) : (
                         <Button
@@ -364,7 +365,7 @@ export const Team: React.FC<TeamProps> = (props) => {
                             className="gap-2 bg-indigo-600 hover:bg-indigo-700"
                         >
                             <Users size={18} />
-                            <span className="hidden sm:inline">Criar Equipe</span>
+                            <span className="hidden sm:inline">{t('team.create_crew', 'Create Team')}</span>
                         </Button>
                     )}
                 </div>
@@ -377,14 +378,14 @@ export const Team: React.FC<TeamProps> = (props) => {
                     className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeSubTab === 'members' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                         }`}
                 >
-                    Membros
+                    {t('team.members', 'Members')}
                 </button>
                 <button
                     onClick={() => setActiveSubTab('crews')}
                     className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeSubTab === 'crews' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
                         }`}
                 >
-                    Equipes
+                    {t('team.crews', 'Teams')}
                 </button>
             </div>
 
@@ -426,11 +427,11 @@ export const Team: React.FC<TeamProps> = (props) => {
                             <table className="w-full">
                                 <thead className="bg-slate-50 border-b border-slate-100">
                                     <tr>
-                                        <th className="text-left py-4 px-6 text-xs font-bold text-slate-400 uppercase tracking-wider">Membro</th>
-                                        <th className="text-left py-4 px-6 text-xs font-bold text-slate-400 uppercase tracking-wider hidden md:table-cell">Função</th>
-                                        <th className="text-left py-4 px-6 text-xs font-bold text-slate-400 uppercase tracking-wider hidden lg:table-cell">Modelo Pagamento</th>
-                                        <th className="text-left py-4 px-6 text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
-                                        <th className="text-right py-4 px-6 text-xs font-bold text-slate-400 uppercase tracking-wider">Ações</th>
+                                        <th className="text-left py-4 px-6 text-xs font-bold text-slate-400 uppercase tracking-wider">{t('team.member')}</th>
+                                        <th className="text-left py-4 px-6 text-xs font-bold text-slate-400 uppercase tracking-wider hidden md:table-cell">{t('team.role')}</th>
+                                        <th className="text-left py-4 px-6 text-xs font-bold text-slate-400 uppercase tracking-wider hidden lg:table-cell">{t('team.payment_model')}</th>
+                                        <th className="text-left py-4 px-6 text-xs font-bold text-slate-400 uppercase tracking-wider">{t('team.status')}</th>
+                                        <th className="text-right py-4 px-6 text-xs font-bold text-slate-400 uppercase tracking-wider">{t('common.actions')}</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
@@ -464,7 +465,7 @@ export const Team: React.FC<TeamProps> = (props) => {
                                                     <DollarSign size={14} className="text-slate-400" />
                                                     <span className="text-sm text-slate-600">{getPayTypeLabel(member.pay_type)}</span>
                                                     {member.pay_rate > 0 && (
-                                                        <span className="text-xs text-slate-400">R$ {member.pay_rate.toFixed(2)}</span>
+                                                        <span className="text-xs text-slate-400">{formatCurrency(member.pay_rate)}</span>
                                                     )}
                                                 </div>
                                             </td>
@@ -483,14 +484,14 @@ export const Team: React.FC<TeamProps> = (props) => {
                                                     <button
                                                         onClick={() => handleEditMember(member)}
                                                         className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
-                                                        title="Editar"
+                                                        title={t('common.edit')}
                                                     >
                                                         <Edit size={16} />
                                                     </button>
                                                     <button
                                                         onClick={() => handleDeleteMember(member.id)}
                                                         className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                                                        title="Remover"
+                                                        title={t('common.remove')}
                                                     >
                                                         <Trash2 size={16} />
                                                     </button>
@@ -502,8 +503,8 @@ export const Team: React.FC<TeamProps> = (props) => {
                                         <tr>
                                             <td colSpan={5} className="py-12 text-center text-slate-400">
                                                 <Users size={32} className="mx-auto mb-2 opacity-50" />
-                                                <p>Nenhum membro da equipe.</p>
-                                                <p className="text-sm">Adicione membros ou envie convites.</p>
+                                                <p>{t('team.no_members')}</p>
+                                                <p className="text-sm">{t('team.add_members_desc')}</p>
                                             </td>
                                         </tr>
                                     )}

@@ -12,17 +12,21 @@ import {
   ResponsiveContainer
 } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { useTranslation } from 'react-i18next'
+import { formatCurrency } from '@/lib/utils/format'
 
 interface RevenueChartProps {
   data: { name: string; total: number }[]
 }
 
 export function RevenueChart({ data }: RevenueChartProps) {
+  const { t, i18n } = useTranslation()
+
   return (
     <Card className="border-none shadow-sm h-full flex flex-col">
       <CardHeader className="pb-2">
-        <CardTitle className="text-lg font-bold text-slate-900">Performance de Receita</CardTitle>
-        <CardDescription>Crescimento do faturamento bruto nos últimos meses.</CardDescription>
+        <CardTitle className="text-lg font-bold text-slate-900">{t('dashboard.revenue_performance')}</CardTitle>
+        <CardDescription>{t('dashboard.revenue_performance_description')}</CardDescription>
       </CardHeader>
       <CardContent className="flex-1 min-h-[300px] mt-4">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
@@ -45,7 +49,7 @@ export function RevenueChart({ data }: RevenueChartProps) {
               axisLine={false}
               tickLine={false}
               tick={{ fontSize: 11, fill: '#94a3b8', fontWeight: 600 }}
-              tickFormatter={(value) => `R$${value >= 1000 ? (value / 1000).toFixed(0) + 'k' : value}`}
+              tickFormatter={(value) => value >= 1000 ? (value / 1000).toFixed(0) + 'k' : value}
             />
             <Tooltip
               contentStyle={{
@@ -57,7 +61,7 @@ export function RevenueChart({ data }: RevenueChartProps) {
               }}
               itemStyle={{ fontSize: '13px', fontWeight: 'bold', color: '#4f46e5' }}
               labelStyle={{ fontSize: '11px', color: '#64748b', marginBottom: '4px', fontWeight: 'bold' }}
-              formatter={(value: number) => [`R$ ${value.toLocaleString('pt-BR')}`, 'Faturamento']}
+              formatter={(value: number) => [formatCurrency(value), t('dashboard.revenue')]}
             />
             <Area
               type="monotone"

@@ -6,6 +6,7 @@ AND a.member_id = b.member_id
 AND a.day_of_week = b.day_of_week;
 
 -- 2. Add Unique Constraint to prevent future duplicates
+ALTER TABLE public.team_availability DROP CONSTRAINT IF EXISTS team_availability_member_day_unique;
 ALTER TABLE public.team_availability 
 ADD CONSTRAINT team_availability_member_day_unique UNIQUE (member_id, day_of_week);
 

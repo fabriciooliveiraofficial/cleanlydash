@@ -1,4 +1,4 @@
-import React from 'react';
+ï»¿import React from 'react';
 import { Building, DollarSign, CalendarCheck, Clock, MapPin } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
 
@@ -10,6 +10,8 @@ import { format, parseISO, isSameDay, startOfMonth, endOfMonth, differenceInDays
 import { ptBR } from 'date-fns/locale';
 import { useTimezone } from '../contexts/TimezoneContext';
 import { toZonedTime, formatInTimeZone } from 'date-fns-tz';
+import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '../lib/utils/format';
 import {
     Table,
     TableBody,
@@ -21,10 +23,11 @@ import {
 import { Badge } from "./ui/badge";
 
 export const OwnerDashboard: React.FC = () => {
+    const { t, i18n } = useTranslation();
     const [stats, setStats] = useState([
-        { label: 'Minhas Propriedades', value: '0', icon: Building, color: 'text-indigo-500' },
-        { label: 'Ocupação (Mês)', value: '0%', icon: CalendarCheck, color: 'text-emerald-500' },
-        { label: 'Repasse Estimado', value: 'R$ 0,00', icon: DollarSign, color: 'text-amber-500' },
+        { label: t('dashboard.my_properties'), value: '0', icon: Building, color: 'text-indigo-500' },
+        { label: t('dashboard.occupancy_month'), value: '0%', icon: CalendarCheck, color: 'text-emerald-500' },
+        { label: t('dashboard.estimated_payout'), value: formatCurrency(0), icon: DollarSign, color: 'text-amber-500' },
     ]);
     const [chartData, setChartData] = useState<any[]>([]);
     const [todayBookings, setTodayBookings] = useState<any[]>([]);
@@ -95,9 +98,9 @@ export const OwnerDashboard: React.FC = () => {
                 }
 
                 setStats([
-                    { label: 'Minhas Propriedades', value: propertyCount.toString(), icon: Building, color: 'text-indigo-500' },
-                    { label: 'Ocupação (Mês)', value: `${occupancyRate}%`, icon: CalendarCheck, color: 'text-emerald-500' },
-                    { label: 'Repasse Estimado', value: `R$ ${revenue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, icon: DollarSign, color: 'text-amber-500' },
+                    { label: t('dashboard.my_properties'), value: propertyCount.toString(), icon: Building, color: 'text-indigo-500' },
+                    { label: t('dashboard.occupancy_month'), value: `${occupancyRate}%`, icon: CalendarCheck, color: 'text-emerald-500' },
+                    { label: t('dashboard.estimated_payout'), value: formatCurrency(revenue), icon: DollarSign, color: 'text-amber-500' },
                 ]);
 
                 // 5. Build Chart Data (Weekly)
@@ -109,10 +112,10 @@ export const OwnerDashboard: React.FC = () => {
                 });
 
                 setChartData([
-                    { name: 'Sem 1', value: weeks[0] },
-                    { name: 'Sem 2', value: weeks[1] },
-                    { name: 'Sem 3', value: weeks[2] },
-                    { name: 'Sem 4', value: weeks[3] },
+                    { name: t('common.week_short_1'), value: weeks[0] },
+                    { name: t('common.week_short_2'), value: weeks[1] },
+                    { name: t('common.week_short_3'), value: weeks[2] },
+                    { name: t('common.week_short_4'), value: weeks[3] },
                 ]);
 
                 // 6. Filter Today's Bookings
@@ -132,8 +135,8 @@ export const OwnerDashboard: React.FC = () => {
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <div>
-                <h2 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">Portal do Investidor</h2>
-                <p className="text-[var(--text-secondary)] text-sm">Visão consolidada do seu portfólio.</p>
+                <h2 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight">{t('dashboard.investor_portal')}</h2>
+                <p className="text-[var(--text-secondary)] text-sm">{t('dashboard.investor_portal_subtitle')}</p>
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">
@@ -149,7 +152,7 @@ export const OwnerDashboard: React.FC = () => {
             </div>
 
             <div className="glass-panel p-6 rounded-3xl">
-                <h3 className="text-sm font-bold text-[var(--text-primary)] mb-6">Tendência de Receita</h3>
+                <h3 className="text-sm font-bold text-[var(--text-primary)] mb-6">TendÃªncia de Receita</h3>
                 <div ref={containerRef} className="h-64 w-full min-w-0 bg-slate-50/50 rounded-2xl overflow-hidden relative"
                     style={{ minHeight: '256px' }}>
                     {(dimensions.width > 0 && chartData.length > 0) ? (
@@ -171,7 +174,7 @@ export const OwnerDashboard: React.FC = () => {
                         </ResponsiveContainer>
                     ) : (
                         <div className="flex h-full items-center justify-center text-sm text-slate-400 font-medium h-64">
-                            {loading ? 'Carregando dados...' : 'Sem dados para o período'}
+                            {loading ? 'Carregando dados...' : 'Sem dados para o perÃ­odo'}
                         </div>
                     )}
                 </div>
@@ -181,9 +184,9 @@ export const OwnerDashboard: React.FC = () => {
             <div className="glass-panel p-6 rounded-3xl animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
                 <div className="flex items-center justify-between mb-6">
                     <div>
-                        <h3 className="text-sm font-bold text-[var(--text-primary)]">Agendamentos de Hoje</h3>
+                        <h3 className="text-sm font-bold text-[var(--text-primary)]">{t('dashboard.today_bookings')}</h3>
                         <p className="text-[10px] text-[var(--text-secondary)] uppercase tracking-widest mt-1">
-                            {formatInTimeZone(zonedNow, timezone, "EEEE, d 'de' MMMM", { locale: ptBR })}
+                            {formatInTimeZone(zonedNow, timezone, i18n.language === 'pt' ? "EEEE, d 'de' MMMM" : "EEEE, MMMM do", { locale: i18n.language === 'pt' ? ptBR : undefined })}
                         </p>
                     </div>
                     <Badge variant="outline" className="bg-indigo-50/50 text-indigo-600 border-indigo-100">
@@ -196,7 +199,7 @@ export const OwnerDashboard: React.FC = () => {
                         <TableHeader>
                             <TableRow className="bg-slate-50/50 border-none">
                                 <TableHead className="text-[10px] font-bold uppercase tracking-wider h-10">Propriedade</TableHead>
-                                <TableHead className="text-[10px] font-bold uppercase tracking-wider h-10 text-center">Horário</TableHead>
+                                <TableHead className="text-[10px] font-bold uppercase tracking-wider h-10 text-center">HorÃ¡rio</TableHead>
                                 <TableHead className="text-[10px] font-bold uppercase tracking-wider h-10 text-center">Status</TableHead>
                                 <TableHead className="text-[10px] font-bold uppercase tracking-wider h-10 text-right">Valor</TableHead>
                             </TableRow>
@@ -211,7 +214,7 @@ export const OwnerDashboard: React.FC = () => {
                                                     <Building size={14} />
                                                 </div>
                                                 <div>
-                                                    <p className="text-xs font-bold text-slate-900">{booking.summary || 'Residência'}</p>
+                                                    <p className="text-xs font-bold text-slate-900">{booking.summary || 'ResidÃªncia'}</p>
                                                     <div className="flex items-center gap-1 text-[10px] text-slate-400">
                                                         <MapPin size={10} />
                                                         <span className="truncate max-w-[150px]">Check-in/out hoje</span>
@@ -225,7 +228,7 @@ export const OwnerDashboard: React.FC = () => {
                                                     <Clock size={10} />
                                                     {format(parseISO(booking.start_date), 'HH:mm')}
                                                 </div>
-                                                <span className="text-[9px] text-slate-400">até {format(parseISO(booking.end_date), 'HH:mm')}</span>
+                                                <span className="text-[9px] text-slate-400">atÃ© {format(parseISO(booking.end_date), 'HH:mm')}</span>
                                             </div>
                                         </TableCell>
                                         <TableCell className="text-center">
@@ -240,13 +243,13 @@ export const OwnerDashboard: React.FC = () => {
                                             >
                                                 {booking.status === 'confirmed' && 'Confirmado'}
                                                 {booking.status === 'in_progress' && 'Em Andamento'}
-                                                {booking.status === 'completed' && 'Concluído'}
+                                                {booking.status === 'completed' && 'ConcluÃ­do'}
                                                 {booking.status !== 'confirmed' && booking.status !== 'in_progress' && booking.status !== 'completed' && booking.status}
                                             </Badge>
                                         </TableCell>
                                         <TableCell className="text-right">
                                             <span className="text-xs font-black text-slate-900">
-                                                R$ {Number(booking.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                {formatCurrency(Number(booking.price))}
                                             </span>
                                         </TableCell>
                                     </TableRow>

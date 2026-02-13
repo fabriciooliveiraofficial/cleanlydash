@@ -1,0 +1,2 @@
+﻿components/ui/dialog.tsx(2,20): error TS2307: Cannot find module '@/lib/utils' or its corresponding type declarations.
+contexts/RoleContext.tsx(59,22): error TS1252: Function declarations are not allowed inside blocks in strict mode when targeting 'ES5'. Modules are automatically in strict mode.

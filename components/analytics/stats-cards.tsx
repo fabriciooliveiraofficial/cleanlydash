@@ -1,10 +1,11 @@
 // ARQUIVO: components/analytics/stats-cards.tsx
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import { Card, CardContent } from '@/components/ui/card'
-import { 
-  TrendingUp, 
-  CheckCircle2, 
-  Users, 
+import {
+  TrendingUp,
+  CheckCircle2,
+  Users,
   Ticket,
   ArrowUpRight
 } from 'lucide-react'
@@ -19,8 +20,12 @@ interface StatsCardsProps {
 }
 
 export function StatsCards({ metrics }: StatsCardsProps) {
+  const { i18n } = useTranslation()
+
   const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val)
+    const locale = i18n.language === 'pt' ? 'pt-BR' : i18n.language === 'es' ? 'es-ES' : 'en-US';
+    const currency = i18n.language === 'pt' ? 'BRL' : 'USD';
+    return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(val)
   }
 
   const items = [

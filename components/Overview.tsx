@@ -20,12 +20,14 @@ import {
 } from 'recharts';
 import { createClient } from '../lib/supabase/client.ts';
 import { useRole } from '../hooks/use-role.ts';
-import { OwnerDashboard } from './OwnerDashboard.tsx';
-import { useTimezone } from '../contexts/TimezoneContext';
-import { startOfMonth as dateFnsStartOfMonth } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
+import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '../lib/utils/format';
+import { useTimezone } from '../hooks/use-timezone';
+import { OwnerDashboard } from './OwnerDashboard';
 
 export const Overview: React.FC = () => {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
@@ -43,7 +45,8 @@ export const Overview: React.FC = () => {
           return;
         }
 
-        const startOfMonth = dateFnsStartOfMonth(zonedNow).toISOString();
+
+        const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
 
         // 1. Fetch MTD Bookings (Revenue & Turnovers)
         const { data: bookings } = await supabase
@@ -73,7 +76,7 @@ export const Overview: React.FC = () => {
         // AI Score Calculation (Avg of last 20 calls)
         let aiScore = 0;
         let aiScoreLabel = 'N/A';
-        let latestInsight = { summary: 'Nenhuma análise recente', sentiment: 0 };
+        let latestInsight = { summary: t('common.no_recent_analysis'), sentiment: 0 };
 
         if (aiCalls && aiCalls.length > 0) {
           const totalScore = aiCalls.reduce((acc, call) => acc + (Number(call.sentiment_score) || 0), 0);
@@ -86,7 +89,7 @@ export const Overview: React.FC = () => {
 
           const lastCall = aiCalls[0];
           latestInsight = {
-            summary: lastCall.summary || 'Análise indisponível',
+            summary: lastCall.summary || t('common.analysis_unavailable'),
             sentiment: Math.round(((Number(lastCall.sentiment_score) + 1) / 2) * 100)
           };
         } else {
@@ -95,10 +98,10 @@ export const Overview: React.FC = () => {
         }
 
         setStats([
-          { label: 'Turnovers (Mês)', value: totalBookings.toString(), change: '', icon: Calendar, color: 'text-blue-500' },
-          { label: 'Equipe em Campo', value: (teamCount || 0).toString(), change: '', icon: Users, color: 'text-indigo-500' },
-          { label: 'Faturamento MTD', value: `R$ ${mtdRevenue.toFixed(2)}`, change: '', icon: TrendingUp, color: 'text-emerald-500' },
-          { label: 'IA Score Médio', value: aiScoreLabel, change: '', icon: BrainCircuit, color: 'text-purple-500' },
+          { label: t('dashboard.turnovers_month'), value: totalBookings.toString(), change: '', icon: Calendar, color: 'text-blue-500' },
+          { label: t('dashboard.active_team'), value: (teamCount || 0).toString(), change: '', icon: Users, color: 'text-indigo-500' },
+          { label: t('dashboard.mtd_revenue'), value: formatCurrency(mtdRevenue), change: '', icon: TrendingUp, color: 'text-emerald-500' },
+          { label: t('dashboard.avg_ai_score'), value: aiScoreLabel, change: '', icon: BrainCircuit, color: 'text-purple-500' },
         ]);
 
         // Setup AI Insight Card using latestInsight state/variable
@@ -116,10 +119,10 @@ export const Overview: React.FC = () => {
         });
 
         setChartData([
-          { name: 'Sem 1', revenue: weeks[0] },
-          { name: 'Sem 2', revenue: weeks[1] },
-          { name: 'Sem 3', revenue: weeks[2] },
-          { name: 'Sem 4', revenue: weeks[3] },
+          { name: t('common.week_short_1'), revenue: weeks[0] },
+          { name: t('common.week_short_2'), revenue: weeks[1] },
+          { name: t('common.week_short_3'), revenue: weeks[2] },
+          { name: t('common.week_short_4'), revenue: weeks[3] },
         ]);
 
       } catch (err) {

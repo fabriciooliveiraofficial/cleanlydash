@@ -95,8 +95,8 @@ export const NotificationInbox: React.FC = () => {
     return (
         <div className="flex flex-col h-[500px] max-h-[80vh]">
             <div className="flex items-center justify-between mb-4 px-1">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    <Bell size={14} /> Central de Mensagens
+                <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2 px-2">
+                    <Bell size={16} className="text-indigo-600" /> Notificações
                 </h3>
                 <span className="text-[10px] font-black bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-full uppercase border border-indigo-100">
                     {notifications.length} registros
@@ -111,7 +111,7 @@ export const NotificationInbox: React.FC = () => {
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, x: -20 }}
-                            className={`group relative flex items-start gap-4 p-4 rounded-2xl border transition-all duration-200 ${notif.read_at ? 'bg-white border-slate-100' : 'bg-indigo-50/40 border-indigo-100 shadow-sm'
+                            className={`group relative flex items-start gap-3 p-3 rounded-xl transition-all duration-200 border ${notif.read_at ? 'bg-white border-transparent hover:bg-slate-50' : 'bg-indigo-50/30 border-indigo-100/50'
                                 }`}
                         >
                             <div className={`mt-1 p-2 rounded-xl shrink-0 ${notif.read_at ? 'bg-slate-50 text-slate-400' : 'bg-white shadow-sm ring-1 ring-black/5'}`}>

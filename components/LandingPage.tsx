@@ -223,7 +223,52 @@ export const LandingPage: React.FC<LandingPageProps & { onFeatures: () => void }
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const lang = (i18n.language || 'en').split('-')[0] as Language;
-  const t = translations[lang] || translations['en'];
+  const currentLang = translations[lang] ? lang : 'en';
+  const t = translations[currentLang];
+
+  // Fetch plans from Supabase
+  const [dbPlans, setDbPlans] = useState<any[]>([]);
+  const [loadingPlans, setLoadingPlans] = useState(true);
+
+  React.useEffect(() => {
+    const fetchPlans = async () => {
+      try {
+        const { createClient } = await import('../lib/supabase/client'); // Dynamic import to avoid SSR issues if any
+        const supabase = createClient();
+
+        // Fetch plans with features
+        const { data: plansData, error: plansError } = await supabase
+          .from('plans')
+          .select(`
+            *,
+            features:plan_features(*)
+          `)
+          .eq('active', true)
+          .order('display_order');
+
+        if (plansError) throw plansError;
+
+        if (plansData && plansData.length > 0) {
+          // Sort features
+          const plansWithSortedFeatures = plansData.map(plan => ({
+            ...plan,
+            features: plan.features?.sort((a: any, b: any) => a.display_order - b.display_order) || []
+          }));
+          setDbPlans(plansWithSortedFeatures);
+        }
+      } catch (err) {
+        console.error("Error fetching plans:", err);
+        // Fallback to hardcoded is automatic since dbPlans will be empty
+      } finally {
+        setLoadingPlans(false);
+      }
+    };
+    fetchPlans();
+  }, []);
+
+  // Merge DB plans into the pricing structure if available
+  // We need to map DB plans to the shape expected by PricingSection or modify PricingSection
+  // For now, let's inject them into a context or pass them to PricingSection
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 scroll-smooth font-sans text-left">
@@ -462,7 +507,7 @@ export const LandingPage: React.FC<LandingPageProps & { onFeatures: () => void }
       </section>
 
       {/* NEW PRICING SECTION (Replacing old Pricing & Calculator) */}
-      <PricingSection onStart={onStart} lang={lang} />
+      <PricingSection onStart={onStart} lang={lang} dbPlans={dbPlans} />
 
       {/* Footer */}
       <footer className="bg-slate-900 py-20 text-white border-t border-white/10">

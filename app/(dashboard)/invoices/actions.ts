@@ -108,7 +108,12 @@ export async function voidInvoice(invoiceId: string) {
   return { success: true }
 }
 
-export async function createManualInvoice(data: { customer_id: string, amount: number, due_date: string }) {
+// Updated createManualInvoice to support hybrid lines
+export async function createManualInvoice(data: {
+  customer_id: string,
+  due_date: string,
+  items: { description: string, amount: number, quantity: number, booking_id?: string, service_id?: string }[]
+}) {
   const supabase = createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
@@ -122,18 +127,67 @@ export async function createManualInvoice(data: { customer_id: string, amount: n
 
   if (!profile) return { error: "Tenant não identificado" }
 
-  const { error } = await supabase.from('invoices').insert({
+  // Calculate total from items
+  const totalAmount = data.items.reduce((acc, item) => acc + (Number(item.amount) * Number(item.quantity)), 0)
+
+  // 1. Create Invoice
+  const { data: invoice, error } = await (supabase.from('invoices') as any).insert({
     tenant_id: profile.tenant_id,
     customer_id: data.customer_id,
-    amount: data.amount,
+    amount: totalAmount,
     due_date: data.due_date,
     status: 'draft',
     issued_date: new Date().toISOString().split('T')[0]
+    // booking_id is left NULL for hybrid invoices
   })
+    .select()
+    .single()
 
   if (error) return { error: error.message }
+
+  // 2. Create Invoice Lines
+  if (data.items.length > 0) {
+    const lines = data.items.map(item => ({
+      invoice_id: invoice.id,
+      description: item.description,
+      amount: item.amount,
+      quantity: item.quantity,
+      booking_id: item.booking_id || null,
+      service_id: item.service_id || null
+    }))
+
+    const { error: linesError } = await (supabase.from('invoice_lines') as any).insert(lines)
+
+    if (linesError) {
+      // Rollback? ideally yes, but for now just error
+      console.error("Error creating lines:", linesError)
+      return { error: "Fatura criada, mas erro ao adicionar itens: " + linesError.message }
+    }
+
+    // 3. Update Bookings Status
+    const bookingIds = data.items.map(i => i.booking_id).filter(Boolean) as string[]
+    if (bookingIds.length > 0) {
+      await (supabase.from('bookings') as any).update({ invoice_status: 'invoiced' }).in('id', bookingIds)
+    }
+  }
+
   revalidatePath('/dashboard/invoices')
   return { success: true }
+}
+
+export async function getUninvoicedBookings(customerId: string) {
+  const supabase = createClient()
+
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('*, services(name)')
+    .eq('customer_id', customerId)
+    .neq('invoice_status', 'invoiced') // assuming 'draft', 'pending', or null are valid for importing
+    .neq('status', 'cancelled') // don't import cancelled bookings
+    .order('start_time', { ascending: false })
+
+  if (error) return []
+  return data
 }
 
 /**

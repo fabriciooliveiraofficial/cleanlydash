@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence, useMotionValue } from 'framer-motion';
 import { Globe } from 'lucide-react';
 
+export type Language = 'en' | 'pt' | 'es';
+
 export const LanguageFloatingWidget: React.FC = () => {
     const { i18n } = useTranslation();
     const [isOpen, setIsOpen] = useState(false);

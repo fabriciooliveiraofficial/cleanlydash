@@ -10,6 +10,7 @@ type PlanCategory = 'SYSTEM' | 'COMBOS' | 'TELEPHONY';
 interface PricingSectionProps {
     onStart: (planId: string) => void;
     lang?: 'en' | 'pt' | 'es';
+    dbPlans?: any[];
 }
 
 const PRICING_DATA = {
@@ -105,7 +106,7 @@ const PRICING_DATA = {
     }
 };
 
-export function PricingSection({ onStart, lang = 'pt' }: PricingSectionProps) {
+export function PricingSection({ onStart, lang = 'pt', dbPlans }: PricingSectionProps) {
     const [category, setCategory] = useState<PlanCategory>('COMBOS');
     const t = PRICING_DATA[lang];
 
@@ -191,7 +192,45 @@ export function PricingSection({ onStart, lang = 'pt' }: PricingSectionProps) {
         }
     ];
 
+
+
+    // Helper to map DB plans to component structure
+    const mapDbPlans = (category: string) => {
+        if (!dbPlans) return [];
+        return dbPlans
+            .filter(p => (p.category || '').toUpperCase() === category)
+            .map(p => {
+                // Determine icon based on simple logic or name matching
+                const cat = (p.category || '').toLowerCase();
+                let Icon = Building2;
+                if (cat === 'telephony') Icon = Phone;
+                if (cat === 'combo') Icon = Zap;
+                if (p.name.toLowerCase().includes('founder')) Icon = Rocket;
+                if (p.name.toLowerCase().includes('business')) Icon = Briefcase;
+
+                return {
+                    id: p.id,
+                    name: p.name,
+                    description: p.description,
+                    price: p.price_monthly,
+                    users: cat === 'telephony' ? (p.badge?.includes('User') ? parseInt(p.badge) : 1) : 0, // Approx logic
+                    minutes: 0, // DB doesn't have minutes yet, could add to features text parsing or new logic
+                    features: p.features.filter((f: any) => f.included).map((f: any) => f.text),
+                    recommended: p.highlighted,
+                    icon: Icon,
+                    color: p.highlighted ? "indigo" : "blue"
+                };
+            });
+    };
+
     const getActivePlans = () => {
+        if (dbPlans && dbPlans.length > 0) {
+            const dynamicPlans = mapDbPlans(category);
+            // If we have plans for this category, return them. Otherwise fallback? 
+            // Better to show empty or handle it. For now, if dbPlans exists, we rely on it.
+            return dynamicPlans;
+        }
+
         switch (category) {
             case 'SYSTEM': return systemPlans;
             case 'COMBOS': return comboPlans;

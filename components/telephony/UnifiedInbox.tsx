@@ -205,7 +205,7 @@ export const UnifiedInbox: React.FC = () => {
 
         // Validation for missing phone
         if (!selectedConversation.customer_phone || selectedConversation.customer_phone === 'No Phone') {
-            toast.error('Este cliente não possui um número de telefone válido.');
+            toast.error(t('inbox.no_phone_error', 'This customer does not have a valid phone number.'));
             return;
         }
 
@@ -238,12 +238,12 @@ export const UnifiedInbox: React.FC = () => {
             console.error('Error sending SMS:', error);
 
             // Try to extract useful message from Edge Function error
-            let friendlyError = 'Falha ao enviar SMS.';
+            let friendlyError = t('inbox.send_sms_error', 'Failed to send SMS.');
             let detailedError = '';
 
             // Check for common issues
             if (error.message && error.message.includes('non-2xx')) {
-                friendlyError = 'Erro no envio. Verifique se você possui um número ativo em Configurações > Telefonia.';
+                friendlyError = t('inbox.active_number_error', 'Send error. Check if you have an active number in Settings > Telephony.');
             }
 
             if (error.context && typeof error.context.json === 'function') {
@@ -258,7 +258,7 @@ export const UnifiedInbox: React.FC = () => {
                     console.log('[UnifiedInbox] Failed to parse error context JSON');
                 }
             } else if (error.message) {
-                if (!detailedError) friendlyError = `Erro: ${error.message}`;
+                if (!detailedError) friendlyError = `${t('common.error')}: ${error.message}`;
             }
 
             toast.error(friendlyError);
@@ -320,7 +320,7 @@ export const UnifiedInbox: React.FC = () => {
                 if (sendError) throw sendError;
 
                 toast.dismiss();
-                toast.success('MMS enviado!');
+                toast.success(t('inbox.mms_sent', 'MMS sent!'));
 
                 const newMessage: Message = {
                     id: Date.now().toString(),
@@ -334,7 +334,7 @@ export const UnifiedInbox: React.FC = () => {
             } catch (error: any) {
                 console.error(error);
                 toast.dismiss();
-                toast.error('Erro ao enviar anexo: ' + error.message);
+                toast.error(t('inbox.attach_error', 'Error sending attachment: ') + error.message);
             } finally {
                 setIsUploading(false);
                 // Reset file input
@@ -456,7 +456,7 @@ export const UnifiedInbox: React.FC = () => {
                                         </DropdownMenuTrigger>
                                         <DropdownMenuContent align="end" className="w-48 rounded-xl">
                                             <DropdownMenuItem onClick={() => setIsPaymentModalOpen(true)} className="rounded-lg cursor-pointer text-indigo-600 font-bold bg-indigo-50/50 focus:bg-indigo-100">
-                                                <DollarSign size={16} className="mr-2" /> Solicitar Pagamento
+                                                <DollarSign size={16} className="mr-2" /> {t('inbox.request_payment', 'Request Payment')}
                                             </DropdownMenuItem>
                                             <DropdownMenuItem onClick={() => toast.info("Contact details coming soon")} className="rounded-lg cursor-pointer">
                                                 {t('inbox.view_contact')}
@@ -547,7 +547,7 @@ export const UnifiedInbox: React.FC = () => {
                 customerEmail={selectedConversation?.customer_phone + '@placeholder.com'} // Simplified for now since we don't always have email in the list
                 customerName={selectedConversation?.customer_name}
                 onSuccess={(url) => {
-                    setInputText(`Olá ${selectedConversation?.customer_name}! Segue o link para pagamento da sua fatura: ${url}`);
+                    setInputText(t('inbox.payment_sms_template', 'Hello {{name}}! Here is the link to pay your invoice: {{url}}', { name: selectedConversation?.customer_name, url }));
                 }}
             />
         </div>

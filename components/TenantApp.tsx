@@ -324,7 +324,7 @@ const TenantAppInner: React.FC = () => {
                                                 initial={{ opacity: 0, y: 10, scale: 0.95 }}
                                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                                 exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                                className="absolute right-0 top-12 z-50 w-80 md:w-96 max-h-[80vh] overflow-y-auto bg-white border-2 border-slate-900 shadow-[8px_8px_0px_0px_rgba(15,23,42,1)] p-6"
+                                                className="absolute right-0 top-12 z-50 w-80 md:w-96 max-h-[80vh] overflow-y-auto bg-white/95 backdrop-blur-xl border border-slate-100 shadow-2xl shadow-slate-200/50 rounded-2xl p-2"
                                             >
                                                 <NotificationInbox />
                                             </motion.div>

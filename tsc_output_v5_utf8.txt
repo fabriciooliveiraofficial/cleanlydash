@@ -1,0 +1,12 @@
+﻿error TS6053: File 'Cleanlydash/components/commerce/PaymentLinkManager.tsx' not found.
+  The file is in the program because:
+    Root file specified for compilation
+error TS6053: File 'Cleanlydash/lib/utils/pdf-invoice.ts' not found.
+  The file is in the program because:
+    Root file specified for compilation
+error TS6054: File 'Clientes/51.' has an unsupported extension. The only supported extensions are '.ts', '.tsx', '.d.ts', '.cts', '.d.cts', '.mts', '.d.mts'.
+  The file is in the program because:
+    Root file specified for compilation
+error TS6054: File 'd:/1.' has an unsupported extension. The only supported extensions are '.ts', '.tsx', '.d.ts', '.cts', '.d.cts', '.mts', '.d.mts'.
+  The file is in the program because:
+    Root file specified for compilation

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, User, Clock, DollarSign, Calendar, Save, Trash2 } from 'lucide-react';
 import { createClient } from '../../lib/supabase/client';
+import { useTranslation } from 'react-i18next';
+import { formatCurrency } from '@/lib/utils/format';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { InternationalPhoneInput } from '../ui/InternationalPhoneInput';
@@ -45,13 +47,6 @@ const defaultMember: TeamMember = {
     notes: ''
 };
 
-const PAY_TYPES = [
-    { value: 'hourly', label: 'Por Hora', description: 'Paga por horas trabalhadas', icon: '⏱️' },
-    { value: 'daily', label: 'Por Dia', description: 'Valor fixo por dia', icon: '📅' },
-    { value: 'per_job', label: 'Por Serviço', description: 'Valor fixo por job', icon: '🧹' },
-    { value: 'salary', label: 'Salário', description: 'Valor fixo mensal', icon: '💰' },
-    { value: 'commission', label: 'Comissão', description: '% do valor do serviço', icon: '📊' },
-];
 
 const COLORS = [
     '#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316',
@@ -65,6 +60,16 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
     onSave,
     onMemberCreated
 }) => {
+    const { t, i18n } = useTranslation();
+
+    const PAY_TYPES = [
+        { value: 'hourly', label: t('team.pay_hourly'), description: t('team.pay_hourly_desc'), icon: '⏱️' },
+        { value: 'daily', label: t('team.pay_daily'), description: t('team.pay_daily_desc'), icon: '📅' },
+        { value: 'per_job', label: t('team.pay_per_job'), description: t('team.pay_per_job_desc'), icon: '🧹' },
+        { value: 'salary', label: t('team.pay_salary'), description: t('team.pay_salary_desc'), icon: '💰' },
+        { value: 'commission', label: t('team.pay_commission'), description: t('team.pay_commission_desc'), icon: '📊' },
+    ];
+
     const [formData, setFormData] = useState<TeamMember>(defaultMember);
     const [activeTab, setActiveTab] = useState<'profile' | 'pay' | 'availability'>('profile');
     const [saving, setSaving] = useState(false);
@@ -101,7 +106,7 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
 
     const handleSave = async () => {
         if (!formData.name.trim()) {
-            toast.error('Nome é obrigatório');
+            toast.error(t('team.name_required'));
             return;
         }
 
@@ -145,13 +150,13 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
                     .from('team_availability')
                     .upsert(availabilityToUpsert, { onConflict: 'member_id, day_of_week' });
 
-                toast.success('Membro atualizado!');
+                toast.success(t('team.member_updated'));
                 onSave();
                 onClose();
             } else {
                 // Create new member via Edge Function
                 if (!formData.email) {
-                    toast.error('Email é obrigatório para criar conta de acesso');
+                    toast.error(t('team.email_required_account'));
                     return;
                 }
 
@@ -167,7 +172,7 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
                 // Handle errors - check both error object and data.error
                 if (error) {
                     // Try to extract message from the response
-                    const errorMessage = data?.error || error.message || 'Erro ao criar membro';
+                    const errorMessage = data?.error || error.message || t('team.error_creating_member');
                     throw new Error(errorMessage);
                 }
                 if (data?.error) {
@@ -179,13 +184,13 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
                     onMemberCreated(data.credentials, formData.name);
                 }
 
-                toast.success('Membro criado com sucesso!');
+                toast.success(t('team.member_created'));
                 onSave();
                 onClose();
             }
         } catch (err: any) {
             console.error(err);
-            toast.error(err.message || 'Erro ao salvar');
+            toast.error(err.message || t('team.error_saving'));
         } finally {
             setSaving(false);
         }
@@ -207,9 +212,9 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
                         </div>
                         <div>
                             <h2 className="text-lg font-bold text-slate-900">
-                                {member?.id ? 'Editar Membro' : 'Novo Membro'}
+                                {member?.id ? t('team.edit_member') : t('team.new_member')}
                             </h2>
-                            <p className="text-xs text-slate-500">Configure perfil e pagamento</p>
+                            <p className="text-xs text-slate-500">{t('team.configure_profile_pay')}</p>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400">
@@ -220,9 +225,9 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
                 {/* Tabs */}
                 <div className="flex border-b border-slate-100">
                     {[
-                        { id: 'profile', label: 'Perfil', icon: User },
-                        { id: 'pay', label: 'Pagamento', icon: DollarSign },
-                        { id: 'availability', label: 'Disponibilidade', icon: Calendar }
+                        { id: 'profile', label: t('team.profile'), icon: User },
+                        { id: 'pay', label: t('team.payment'), icon: DollarSign },
+                        { id: 'availability', label: t('team.availability'), icon: Calendar }
                     ].map(tab => (
                         <button
                             key={tab.id}
@@ -245,12 +250,12 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
                         <div className="space-y-4">
                             {/* Name */}
                             <div>
-                                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Nome *</label>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1.5">{t('common.name')} *</label>
                                 <input
                                     type="text"
                                     value={formData.name}
                                     onChange={e => handleChange('name', e.target.value)}
-                                    placeholder="Nome do funcionário"
+                                    placeholder={t('team.member_name_placeholder')}
                                     className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                                 />
                             </div>
@@ -263,7 +268,7 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
                                         type="email"
                                         value={formData.email}
                                         onChange={e => handleChange('email', e.target.value)}
-                                        placeholder="email@exemplo.com"
+                                        placeholder="email@example.com"
                                         className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                                     />
                                 </div>
@@ -292,7 +297,7 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
                                         }}
                                         className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white"
                                     >
-                                        <option value="" disabled>Selecione uma função</option>
+                                        <option value="" disabled>{t('team.select_role')}</option>
                                         {roles.map(role => (
                                             <option key={role.id} value={role.id}>
                                                 {role.name}
@@ -307,9 +312,9 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
                                         onChange={e => handleChange('status', e.target.value)}
                                         className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white"
                                     >
-                                        <option value="active">Ativo</option>
-                                        <option value="inactive">Inativo</option>
-                                        <option value="on_leave">Férias/Licença</option>
+                                        <option value="active">{t('common.active')}</option>
+                                        <option value="inactive">{t('common.inactive')}</option>
+                                        <option value="on_leave">{t('team.on_leave')}</option>
                                     </select>
                                 </div>
                             </div>
@@ -336,7 +341,7 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
                                 <textarea
                                     value={formData.notes}
                                     onChange={e => handleChange('notes', e.target.value)}
-                                    placeholder="Observações, especialidades, etc..."
+                                    placeholder={t('team.internal_notes_placeholder')}
                                     rows={3}
                                     className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-none"
                                 />
@@ -377,7 +382,7 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
                                 {formData.pay_type === 'commission' ? (
                                     <div>
                                         <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                                            Porcentagem de Comissão (%)
+                                            {t('team.commission_percentage')} (%)
                                         </label>
                                         <div className="relative">
                                             <input
@@ -391,7 +396,7 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
                                             />
                                             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium">%</span>
                                         </div>
-                                        <p className="text-xs text-slate-500 mt-1.5">Ex: 15% de um serviço de R$200 = R$30</p>
+                                        <p className="text-xs text-slate-500 mt-1.5">{t('team.commission_example', { percent: 15, base: formatCurrency(200), result: formatCurrency(30) })}</p>
                                     </div>
                                 ) : (
                                     <div>
@@ -402,7 +407,7 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
                                             {formData.pay_type === 'salary' && 'Salário'}
                                         </label>
                                         <div className="relative">
-                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium">R$</span>
+                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium">{i18n.language === 'pt' ? 'R$' : '$'}</span>
                                             <input
                                                 type="number"
                                                 value={formData.pay_rate}
@@ -424,9 +429,9 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
                                             onChange={e => handleChange('salary_period', e.target.value)}
                                             className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-white"
                                         >
-                                            <option value="weekly">Semanal</option>
-                                            <option value="biweekly">Quinzenal</option>
-                                            <option value="monthly">Mensal</option>
+                                            <option value="weekly">{t('team.period_weekly')}</option>
+                                            <option value="biweekly">{t('team.period_biweekly')}</option>
+                                            <option value="monthly">{t('team.period_monthly')}</option>
                                         </select>
                                     </div>
                                 )}
@@ -434,13 +439,13 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
 
                             {/* Pay Summary */}
                             <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl">
-                                <p className="text-sm font-semibold text-emerald-800 mb-1">Resumo da Compensação</p>
+                                <p className="text-sm font-semibold text-emerald-800 mb-1">{t('team.compensation_summary')}</p>
                                 <p className="text-xs text-emerald-600">
-                                    {formData.pay_type === 'hourly' && `R$ ${formData.pay_rate.toFixed(2)} por hora trabalhada`}
-                                    {formData.pay_type === 'daily' && `R$ ${formData.pay_rate.toFixed(2)} por dia com serviços`}
-                                    {formData.pay_type === 'per_job' && `R$ ${formData.pay_rate.toFixed(2)} por serviço concluído`}
-                                    {formData.pay_type === 'salary' && `R$ ${formData.pay_rate.toFixed(2)} ${formData.salary_period === 'weekly' ? 'por semana' : formData.salary_period === 'biweekly' ? 'a cada 15 dias' : 'por mês'}`}
-                                    {formData.pay_type === 'commission' && `${formData.commission_percent}% do valor de cada serviço`}
+                                    {formData.pay_type === 'hourly' && t('team.pay_hourly_summary', { rate: formatCurrency(formData.pay_rate) })}
+                                    {formData.pay_type === 'daily' && t('team.pay_daily_summary', { rate: formatCurrency(formData.pay_rate) })}
+                                    {formData.pay_type === 'per_job' && t('team.pay_per_job_summary', { rate: formatCurrency(formData.pay_rate) })}
+                                    {formData.pay_type === 'salary' && t('team.pay_salary_summary', { rate: formatCurrency(formData.pay_rate), period: t(`team.period_${formData.salary_period}`) })}
+                                    {formData.pay_type === 'commission' && t('team.pay_commission_summary', { percent: formData.commission_percent })}
                                 </p>
                             </div>
                         </div>
@@ -466,18 +471,18 @@ export const TeamMemberModal: React.FC<TeamMemberModalProps> = ({
                     {member?.id ? (
                         <Button variant="outline" className="text-red-600 border-red-200 hover:bg-red-50">
                             <Trash2 size={16} className="mr-2" />
-                            Remover
+                            {t('common.remove')}
                         </Button>
                     ) : (
                         <div></div>
                     )}
                     <div className="flex gap-3">
                         <Button variant="outline" onClick={onClose}>
-                            Cancelar
+                            {t('common.cancel')}
                         </Button>
                         <Button onClick={handleSave} disabled={saving} className="bg-indigo-600 hover:bg-indigo-700">
                             <Save size={16} className="mr-2" />
-                            {saving ? 'Salvando...' : 'Salvar'}
+                            {saving ? t('common.saving') : t('common.save')}
                         </Button>
                     </div>
                 </div>

@@ -3,6 +3,9 @@ ALTER TABLE public.team_availability ENABLE ROW LEVEL SECURITY;
 
 -- Policy for Tenant Owners (Admins)
 -- They can do EVERYTHING on availability slots for members that belong to their tenant
+-- Policy for Tenant Owners (Admins)
+-- They can do EVERYTHING on availability slots for members that belong to their tenant
+DROP POLICY IF EXISTS "Tenant owners can manage team availability" ON public.team_availability;
 CREATE POLICY "Tenant owners can manage team availability" ON public.team_availability
 FOR ALL USING (
   EXISTS (
@@ -14,6 +17,7 @@ FOR ALL USING (
 
 -- Policy for Team Members (Cleaners)
 -- They can manage their OWN availability
+DROP POLICY IF EXISTS "Members can manage their own availability" ON public.team_availability;
 CREATE POLICY "Members can manage their own availability" ON public.team_availability
 FOR ALL USING (
   EXISTS (

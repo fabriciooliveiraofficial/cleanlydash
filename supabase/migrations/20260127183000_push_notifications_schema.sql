@@ -53,8 +53,8 @@ CREATE TABLE IF NOT EXISTS public.tenant_notification_settings (
 -- Enable RLS for tenant_notification_settings
 ALTER TABLE public.tenant_notification_settings ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Tenants can manage their own notification settings" ON public.tenant_notification_settings
-    FOR ALL USING (tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid()));
+-- CREATE POLICY "Tenants can manage their own notification settings" ON public.tenant_notification_settings
+--    FOR ALL USING (tenant_id IN (SELECT tenant_id FROM public.profiles WHERE id = auth.uid()));
 
 -- 3. Notification History for UI/Audit
 CREATE TABLE IF NOT EXISTS public.notification_history (
@@ -70,8 +70,12 @@ CREATE TABLE IF NOT EXISTS public.notification_history (
 
 ALTER TABLE public.notification_history ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view their own history" ON public.notification_history
-    FOR SELECT USING (auth.uid() = user_id);
+DO $$
+BEGIN
+    DROP POLICY IF EXISTS "Users can view their own history" ON public.notification_history;
+    CREATE POLICY "Users can view their own history" ON public.notification_history
+        FOR SELECT USING (auth.uid() = user_id);
+END $$;
     
 -- Index for performance
 CREATE INDEX IF NOT EXISTS idx_push_user_context ON public.push_subscriptions(user_id, app_context);

@@ -10,6 +10,7 @@ import { PlatformDashboard } from './platform/dashboard/PlatformDashboard';
 import { TenantManager } from './platform/tenants/TenantManager';
 import { FinancialCommand } from './platform/finance/FinancialCommand';
 import { SystemTools } from './platform/system/SystemTools';
+import { PlansPage } from './platform/plans/PlansPage';
 import { AuditLogViewer } from './platform/audit/AuditLogViewer';
 import { SupportInbox } from './platform/support/SupportInbox';
 import { BroadcastCenter } from './platform/broadcast/BroadcastCenter';
@@ -19,7 +20,7 @@ import { Loader2 } from 'lucide-react';
 import { ReleaseGuard } from './system/ReleaseGuard';
 
 export const PlatformApp: React.FC = () => {
-    const [platformModule, setPlatformModule] = useState<'dashboard' | 'tenants' | 'finance' | 'system' | 'logs' | 'support' | 'broadcast' | 'telephony'>('dashboard');
+    const [platformModule, setPlatformModule] = useState<'dashboard' | 'tenants' | 'finance' | 'system' | 'logs' | 'support' | 'broadcast' | 'telephony' | 'plans'>('dashboard');
     const [user, setUser] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const supabase = createPlatformClient(); // ISOLATED CLIENT
@@ -110,6 +111,7 @@ export const PlatformApp: React.FC = () => {
                     {platformModule === 'support' && <SupportInbox />}
                     {platformModule === 'broadcast' && <BroadcastCenter />}
                     {platformModule === 'telephony' && <TelephonyManager />}
+                    {platformModule === 'plans' && <PlansPage />}
                     <ReleaseGuard />
                     <Toaster position="top-right" richColors />
                 </SuperAdminLayout>

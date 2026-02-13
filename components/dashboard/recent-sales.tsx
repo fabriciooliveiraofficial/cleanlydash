@@ -1,7 +1,8 @@
-// ARQUIVO: components/dashboard/recent-sales.tsx
 import React from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { useTranslation } from 'react-i18next'
+import { formatCurrency } from '@/lib/utils/format'
 
 interface Sale {
   id: string
@@ -13,11 +14,13 @@ interface Sale {
 }
 
 export function RecentSales({ sales }: { sales: any[] }) {
+  const { t } = useTranslation()
+
   return (
     <Card className="border-none shadow-sm h-full">
       <CardHeader>
-        <CardTitle className="text-lg font-bold text-slate-900">Vendas Recentes</CardTitle>
-        <CardDescription>Você teve {sales.length} vendas concluídas recentemente.</CardDescription>
+        <CardTitle className="text-lg font-bold text-slate-900">{t('dashboard.recent_sales')}</CardTitle>
+        <CardDescription>{t('dashboard.recent_sales_description', { count: sales.length })}</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-6">
@@ -39,7 +42,7 @@ export function RecentSales({ sales }: { sales: any[] }) {
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-black text-slate-900">
-                    +R$ {sale.price?.toFixed(2)}
+                    +{formatCurrency(sale.price)}
                   </p>
                   <Badge variant="outline" className="text-[9px] h-4 font-bold border-emerald-200 text-emerald-600 bg-emerald-50">
                     PAGO
@@ -49,7 +52,7 @@ export function RecentSales({ sales }: { sales: any[] }) {
             ))
           ) : (
             <div className="py-10 text-center text-slate-400 italic text-sm">
-              Nenhuma transação concluída ainda.
+              {t('dashboard.no_recent_sales')}
             </div>
           )}
         </div>

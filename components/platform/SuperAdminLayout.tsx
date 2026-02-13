@@ -10,15 +10,16 @@ import {
     Globe,
     MessageSquare,
     Phone,
-    Megaphone
+    Megaphone,
+    Zap
 } from 'lucide-react';
 
 import { createPlatformClient } from '../../lib/supabase/platform-client';
 
 interface SuperAdminLayoutProps {
     children: React.ReactNode;
-    activeModule: 'dashboard' | 'tenants' | 'finance' | 'system' | 'logs' | 'support' | 'broadcast' | 'telephony';
-    onNavigate: (module: 'dashboard' | 'tenants' | 'finance' | 'system' | 'logs' | 'support' | 'broadcast' | 'telephony') => void;
+    activeModule: 'dashboard' | 'tenants' | 'finance' | 'system' | 'logs' | 'support' | 'broadcast' | 'telephony' | 'plans';
+    onNavigate: (module: 'dashboard' | 'tenants' | 'finance' | 'system' | 'logs' | 'support' | 'broadcast' | 'telephony' | 'plans') => void;
 
 }
 
@@ -99,6 +100,7 @@ export const SuperAdminLayout: React.FC<SuperAdminLayoutProps> = ({ children, ac
                     <NavItem module="dashboard" icon={LayoutDashboard} label="Mission Control" />
                     <NavItem module="tenants" icon={Users} label="Tenant Manager" />
                     <NavItem module="finance" icon={CreditCard} label="Financial Command" />
+                    <NavItem module="plans" icon={Zap} label="Plans & Resources" />
                     <NavItem module="system" icon={Settings} label="System & Flags" />
                     <NavItem module="logs" icon={Activity} label="Audit Logs" />
                     <div className="my-2 border-t border-slate-800 mx-4"></div>
@@ -141,6 +143,7 @@ export const SuperAdminLayout: React.FC<SuperAdminLayoutProps> = ({ children, ac
                         {activeModule === 'support' && 'Support & Ticketing'}
                         {activeModule === 'telephony' && 'AI Telephony Operations'}
                         {activeModule === 'broadcast' && 'System Broadcasts'}
+                        {activeModule === 'plans' && 'Plans & Resources Management'}
 
                     </h2>
                     <div className="flex items-center gap-4">
